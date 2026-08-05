@@ -1,0 +1,837 @@
+# Stuck to You — Plan ejecutable de MVP
+
+**Semana:** lunes 3 a viernes 7 de agosto de 2026  
+**Equipo:** 1 desarrollador  
+**Meta del viernes:** experiencia pública o no listada, jugable de principio a fin en móvil y PC, probada por personas que no conocen el diseño.  
+**Duración objetivo de la primera vuelta:** 3–5 minutos.  
+**Fuente de verdad:** el documento “Stuck to You: One-Week Prototype”.
+
+---
+
+## 1. La promesa que estamos construyendo
+
+> Toca objetos más pequeños, haz crecer tu pila y vuélvete lo bastante pegajoso para absorber el objeto gigante que bloquea el camino.
+
+El juego se entiende con una sola regla:
+
+> **Si tienes suficiente Stickiness, el objeto se pega.**
+
+El loop completo es:
+
+```text
+TOCAR → PEGAR → GANAR STICKINESS → ABSORBER BLOQUEADOR → AVANZAR
+```
+
+No hay botón de recoger, inventario, venta, combate, vida, daño ni una segunda moneda durante la partida. El jugador se mueve; el resto ocurre automáticamente.
+
+### Señales de que el núcleo funciona
+
+- El primer objeto se pega antes de los 10 segundos.
+- Después de 3 objetos, el jugador ya entiende la regla sin leer un tutorial largo.
+- Siempre se ve el siguiente objetivo grande.
+- Hay un pickup cada 0.2–2 segundos mientras el jugador se mueve por la ruta correcta.
+- La pila cambia de forma de manera visible cada 10–20 segundos.
+- Al no poder absorber algo, el jugador entiende cuánto le falta.
+- Terminar las tres zonas toma 3–5 minutos en la primera vuelta.
+
+---
+
+## 2. Alcance cerrado del MVP
+
+### Entra obligatoriamente
+
+- 3 zonas lineales y diferenciadas:
+  1. Toy Room → bloqueador: Toy Chest.
+  2. Bedroom → bloqueador: Bed.
+  3. Kitchen → bloqueador final: Refrigerator.
+- Recolección automática por contacto.
+- Un único stat visible: **Stickiness**.
+- Requisitos visibles sobre cada objeto.
+- Estados claros: verde si se puede recoger, rojo si aún no.
+- Objetos pegados visualmente al personaje.
+- Room Manager data-driven por zona.
+- Respawn de coleccionables y disponibilidad multijugador.
+- HUD mínimo y legible en móvil.
+- Niveles derivados de Stickiness; no existe XP separada.
+- 4 Sticky Wraps, desbloqueados y equipados automáticamente.
+- Final de vuelta, +1 Win y opción de Rebirth al llegar al nivel máximo.
+- Persistencia de Wins y Rebirths.
+- `leaderstats` del servidor y leaderboard global solo si el core está estable.
+- Analítica mínima de embudo.
+- Sonido, partículas y una animación grande al absorber bloqueadores.
+
+### Queda fuera esta semana
+
+- Neighborhood y cualquier cuarta o quinta zona.
+- Tienda, pets, inventario o selección manual de wraps.
+- Gamepasses, dev products y Robux.
+- Daño, vida, muerte, pérdida de objetos o Rest Zone con recompensa AFK.
+- Peso que reduzca la velocidad.
+- Obstáculos que golpeen, empujen o interrumpan la colección.
+- Quests, daily rewards, códigos, trades o colecciones permanentes.
+- Modelado propio complejo.
+- Rebirths con árboles de mejoras o recompensas adicionales.
+
+**Por qué:** todas esas funciones abren loops nuevos. Esta semana solo debe responder una pregunta: ¿es satisfactorio tocar objetos, verlos pegarse y crecer hasta absorber algo enorme?
+
+### Interpretación de “Rest Zone” para este MVP
+
+Habrá una **Finish / Rest Zone** después del Refrigerator. Es un lugar seguro que:
+
+- muestra el resumen de la vuelta;
+- limpia la pila visual;
+- otorga la Win;
+- presenta el botón de Rebirth si corresponde;
+- permite empezar otra vuelta.
+
+No genera recursos por quedarse quieto. Así cumple una función clara sin crear otro sistema.
+
+---
+
+## 3. Reglas de juego cerradas
+
+### 3.1 Recolección
+
+Cada objeto coleccionable tiene:
+
+```lua
+Id
+ZoneId
+RequiredStickiness
+RespawnSeconds
+AttachScale
+Category
+```
+
+Al tocarlo, el servidor valida:
+
+1. que el objeto esté activo;
+2. que el jugador esté vivo y dentro de la zona correcta;
+3. que no exista un debounce activo para ese jugador/objeto;
+4. que `PlayerStickiness >= RequiredStickiness`.
+
+Si cumple:
+
+1. desactiva el pickup;
+2. suma Stickiness;
+3. agrega una copia visual a la pila, si no alcanzó el límite;
+4. actualiza HUD, nivel y progreso del bloqueador;
+5. reproduce feedback;
+6. devuelve el pickup al pool después de 2 segundos.
+
+Si no cumple:
+
+- no consume ni mueve el objeto;
+- muestra una reacción corta en rojo con la cantidad faltante;
+- aplica un cooldown local de 0.5 s para no saturar HUD y audio.
+
+### 3.2 Fórmula de ganancia
+
+```text
+RebirthMultiplier = 1 + (Rebirths × 0.5)
+StickinessGain = StickyWrapBaseGain × RebirthMultiplier
+```
+
+| Sticky Wrap | Desbloqueo provisional | Ganancia base |
+|---|---:|---:|
+| Basic Glue | Nivel 1 | +1 |
+| Strong Glue | Nivel 5 | +3 |
+| Super Glue | Nivel 10 | +8 |
+| Cosmic Glue | Nivel 15 | +20 |
+
+El wrap más fuerte desbloqueado se equipa automáticamente. El cambio debe verse en el material, color o aura del personaje. No se construye menú de equipamiento esta semana.
+
+Los valores fraccionarios producidos por Rebirth se conservan internamente. El HUD puede mostrar un decimal cuando sea necesario.
+
+### 3.3 Nivel
+
+El nivel se calcula a partir de Stickiness. No hay XP, drops de XP ni otra barra que balancear.
+
+```text
+Level = nivel más alto cuyo umbral sea <= Stickiness
+```
+
+Umbrales provisionales para Rebirth 0:
+
+| Nivel | Stickiness | Evento |
+|---:|---:|---|
+| 1 | 0 | Basic Glue |
+| 2 | 5 | — |
+| 3 | 12 | — |
+| 4 | 20 | — |
+| 5 | 30 | Strong Glue |
+| 6 | 45 | — |
+| 7 | 60 | — |
+| 8 | 80 | — |
+| 9 | 95 | — |
+| 10 | 110 | Super Glue |
+| 11 | 135 | — |
+| 12 | 165 | — |
+| 13 | 195 | — |
+| 14 | 225 | — |
+| 15 | 260 | Cosmic Glue |
+| 16 | 300 | — |
+| 17 | 345 | — |
+| 18 | 395 | — |
+| 19 | 445 | — |
+| 20 | 500 | Rebirth disponible |
+
+Estos números son de arranque, no promesas. Viven en `GameConfig` y se ajustan con telemetría y playtests.
+
+### 3.4 Rebirth y Win
+
+Absorber el Refrigerator:
+
+- completa la vuelta;
+- suma `Wins += 1`;
+- envía al jugador a Finish / Rest Zone;
+- registra tiempo total y zonas completadas;
+- muestra Rebirth si el jugador alcanzó su level cap.
+
+Rebirth:
+
+- requiere el nivel máximo actual;
+- reinicia Stickiness a 0 y Level a 1;
+- reinicia los Sticky Wraps al Basic Glue;
+- conserva Wins;
+- suma `Rebirths += 1`;
+- aumenta permanentemente el multiplicador en `+0.5x`;
+- registra que el siguiente level cap será 25.
+
+En esta semana basta con validar Rebirth 0 → 1. Después del primer Rebirth se puede repetir la ruta con el multiplicador, pero el segundo Rebirth permanece deshabilitado hasta que existan los niveles 21–25 y Neighborhood. No se muestra una barra imposible de completar ni se construye una economía profunda de rebirth.
+
+---
+
+## 4. Ruta y balance inicial
+
+La ruta es horizontal, sin bifurcaciones ni búsquedas. Al entrar a una zona debe verse el bloqueador y un rastro de objetos alcanzables.
+
+| Zona | Requisitos de objetos | Bloqueador | Meta | Tiempo objetivo |
+|---|---|---|---:|---:|
+| Toy Room | 0, 5, 12, 25 | Toy Chest | 50 | 45–60 s |
+| Bedroom | 50, 70, 100, 140 | Bed | 180 | 55–75 s |
+| Kitchen | 180, 220, 300, 380 | Refrigerator | 500 | 60–90 s |
+
+### Densidad inicial por zona
+
+Los valores se editan a mano por sala en `Workspace/StuckToYou/Zones/<Zone>/RoomSettings`; `GameConfig` solo aporta defaults.
+
+- `TotalObjects`: objetos visibles a la vez, por jugador. Arranca en 12.
+- `ObjectPool`: qué tipos de objeto pueden aparecer en esa sala. El sistema reparte `TotalObjects` equitativamente entre ellos.
+- `MinSeparationStuds`: separación mínima entre objetos. Arranca en 8.
+- Respawn base: 2 s.
+- Al menos `MinimumEligibleActivePerZone` (4) objetos deben ser alcanzables con el umbral de entrada de la sala. Lo garantiza `ItemPlanner`.
+- La colocación es aleatoria a lo largo de toda la sala, dentro del volumen authored `PlacementArea`.
+
+### Multijugador
+
+**Cambio de diseño 2026-08-03:** los objetos son **privados por jugador**. Varios jugadores pueden estar en la misma sala sin verse ni bloquearse los objetos.
+
+- El servidor es dueño de los datos (posición, tipo, requisito, estado) en una sesión por (jugador, sala). Cero instancias de collectible en el servidor.
+- El cliente renderiza sus propios objetos clonando plantillas authored de `ReplicatedStorage/Assets/Collectibles`.
+- El pickup lo pide el cliente y lo valida el servidor contra su propia posición guardada, con rate limit.
+- Los slots de colocación se calculan una vez por sala y se cachean; una sala sin jugadores no tiene instancias, ni tareas, ni slots calculados.
+- Diseñar densidad para 6 jugadores simultáneos: cada uno lleva su propio conjunto, así que la disponibilidad ya no depende de cuánta gente haya en la sala.
+
+---
+
+## 5. Feedback y UX obligatorios
+
+### HUD
+
+Mostrar únicamente:
+
+- `Stickiness: actual`;
+- `BLOQUEADOR: actual / requerido`;
+- barra de Level con nivel actual;
+- Wins y Rebirths en tamaño secundario.
+
+No mostrar peso, velocidad, inventario ni XP.
+
+### Objetos del mundo
+
+Cada collectible usa un `BillboardGui`:
+
+- número requerido;
+- verde si es coleccionable;
+- rojo si no lo es;
+- actualización local del color cuando cambia Stickiness, sin pedir al servidor que repinte todos los objetos.
+
+### Cada pickup exitoso
+
+- objeto se pega inmediatamente;
+- número `+X Stickiness`;
+- 3–4 variaciones cortas de sonido;
+- partícula pequeña;
+- HUD interpola, no salta de forma seca.
+
+### Cada bloqueador
+
+- cambia a verde al llegar al requisito;
+- pulsa o emite una señal visible;
+- al tocarlo: animación de 1–2 s, sonido grande, pequeña cámara shake;
+- se abre la siguiente zona sin pantalla de carga.
+
+### Pila visual
+
+- Límite inicial: **30 objetos visibles por jugador**.
+- El progreso lógico nunca se detiene por llegar al límite visual.
+- Al llegar al límite, los pickups siguen haciendo crecer ligeramente el radio de la pila en umbrales definidos; no se agregan más piezas.
+- Cada blocker usa un “hero slot”: se pega como pieza grande y reemplaza uno de los props pequeños, para que el cambio de zona siempre produzca crecimiento visible.
+- Las copias pegadas son `Massless`, `CanCollide = false`, `CanTouch = false`, `CanQuery = false`.
+- Usar partes o meshes low-poly, sin scripts y preferiblemente de una sola pieza.
+- Distribuir attachments alrededor del torso con posiciones predefinidas y un poco de rotación; evitar offsets completamente aleatorios que tapen la cámara o la cabeza.
+- Reservar una silueta legible: cámara y HumanoidRootPart nunca quedan bloqueados.
+
+---
+
+## 6. Arquitectura técnica mínima
+
+```text
+ReplicatedStorage/
+  Shared/
+    GameConfig          -- zonas, objetos, umbrales, wraps, rebirth
+    Remotes             -- creados por bootstrap
+ServerScriptService/
+  Server/
+    Main                -- orden de inicialización
+    DataService         -- Wins y Rebirths persistentes
+    CollectionService   -- validación de pickups y stickiness
+    AttachmentService   -- pila visual y límite
+    RoomService         -- gates, bloqueadores y avance
+    SpawnService        -- pools y garantía de disponibilidad
+    ProgressionService  -- niveles, wraps, wins y rebirth
+    AnalyticsService    -- eventos del embudo
+StarterPlayer/
+  StarterPlayerScripts/
+    Client/
+      HUDController
+      ObjectLabelController
+      JuiceController
+Workspace/
+  StuckToYou/
+    StartSpawn
+    Zones/
+      ToyRoom/
+      Bedroom/
+      Kitchen/
+      FinishZone/
+```
+
+### Reglas no negociables
+
+1. **Servidor autoritativo.** El cliente nunca decide si ganó Stickiness, una Win o un Rebirth.
+2. **Una sola configuración.** Umbrales, ganancias, spawns y tiempos viven en `GameConfig`.
+3. **Tags y Attributes.** Usar `CollectionService` para identificar collectibles, blockers y zone spawns; evitar scripts clonados dentro de cada objeto.
+4. **Debounces por objeto y jugador.** `Touched` puede dispararse varias veces.
+5. **Pools, no churn.** Reutilizar collectibles y attachments cuando sea práctico.
+6. **Límite visual estricto.** Empezar en 30 y bajar a 20 si el test multijugador lo exige.
+7. **Assets auditados.** Eliminar scripts desconocidos y rechazar modelos multiparte pesados.
+8. **Persistencia pequeña.** Solo guardar `Wins`, `Rebirths`, versión del perfil y, si hace falta, mejor tiempo. Stickiness y Level son datos de la vuelta.
+
+### Esquema de perfil
+
+```lua
+{
+    SchemaVersion = 1,
+    Wins = 0,
+    Rebirths = 0,
+    BestRunSeconds = nil,
+}
+```
+
+Para no arriesgar datos, usar una librería estable con session locking o una implementación mínima muy probada. La persistencia no debe bloquear el loop local del lunes.
+
+---
+
+## 7. Analítica y criterios de éxito
+
+Eventos mínimos:
+
+| Evento | Propiedades |
+|---|---|
+| `session_start` | rebirths, wins |
+| `first_pickup` | seconds_from_join |
+| `pickup_denied` | zone, required, current |
+| `zone_entered` | zone, seconds_from_join |
+| `blocker_absorbed` | zone, seconds_in_zone, stickiness |
+| `run_completed` | total_seconds, rebirths |
+| `rebirth_used` | run_count, total_seconds |
+
+Objetivos del prototipo:
+
+- 90% recoge el primer objeto antes de 10 s.
+- 70% absorbe el Toy Chest.
+- 55% llega a Bedroom.
+- 40% completa Kitchen.
+- Mediana de tiempo entre pickups < 3 s.
+- Primera vuelta mediana entre 180 y 300 s.
+- Menos de 5% de sesiones queda 10 s o más sin un objeto elegible visible.
+- En un servidor de 6 jugadores, el rendimiento se mantiene estable y la pila no oculta la lectura del personaje.
+
+La analítica sirve para detectar dónde se rompe el loop; no se dedica medio día a construir dashboards.
+
+---
+
+## 8. Plan de lunes a viernes
+
+### Lunes 3 — El verbo ya funciona (8–10 h)
+
+#### Bloque 1: 60–90 min
+
+- [x] Crear la experiencia y estructura mínima.
+- [x] Crear `GameConfig` con Toy Room, umbrales y wraps.
+- [x] Hacer greybox de una ruta corta, Toy Chest visible y 12 spawn points.
+- [x] Usar cubos de colores; todavía no buscar arte.
+
+**Notas de avance — 2026-08-03:**
+
+- Lugar activo: `Exposición pegajosa`, verificado en modo Edit mediante Roblox Studio MCP.
+- Se creó `Workspace.StuckToYou.Zones.ToyRoom` sin sobrescribir contenido previo; el lugar solo contenía la Baseplate y SpawnLocation por defecto.
+- Toy Room incluye ruta lineal, señalización, punto de inicio, 12 spawn markers con requisitos `0/5/12/25` y un Toy Chest con requisito 50.
+- Se creó `ReplicatedStorage.Shared.GameConfig` con zonas, niveles, Sticky Wraps, Rebirth y funciones puras de consulta.
+- Verificación superada: `GameConfig` carga correctamente, los umbrales clave devuelven niveles 1/5/20, Rebirth 1 devuelve `1.5x`, existen 12 tags `ItemSpawn` y 1 tag `StickinessBlocker`.
+- Siguiente paso: Bloque 2, comenzando por pickup autoritativo. Los marcadores todavía no son collectibles funcionales.
+
+#### Bloque 2: 3 h
+
+- [x] Implementar pickup autoritativo.
+- [x] Implementar requisito rojo/verde.
+- [x] Sumar Stickiness y actualizar HUD.
+- [x] Respawn de 2 s con debounce correcto.
+
+**Notas de avance — 2026-08-03:**
+
+- Se separaron responsabilidades en `ProgressionService`, `CollectibleService`, `CollectibleFactory`, `HUDController` y `ObjectLabelController`.
+- Todos los valores de balance, colores, límites, nombres de tags y RemoteEvent salen de `GameConfig`.
+- El servidor identifica al jugador desde el contacto físico, valida Humanoid, distancia, requisito y estado activo; el cliente no solicita ni concede Stickiness.
+- Cada pickup se bloquea antes de otorgar progreso para impedir premios dobles por eventos `Touched` simultáneos.
+- Las conexiones, cooldowns y tareas de respawn tienen dueño y limpieza; `Destroy()` cancela threads, desconecta señales, limpia tablas y destruye instancias runtime.
+- Prueba Play superada con 12 collectibles: rechazo de requisito 25 mantuvo Stickiness en 0; pickups elegibles actualizaron Stickiness, Level y HUD; un pickup inactivo volvió a `Active=true`, `Transparency=0` y `CanTouch=true` después de 2 s.
+- Prueba visual superada a Stickiness 11: requisitos 0/5 verdes y 12/25 rojos.
+- Prueba de teardown superada: al detener Play, `Collectibles` quedó con 0 hijos runtime y los spawn markers conservaron su estado de Edit.
+- No se observaron errores propios del juego en servidor o cliente durante la prueba.
+- Siguiente paso: Bloque 3, pila visual desacoplada con pool, slots predefinidos y límite configurable de 30.
+
+#### Bloque 3: 3 h
+
+- [x] Implementar pila visual con posiciones predefinidas.
+- [x] Aplicar propiedades físicas seguras.
+- [x] Límite de 30 attachments.
+- [x] Probar con pickups rápidos y reset de personaje.
+
+**Notas de avance — 2026-08-03:**
+
+- Se creó `AttachmentService`, conectado a `CollectibleService` mediante un evento interno; el sistema de pickups no conoce welds, slots ni representación visual.
+- `GameConfig.Attachments` controla límite, capacidad del pool, tamaño, rings de slots, escalas, colores y crecimiento posterior al límite.
+- Los cuatro rings generan exactamente 30 slots deterministas alrededor de UpperTorso/Torso/HumanoidRootPart.
+- Cada pieza usa `Massless=true`, `Anchored=false`, `CanCollide=false`, `CanTouch=false`, `CanQuery=false` y un `WeldConstraint` válido.
+- El pool en `ServerStorage` conserva como máximo 60 piezas libres; el exceso se destruye y cada jugador mantiene como máximo 30 records activos.
+- Después de 30 pickups, no se crean partes adicionales: cada 5 pickups aumenta ligeramente el tamaño existente, hasta 5 pasos configurables.
+- El reset del personaje reinicia Stickiness y Level, devuelve todas las piezas al pool y comienza sin `StickyPile` residual.
+- Stress test superado: Stickiness llegó a 175, `VisualAttachmentCount` permaneció en 30, los slots fueron únicos, el crecimiento se topó en 5 y el personaje siguió navegando.
+- Test de reset superado: `30 → 0` visuals, Stickiness `175 → 0`, Level `→ 1` y 30 piezas recuperadas en el pool.
+- Test de reutilización superado: el siguiente pickup tomó piezas del pool (`30 → 25`) en vez de crear otras nuevas.
+- Teardown de Play limpio: sin pool ni collectibles runtime persistidos en Edit y sin errores del juego en consola.
+- Siguiente paso: Cierre del lunes, absorción del Toy Chest y medición real de 45–60 s.
+
+#### Cierre: 60–90 min
+
+- [x] Toy Chest requiere 50, se vuelve verde y puede absorberse.
+- [x] Grabar tiempo desde spawn hasta el blocker.
+- [ ] Confirmar con una prueba manual de jugador nuevo que la zona dura 45–60 s; ajustar densidad solo si queda fuera.
+
+**Notas de cierre — 2026-08-03:**
+
+- Se creó `BlockerService`, reusable y server-authoritative, que descubre blockers por tag y attributes.
+- La validación compartida de Humanoid, Character y distancia se extrajo a `PlayerCharacterUtil`; collectibles y blockers usan el mismo contrato.
+- El estado de absorción es por jugador: completar Toy Chest no lo elimina ni lo abre globalmente para otros jugadores.
+- `BlockerController` cambia el chest completo a verde en 50, ejecuta una absorción local de 0.55 s y desactiva colisión local para abrir la salida.
+- Se añadió `ExitPreview` detrás del chest para verificar físicamente que el jugador puede atravesar la puerta.
+- El HUD cambia de `TOY CHEST` a `BED` y `CurrentZoneId` cambia a `Bedroom` después de una absorción válida.
+- Rechazo probado con Stickiness 0: feedback `NEED 50 MORE`, sin absorción ni cambio de zona.
+- Éxito probado con Stickiness 54: 3/3 partes verdes antes del contacto; después, 3/3 ocultas y sin colisión, Billboard apagado y salida transitable.
+- Seguridad multijugador comprobada: después del éxito local, el modelo de servidor permaneció visible y con colisión para otros jugadores.
+- Reset comprobado: Stickiness 0, Level 1, visuals 0, Toy Room restaurado y chest rojo/visible/con colisión.
+- Se detectó una carrera de replicación cliente: el tag del blocker podía llegar antes que sus descendientes. La mitigación inicial con retry fue reforzada después del playtest manual; ver la corrección posterior.
+- Ruta óptima automatizada con movimiento normal: 36 pickups, Stickiness 51 y absorción en **42.1 s**. Al ser una ruta perfecta sin dudas ni desvíos, no se cambió balance; falta confirmar 45–60 s con una persona nueva.
+- La medición server-side se guarda en `LastZoneSeconds` y la zona en `LastCompletedZoneId` para futura analítica.
+- Sin errores del juego en consola durante las pruebas finales.
+
+**Corrección posterior al playtest manual — 2026-08-03:**
+
+- Reporte real: el servidor mostraba `ZONE OPEN!`, pero Toy Chest no se ponía verde ni desaparecía.
+- Causa raíz: `BlockerController` podía perder el registro si tag, attributes y descendientes no estaban disponibles dentro del retry inicial de 0.5 s. El flujo de servidor sí funcionaba; fallaba únicamente la presentación cliente.
+- Corrección: el cliente descubre blockers también por attribute `BlockerId` al iniciar, cuando cambia Stickiness y como fallback al recibir una absorción autoritativa. Después de registrar el modelo no vuelve a escanear.
+- Rendimiento: no se añadió polling. Se conserva un scan inicial acotado, un retry cancelable y scans de recuperación únicamente mientras no exista ningún blocker registrado.
+- Regresión completa superada: rojo → verde en 50 → tres partes ocultas/sin colisión → Bedroom → reset rojo/visible.
+- Estabilidad de arranque: estado verde verificado en tres sesiones Play independientes.
+- Consola limpia después de la corrección.
+
+**Entregable del lunes:** entrar, tocar cubos, verlos pegarse, aumentar Stickiness y absorber un Toy Chest. Feo, pero el juego central ya existe.
+
+**Checkpoint duro:** si el objeto no se pega de forma estable y satisfactoria al terminar hoy, mañana no se empieza persistencia, rebirth ni arte.
+
+### Martes 4 — Vuelta completa en gris (8–10 h)
+
+- [x] Convertir Toy Room en zona data-driven.
+- [x] Implementar Room Manager y pool de respawn.
+- [x] Construir Bedroom y Kitchen en greybox.
+- [x] Crear gates Toy Chest → Bedroom, Bed → Kitchen y Refrigerator → Finish.
+- [x] Implementar Level derivado y autoequip de wraps.
+- [x] Implementar Win y reinicio de vuelta.
+- [x] Añadir tutorial ambiental de una línea y camino visual.
+- [x] Probar la vuelta completa 10 veces; registrar duración por zona.
+
+**Notas de avance — 2026-08-03, fase 1 del martes:**
+
+- `RoomService` registra únicamente folders con tag `StickyZone`, valida `ZoneId` contra `GameConfig` y exige la estructura `Geometry/ItemSpawns/Collectibles/Blockers`.
+- `SpawnService` quedó como dueño exclusivo de disponibilidad, objetivo activo, reservas, cooldown y rotación; `CollectibleService` solo valida el contacto y concede progreso.
+- Toy Room usa 12 instancias persistentes, 10 activas y 2 en reserva; el respawn reutiliza el pool y evita reactivar inmediatamente el mismo punto consumido.
+- El mínimo configurable es 4 objetos alcanzables con el Stickiness de entrada. `Spawn_09` funciona como reserva de entrada para restaurar ese mínimo tras un consumo.
+- Pruebas Play superadas: arranque limpio, `12 total / 10 activos / 2 reservas / 4 elegibles`, pickup real, retorno a 10 activos, rotación hacia otra reserva y conteo constante de 12 instancias.
+- La primera ejecución de prueba detectó que podía reaparecer el mismo spawn; se añadió exclusión explícita del handle consumido y la regresión posterior quedó verde.
+- No hubo errores del juego en consola. El nuevo `Workspace.StuckToYou.Zones.Lobby.Geometry` se conservó y no se registró como zona jugable.
+- Siguiente paso: construir Bedroom y Kitchen reutilizando exactamente este contrato de zona, sin duplicar scripts ni lógica.
+
+**Notas de avance — 2026-08-03, fase 2 del martes:**
+
+- Se construyeron `Bedroom` y `Kitchen` como salas lineales contiguas a Toy Room, cada una con `Geometry`, `ItemSpawns`, `Collectibles` y `Blockers`; no se duplicaron scripts.
+- Cada sala tiene 12 markers authored, 10 pickups activos, 2 reservas y exactamente 4 objetos alcanzables con su Stickiness de entrada (`50` en Bedroom, `180` en Kitchen).
+- Bedroom usa una Bed de varias piezas con requisito 180; Kitchen usa un Refrigerator con requisito 500. Ambos blockers salen de attributes y tags compatibles con el sistema reusable existente.
+- Prueba real de ruta superada exclusivamente mediante pickups/contactos: Toy Room llegó a 51 y abrió Bedroom; Bedroom llegó a 183 y abrió Kitchen; Kitchen llegó a 503, Level 20 y `CosmicGlue`, y Refrigerator apuntó correctamente a `FinishZone`.
+- Rechazo de Bed probado a Stickiness 0: no hubo absorción, progreso ni cambio de zona.
+- Absorción local probada en Toy Chest, Bed y Refrigerator: ocultos y sin colisión para el jugador, mientras el estado sigue siendo por jugador.
+- Reset probado después de completar la ruta lógica: Stickiness 0, Level 1, `BasicGlue`, `CurrentZoneId=ToyRoom`, pile visual 0 y los tres blockers restaurados.
+- Se detectó que una sola comprobación cliente a los 0.5 s podía perder tags/attributes durante la replicación de tres zonas. `BlockerController` ahora hace tres pases iniciales finitos y cancelables (`0.25/0.75/1.5 s`), sin polling permanente.
+- Estado rojo inicial corregido: todos los BaseParts de un blocker usan el color inelegible de `GameConfig`, y cambian al verde elegible con el mismo contrato.
+- Smoke test final limpio: los tres pools registraron `12/10/4`, los tres blockers aparecieron rojos y no hubo errores del juego en consola.
+- `Lobby` se preservó mientras otra sesión colaborativa añadía geometría; ninguna de sus piezas fue modificada por esta fase.
+- Siguiente paso: completar físicamente `FinishZone`, cerrar los gates como recorrido final y otorgar exactamente una Win con reinicio de vuelta.
+
+**Notas de avance — 2026-08-03, fase 3 del martes:**
+
+- Se construyó `FinishZone` físico detrás de Kitchen, separado del tag `StickyZone` porque no contiene collectibles ni pertenece al contrato de `RoomService`. Incluye `FinishSpawn`, resumen ambiental y `ReplayPad`.
+- Se añadió `FinishService`: escucha el evento genérico de absorción, valida `BlockerId/ZoneId/NextZoneId` desde `GameConfig`, bloquea el cierre por jugador antes de premiar y otorga exactamente una Win mediante `ProgressionService`.
+- La finalización replica `RunCompleted`, Stickiness, Level y tiempo del último recorrido; limpia la pila mediante la API pública de `AttachmentService`, conserva el character y teletransporta al jugador a Finish.
+- El replay reutiliza APIs pequeñas de `ProgressionService`, `BlockerService` y `AttachmentService`: conserva Wins, reinicia progreso/wrap/zona, restaura los tres blockers, limpia visuals y vuelve al `StartSpawn` sin recargar el character.
+- Rechazo probado: tocar Replay antes de terminar no cambió Wins, progreso ni estado; tocar Refrigerator tras el reset con Stickiness 0 tampoco concedió premio ni cambió de zona.
+- Ruta completa probada con contactos reales: `50 → ToyChest → 180 → Bed → 503/Level 20/CosmicGlue → Refrigerator`; resultado: una Win, resumen válido, pile 0 y teletransporte a Finish. Cinco contactos adicionales con Refrigerator mantuvieron Wins en 1.
+- Replay probado: Wins 1 se conservó, el run volvió a `0/Level 1/BasicGlue/ToyRoom`, los blockers reaparecieron rojos y un pickup de requisito 0 inició correctamente una nueva vuelta. Muerte/respawn también limpió la vuelta sin perder la Win de sesión.
+- Teardown verificado: las tres carpetas runtime `Collectibles` quedaron vacías en Edit. Smoke final limpio en servidor y cliente, sin errores del juego. `Lobby` siguió fuera de nuestras escrituras mientras su contenido cambiaba en paralelo.
+- Siguiente paso: añadir el tutorial ambiental mínimo y ejecutar/registrar las 10 vueltas completas de balance del martes.
+
+**Notas de avance — 2026-08-03, fase 4 del martes:**
+
+- Se añadió una sola instrucción ambiental frente al `StartSpawn`: `TOUCH SMALL OBJECTS → GROW → ABSORB THE GREEN BLOCKER`. Está a 9.6 studs del spawn, no tiene colisión/touch y reutiliza la ruta visual amarilla existente.
+- Al preparar la medición se corrigió una semántica engañosa: `LastZoneSeconds` medía tiempo acumulado de vuelta. `BlockerService` ahora mantiene relojes separados de zona y run; el payload expone `ZoneSeconds` y `RunSeconds`, y Finish usa el total correcto.
+- Se ejecutaron 10 vueltas completas consecutivas en el mismo servidor mediante contactos reales de física, sin inyectar Stickiness: 10/10 terminaron en 503, otorgaron exactamente una Win y completaron replay.
+- Línea base automatizada acelerada (mínimo / promedio / máximo): Toy Room `10.53 / 11.66 / 13.63 s`; Bedroom `8.88 / 9.80 / 10.72 s`; Kitchen `6.13 / 6.82 / 7.62 s`; total `27.20 / 28.28 / 29.28 s`.
+- Promedio de pickups exitosos por vuelta: Toy Room `36.2`, Bedroom `28.7`, Kitchen `21.2`. Las diferencias entre vueltas vienen de la selección/rotación real del pool.
+- Después de 10 replays: Wins 10, Stickiness 0, Level 1, pile 0, blockers visibles/rojos y cada zona restaurada a `12 instancias / 10 activas`. El ReplayPad en una vuelta incompleta no mutó el estado.
+- Estos tiempos son una regresión acelerada del sistema, no una medición de experiencia humana. No se cambió balance con datos artificiales; siguen pendientes una vuelta manual de 3–5 min y la confirmación de Toy Room en 45–60 s con jugador nuevo.
+- Teardown limpio: las tres carpetas `Collectibles` quedaron vacías en Edit y la consola final no mostró errores del juego. `Lobby` continuó cambiando en paralelo y no fue modificado.
+- Siguiente paso: iniciar el miércoles con persistencia de Wins/Rebirths y Rebirth 0 → 1, manteniendo el playtest humano como validación pendiente.
+
+**Entregable del martes:** una vuelta completa de 3–5 min, desde el primer pickup hasta la Win, sin comandos ni intervención manual.
+
+**Checkpoint de diversión:** jugar 20 min con cubos. Si no provoca empezar otra vuelta, ajustar densidad, velocidad de ganancia, tamaño de la pila y feedback antes de agregar sistemas.
+
+### Miércoles 5 — Progresión, datos y multijugador (8–10 h)
+
+- [x] Persistir Wins y Rebirths.
+- [x] Implementar Rebirth 0 → 1 y verificar el multiplicador de 1.5x.
+- [x] Finish / Rest Zone con resumen y replay.
+- [x] Probar respawn, reconexión, cierre del servidor y datos faltantes.
+- Probar con 3–6 jugadores o clientes simulados.
+- Corregir carreras de `Touched`, escasez de pickups y limpieza de attachments.
+- Añadir los siete eventos analíticos.
+- Revisar HUD en teléfono, tablet y desktop.
+
+**Notas de avance — 2026-08-03, miércoles fase 1:**
+
+- Se creó `DataService` con perfil versionado, normalización de datos faltantes, `UpdateAsync`, session lock, reintentos configurables, autosave cancelable, guardado al salir/cerrar y backend mock limitado a Studio. En producción usa `DataStoreService` real.
+- `ProgressionService` carga Wins/Rebirths desde el perfil, mantiene Stickiness como dato de vuelta y guarda cambios persistentes. Rebirth se guarda inmediatamente además del autosave.
+- Rebirth solo se acepta en servidor después de completar la vuelta, alcanzar el level cap y no superar `MaximumImplementedRebirth`; una segunda solicitud queda rechazada.
+- Se añadió `StarterGui.StickyHUD` como plantilla authored visible en Explorer. `HUDController` ya no crea UI en runtime: valida y enlaza `ProgressPanel`, `RebirthPanel` y `RebirthButton` desde la plantilla.
+- Prueba de rechazo superada: solicitar Rebirth al inicio mantuvo `Rebirths=0`, `Stickiness=0` y `RunCompleted=false`.
+- Prueba exitosa superada mediante pickups y blockers reales: `503 Stickiness / Level 20 / Win 1`; Rebirth produjo `Rebirths=1`, conservó `Wins=1`, reinició `Stickiness=0`, `Level=1`, zona `ToyRoom`, pile 0 y ocultó el panel.
+- Verificación de multiplicador superada: el primer pickup Basic Glue después de Rebirth otorgó exactamente `+1.5 Stickiness`.
+- Guardado mock verificado con snapshot `Wins=1 / Rebirths=1`; cierre y teardown dejaron cero collectibles runtime y consola limpia en el smoke final.
+- Bugs encontrados por prueba y corregidos: carrera entre carga y espera del perfil; `CurrentZoneId` permanecía en FinishZone después de Rebirth; espera del HUD podía emitir una advertencia antes de que StarterGui terminara de clonarse.
+- Pendiente para cerrar el bloque de datos: prueba controlada contra DataStore cloud con salida/reentrada real, caso de fallo de API y reconexión. No se activó desde Studio para no tocar datos reales del usuario.
+
+**Notas de avance — 2026-08-03, miércoles fase 2:**
+
+- El probe read-only confirmó que el place ya tenía acceso a DataStore cloud; no se modificaron ajustes de seguridad.
+- Se usó el almacén aislado `StuckToYouProfile_CloudValidation_20260803_v1`, separado del perfil de producción. Un perfil ausente cargó con defaults seguros `Wins=0 / Rebirths=0`.
+- Prueba cloud completa: una vuelta real guardó `Wins=1 / Rebirths=1`; se cerró el servidor, se abrió uno nuevo y recuperó exactamente ambos valores, `Multiplier=1.5`, `Stickiness=0`, `Level=1` y zona `ToyRoom`.
+- Respawn aprobado después de reconectar: character reemplazado, Wins/Rebirths y multiplicador conservados, run/pile/blockers limpios.
+- Se añadió una inyección de fallos exclusiva del mock de Studio y configurable en `GameConfig.Data.StudioMockFailuresBeforeSuccess`.
+- Retry aprobado: dos fallos consecutivos cargaron correctamente en el tercer intento. Fallo terminal aprobado: tres fallos marcaron `DataLoadFailed=true` y no inicializaron progreso ni defaults guardables.
+- La configuración final fue restaurada a `StuckToYouProfile_v1`, `UseStudioMockStore=true` y cero fallos inyectados. Smoke final limpio y Studio en Edit.
+- Siguiente paso: prueba de 3–6 jugadores/clientes simulados, con atención a carreras de `Touched`, disponibilidad de pickups y limpieza individual de attachments.
+
+**Entregable del miércoles:** todos los sistemas del MVP existen y funcionan en un server multijugador. A partir de aquí se viste y se pule; no se inventan features.
+
+**Notas de avance — 2026-08-03, objetos per-player (inserción de alcance pedida por diseño):**
+
+Detalle completo del diseño en `PLAN_PER_PLAYER_OBJECTS.md`. Resumen de lo construido y probado:
+
+- Sistema viejo retirado: `SpawnService`, `CollectibleService` y `CollectibleFactory` eliminados. El servidor ya no crea ni replica ningún collectible.
+- Nuevos módulos servidor: `ItemPlacementService` (slots por sala, cacheados), `ItemPlanner` (reparto equitativo, puro), `RoomSettingsReader` (lee la config authored del Workspace), `RoomItemService` (sesión por jugador y sala), `PickupService` (validación autoritativa).
+- Nuevos módulos cliente: `CollectibleRenderer` (clona plantillas authored con pool local) y `CollectibleController` (sync + un solo loop throttled de proximidad). `ObjectLabelController` reescrito para usar Highlights pooled y no repintar el arte.
+- Contrato `ConnectCollected` conservado: `AttachmentService`, `ProgressionService`, `BlockerService` y `FinishService` no se tocaron.
+- Plantillas authored creadas en `ReplicatedStorage/Assets/Collectibles` (9 props greybox + `_RequirementBillboard`). Esto además corrige la deuda con la regla 5 de `AGENTS.md`, ya que el cubo y su billboard se construían por código.
+- Config authored por sala creada en `Zones/<Zone>/RoomSettings` y volumen `PlacementArea` por sala.
+
+Pruebas ejecutadas en Studio (Play, un jugador):
+
+- Slots: 24 por sala con `TotalObjects=12` y separación 8; separación real mínima medida 8.4–9.0; generación 0–2 ms. Cero slots dentro del Toy Chest, distancia mínima al borde del chest 8.5 studs.
+- Capacidad: 46 slots con separación 8, 73 con separación 6 y 103 con separación 5 (50–150 ms, repartidos en frames). Margen suficiente para subir bastante `TotalObjects`.
+- Reparto: 2400 combinaciones (3 salas × 4 totales × 200 seeds) con total exacto siempre y mínimo de elegibles ≥ 4 en todos los casos. 24 objetos / 3 tipos → 8/8/8; 25 → 9/8/8.
+- Pickup elegible: 0.33 s desde que el jugador llega; Stickiness sube y el objeto desaparece solo para él.
+- Rechazo: objeto de requisito 25 con Stickiness 0 no se recoge y emite `NEED X MORE` a la cadencia del cooldown del servidor.
+- Respawn: la sala vuelve a su objetivo a los ~2 s, en un slot distinto.
+- Ciclo de vida: cambio de sala carga y descarga, `FinishZone` deja la sesión en cero, muerte reinicia con layout nuevo y Stickiness 0, sin tareas ni slots huérfanos.
+- Optimización confirmada: con el jugador en ToyRoom, `slots Bedroom: not generated` y `slots Kitchen: not generated`. Las salas sin jugadores no calculan nada.
+- Servidor limpio: cero instancias tagueadas `StickyCollectible`, cero hijos en las carpetas `Collectibles`, y los 36 markers `ItemSpawns` ocultos en runtime.
+- Rechazos registrados en la prueba: solo `TooFar=12`, todos provocados por teletransportes del script de prueba antes de que replicara la posición del personaje. Ningún rechazo espurio.
+
+**Ajustes posteriores — mismo día:**
+
+- `TotalObjects` subido a 24 en las tres salas, con `MinSeparationStuds` en 8. Verificado: 24 objetos renderizados por jugador, 46 slots en ToyRoom, 22 libres para respawn.
+- Bug corregido: cambiar `TotalObjects` no invalidaba el cache de slots. El tamaño del pool de slots se deriva de `TotalObjects`, así que subirlo sobre una sala ya cacheada dejaba cero slots libres y el respawn se quedaba sin sitio.
+- Causa de que los cambios manuales "no se vieran": los valores sí se guardaban, pero `MinSeparationStuds` estaba en 22 en ToyRoom. Con esa separación apenas caben ~7 posiciones en la sala, así que subir `TotalObjects` no producía más objetos. Es el caso que el `warn` de `ItemPlacementService` ya reporta en consola.
+- **La pila ahora usa el mismo objeto recogido.** `AttachmentService` clona la plantilla authored del objeto en lugar de crear un cubo genérico. Tamaño normalizado por `TargetMaxSizeStuds` (1.6) multiplicado por el tier de requisito, así un ToyCar authored de 3.2 studs y un ToyBlock de 2.5 quedan ambos en 1.20 pegados al personaje. El prop conserva su color.
+- Verificado: orden de recogida y orden de la pila coinciden 1:1 (`ToyBlock, ToyBlock, ToyBall, ToyCar, ToyBall, ToyBlock, ToyCar`); con 30 attachments y paso de crecimiento 5, cero partes sin soldar y distancia máxima al personaje de 2.48 studs; el reset devuelve todo al pool.
+
+**Corrección del feedback de elegibilidad — mismo día:**
+
+- Roblox renderiza **un máximo de 31 `Highlight` por cliente**, los deshabilitados también ocupan slot, y no hay API para subirlo. La petición al DevForum sigue abierta sin respuesta de staff. La documentación oficial menciona 255 slots de instancia, pero el límite de render efectivo que reportan los desarrolladores es 31.
+- El diseño anterior limitaba los Highlights a los 16 objetos más cercanos, así que con 24 objetos por sala había 8 sin marcar. Un estado parcial se lee peor que ningún estado.
+- Sustituido por atenuar los colores propios del prop: elegible al color authored, no elegible al mismo color multiplicado por `IneligibleTintFactor` (0.32). Conserva el tono, así que una esfera se sigue reconociendo como esfera, y no tiene ningún límite de instancias.
+- Se conserva **un solo** `Highlight` como marca del objeto enfocado, con un significado distinto: "este es el que vas a agarrar", no "puedes agarrarlo".
+- Verificado con 24 objetos: cero desajustes entre estado real y estado visual en spawn, junto a un objeto y tras cruzar un tier de requisito.
+- Verificado con **60 objetos**, casi el doble del límite de Highlights: 30 en claro, 30 atenuados, **cero desajustes**, con una única instancia de Highlight en todo el cliente.
+
+**Legibilidad y reciclaje de la pila — mismo día:**
+
+- Atenuar el color no bastaba para distinguir lo recogible de lo no recogible. Los objetos no elegibles ahora son además semitransparentes (`IneligibleTransparency = 0.4`). Elegible = color pleno y sólido. Verificado con 24 objetos: 6 sólidos, 18 semitransparentes, cero desajustes.
+- Límite de la pila subido de **30 a 36** (+20%). El contrato entre `MaxVisualAttachments` y los anillos se mantiene con un anillo nuevo de 6 slots a altura −2.05, por debajo de la cabeza para no tapar la cámara.
+- **Reciclaje FIFO:** al llegar a 36, cada nuevo pickup expulsa el más antiguo y ocupa su mismo slot. Antes los pickups por encima del tope simplemente no se pegaban. Verificado con 62 recogidas seguidas: la pila se queda exactamente en 36 y siempre muestra lo más reciente.
+- Dos animaciones cortas, movidas por un único `Heartbeat` compartido en lugar de una tarea por pieza:
+  - **Vuelo:** el objeto recogido viaja desde su posición en el suelo hasta su slot en el cuerpo, con arco y giro. El destino se recalcula cada frame, así que persigue al jugador aunque se esté moviendo.
+  - **Fundido:** la pieza expulsada se despega, se encoge y se desvanece en `Workspace.StickyDiscards`, desacoplada de la vida del personaje para que un reset a mitad del fundido no destruya una instancia del pool.
+- Verificado sin fugas: tras 62 recogidas y un reset, `StickyDiscards` queda en 0, `animating=0` y 40 instancias reutilizadas en el pool.
+- `ClientMain` ahora aísla el arranque de cada controlador con `pcall`. Un `WaitForChild` lento de `StarterGui` hacía fallar `HUDController` y con él se caía toda la cadena, dejando al jugador sin objetos. El fallo se sigue reportando en consola.
+
+**Blockers pegados al jugador — mismo día:**
+
+- Al absorber un blocker, una copia reducida del propio modelo se pega al jugador como cualquier otro objeto, volando desde la puerta hasta el cuerpo. Refuerza la lectura de que hay que pegarse los bloqueadores para poder avanzar entre salas.
+- Tamaño mayor que un collectible normal (`BlockerSizeMultiplier = 1.75`, es decir 2.8 studs frente a 1.2–2.16) porque es el trofeo que abre la sala.
+- Exentos del reciclaje FIFO (`ProtectBlockerAttachments`). Con 3 blockers por vuelta cuesta 3 slots de 36, y evita que el trofeo se pierda a las 36 recogidas siguientes.
+- El clon se sanea antes de entrar al mundo: se le quitan tags, los atributos `BlockerId`/`NextZoneId` y los `BillboardGui`. Sin eso `BlockerController` habría descubierto la copia sobre el jugador como un blocker real, porque escanea `Workspace` por el atributo `BlockerId`.
+- `AttachmentService` se refactorizó a una función `attach` común con dos entradas: `PickupService.ConnectCollected` y `BlockerService.ConnectAbsorbed`. Sin ciclo de dependencias: `BlockerService` no requiere `AttachmentService`.
+- Verificado: Toy Chest y Bed pegados a la vez (3.5 studs cada uno con la pila crecida), `tags=0`, `BlockerId=nil`, sin billboards; el Toy Chest sobrevivió a 40 recogidas posteriores que sí expulsaron piezas normales; el reset devuelve también los trofeos al pool y `StickyDiscards` queda en 0.
+
+**Bug de blockers a medio desaparecer — mismo día:**
+
+- Síntoma reportado: al absorber la cama del Bedroom solo desaparecía una parte del mueble; el resto se quedaba plantado.
+- No era un problema del modelo. `Bed` es un Model correcto con sus 5 partes dentro (Frame, Mattress, Blanket, Pillow, Headboard) y el Headboard es el que sella el hueco de la puerta.
+- Causa real: `BlockerController` capturaba la lista de partes con un único `GetDescendants()` al descubrir el Model. Un Model y sus partes no llegan necesariamente al cliente en el mismo frame, así que una lista incompleta dejaba partes sin ocultar, y los tres pases de reintento se salían porque `records[instance]` ya existía. El Bed es el más expuesto por tener 5 partes y estar más lejos del spawn. Intermitente por definición.
+- Arreglo: la lista se auto-repara. `refreshParts` adopta partes nuevas en cada actualización y una conexión `DescendantAdded` las incorpora en cuanto llegan, aplicándoles al momento el estado que ya tiene el resto del blocker.
+- Verificado reproduciendo el fallo a propósito: con el cliente ya siguiendo la cama, se le añadió desde el servidor una parte nueva (`LateLeg`). Al absorber, se ocultaron las 6 partes y `STILL VISIBLE` quedó vacío. El trofeo se pegó con las 6 partes.
+- `HUDController` esperaba su plantilla 10 s. En arranques pesados de Studio eso expiraba y el jugador se quedaba sin HUD; subido a 30 s. La plantilla ausente de verdad sigue fallando de forma explícita.
+
+**Revisión de optimización — mismo día:**
+
+- `AttachmentService` tenía un `Heartbeat` permanente que recorría una lista vacía en cada frame cuando no había nada animándose. Contradecía la regla 2 de `AGENTS.md` ("ningún loop frecuente sin condición de salida"). Ahora la conexión se crea al empezar una animación y se corta cuando la última termina.
+- `ObjectLabelController.Apply` ordenaba la lista completa de objetos en cada tick (10 veces por segundo, hasta 60 elementos) solo para quedarse con el más cercano. Sustituido por un único recorrido que aplica el estado y busca el mínimo a la vez. De paso deja de mutar la lista que recibe.
+- `BlockerController` llamaba a `refreshParts` en cada actualización, con un `GetDescendants()` por blocker en cada cambio de Stickiness. Conectando `DescendantAdded` **antes** del primer escaneo desaparece la ventana que hacía falta cubrir, así que el refresco periódico sobra.
+- Revisado y considerado aceptable sin cambios: el loop de proximidad del cliente asigna una tabla por objeto y tick (~600 tablas pequeñas por segundo con 60 objetos), muy por debajo de lo que molesta al GC de Luau y a cambio el código queda legible.
+- Verificado tras los tres cambios: cama absorbida completa incluida la parte tardía, cofre completo, pila 36/36 con `animating=0`, tres salas con slots generados y consola limpia.
+
+**Pedestales de Win y pasillos entre salas — mismo día:**
+
+- Pasillo corto authored después de la puerta de cada sala, en `Workspace/StuckToYou/Corridors/<Zona>Exit`: dos paredes laterales de 22 studs de ancho, una franja de suelo y el pedestal centrado con 7,5 studs libres a cada lado para poder rodearlo.
+- Premios 1 / 3 / 10 Wins según la sala limpiada, editables a mano en el atributo `WinReward` del pedestal (gana sobre el valor por zona de `GameConfig`).
+- Pisarlo cobra las Wins y devuelve al inicio con la vuelta reiniciada. Pasar de largo conserva la vuelta y deja optar al pedestal mayor de la sala siguiente. Es el bucle de riesgo/recompensa del documento de diseño.
+- `WinPedestalService` valida en servidor que el jugador limpió esa zona en la vuelta actual (`CompletedZone_<ZoneId>`), con lock por jugador y debounce contra pagos dobles.
+- `FinishService.ReturnToStart` centraliza reinicio y teletransporte; lo comparten ReplayPad, Rebirth y pedestales.
+
+Dos consecuencias necesarias para que el sistema sea coherente, ambas detrás de flags reversibles:
+
+- `GameConfig.Wins.AwardOnRunCompletion = false`. Absorber el Refrigerator ya no da una Win automática; si no, pagaría dos veces junto a su propio pedestal de 10.
+- `GameConfig.Finish.TeleportOnCompletion = false`. Antes el jugador era teletransportado a `FinishSpawn` 0,65 s después de absorber el Refrigerator, lo que lo dejaba **al otro lado** del último pedestal y lo hacía inalcanzable. Ahora sale caminando y elige. La FinishZone conserva su papel para quien pasa de largo: ReplayPad y panel de Rebirth.
+
+Pruebas ejecutadas:
+
+- Pisar el pedestal sin haber limpiado la sala: no paga nada y no reinicia.
+- Limpiar Toy Room y cobrar: `Wins 0 → 1`, Stickiness a 0, pila vacía, jugador de vuelta en el StartSpawn.
+- Limpiar Toy Room, **pasar de largo** el pedestal de 1: Wins sigue en 0 y la vuelta continúa con Stickiness 51 hacia Bedroom.
+- Limpiar Bedroom y cobrar el de 3: `Wins 0 → 3` y reinicio correcto.
+- Vuelta completa hasta Stickiness 503, absorber el Refrigerator: el jugador **se queda en la Kitchen** (`posZ=-218`, no teletransportado), `RunCompleted=true` y las Wins no cambian.
+- Cobrar el pedestal de 10: `Wins 3 → 13` y reinicio correcto.
+- El texto del pedestal se construye clonando la plantilla authored `_RequirementBillboard`; una BillboardGui equivalente creada a mano no renderizaba su texto.
+
+Pendiente, no ejecutable desde esta herramienta:
+
+- **Prueba con 2 jugadores en la misma sala** (`Test > Clients and Servers > 2 Players`). Es la verificación directa de la petición de diseño. Pasos en `MANUAL_TEST_CHECKLIST.md`.
+- Borrar `ServerScriptService.TempDiagnostics` antes de publicar.
+
+### Jueves 6 — Arte y gratificación (8–10 h)
+
+- Elegir un único lenguaje visual: low-poly cartoon, colores saturados, siluetas grandes.
+- Reemplazar cubos por objetos temáticos de una sola pieza.
+- Vestir las tres zonas sin cambiar la ruta.
+- Auditar y borrar scripts de todos los assets importados.
+- Crear variantes de SFX de pickup, sonidos de blocker, level up, win y rebirth.
+- Añadir partículas, popups, pulsos y camera shake moderado.
+- Hacer visible el cambio de cada Sticky Wrap.
+- Pasada de iluminación y señalización.
+- Prueba de rendimiento con el máximo de attachments.
+
+**Entregable del jueves:** alguien puede entender y disfrutar el juego sin explicación del creador.
+
+### Viernes 7 — Playtest, cortes y publicación (8–10 h)
+
+#### Mañana
+
+- Implementar leaderboard global solo si no quedan bugs P0/P1.
+- Crear icono y thumbnail centrados en la fantasía de una pila enorme.
+- Revisar onboarding, móvil, audio, reset y reconexión.
+- Publicar como no listado antes del playtest.
+
+#### Playtest
+
+- 6–8 personas; no explicarles la regla.
+- Observar primer pickup, primer rechazo, cada blocker y decisión de replay.
+- Preguntar solo al final: “¿qué estabas intentando hacer?” y “¿qué querías hacer después?”.
+- Capturar tiempos y abandonos, no solo opiniones.
+
+#### Tarde
+
+- Arreglar únicamente fallos observados y valores de `GameConfig`.
+- Repetir smoke test de punta a punta en móvil y PC.
+- Pasar a público o dejar no listado si existe un bug que pierda datos, impida completar o rompa móvil.
+
+**Entregable del viernes:** enlace jugable y una lista corta de aprendizajes medidos para la semana 2.
+
+---
+
+## 9. Prioridad de bugs y palancas de recorte
+
+### Bloquean publicación
+
+- No se puede recoger o absorber un blocker.
+- Stickiness, Wins o Rebirth se pueden otorgar desde el cliente.
+- Una vuelta no puede terminar.
+- Los datos se pierden o duplican.
+- El personaje queda inmóvil, sale disparado o la cámara queda tapada.
+- La interfaz principal no se puede leer en móvil.
+
+### Se arreglan si hay tiempo
+
+- Un objeto visual queda ligeramente mal orientado.
+- Una transición carece de animación especial.
+- Falta variedad de props o audio.
+- Un leaderboard tarda en actualizar.
+
+### Cortar en este orden si hay retraso
+
+1. Leaderboard global; conservar `leaderstats` local.
+2. Rebirth visual elaborado; conservar botón y multiplicador.
+3. Cosmic Glue como apariencia única; conservar su valor.
+4. Dressing detallado de Kitchen.
+5. Bedroom completa: fusionarla visualmente con Toy Room, pero mantener sus umbrales y blocker.
+
+Nunca cortar:
+
+- pickup automático;
+- requisito rojo/verde;
+- attachment visual;
+- los tres blockers funcionales;
+- vuelta completa y Win;
+- HUD móvil;
+- validación del servidor.
+
+---
+
+## 10. Checklist de “terminado”
+
+### Funcional
+
+- [ ] Un jugador nuevo recoge algo en menos de 10 s.
+- [x] Todos los pickups validan requisito en servidor.
+- [x] Los objetos reaparecen y nunca se agota una zona.
+- [x] Los tres blockers abren su siguiente tramo.
+- [x] Level y wrap cambian en los umbrales correctos.
+- [x] Completar Kitchen otorga exactamente una Win.
+- [ ] Rebirth reinicia la vuelta y conserva Wins.
+- [ ] Salir y volver conserva Wins y Rebirths.
+
+### Experiencia
+
+- [ ] El blocker se ve desde el inicio de cada zona.
+- [ ] Rojo/verde se comprende sin explicación.
+- [ ] La pila crece sin tapar cámara ni movimiento.
+- [ ] Cada pickup tiene respuesta visual y sonora inmediata.
+- [ ] La vuelta inicial dura 3–5 min.
+- [ ] Hay una razón visible para comenzar otra vuelta.
+
+### Técnico
+
+- [ ] Probado en móvil y desktop.
+- [ ] Probado con 6 jugadores o simulación equivalente.
+- [ ] No hay scripts desconocidos de Creator Store.
+- [ ] No hay números de balance fuera de `GameConfig`.
+- [ ] No hay remotes que acepten premios calculados por el cliente.
+- [x] El límite de attachments se respeta al morir, salir y reiniciar.
+- [ ] Analítica registra el embudo completo.
+
+---
+
+## 11. Primeras acciones de hoy
+
+No comenzar buscando assets. El orden exacto es:
+
+1. Crear `GameConfig` con los números de las secciones 3 y 4.
+2. Hacer Toy Room con piso, spawn, 12 puntos y Toy Chest.
+3. Conseguir que un cubo con requisito 0 otorgue +1 y se pegue.
+4. Añadir label rojo/verde.
+5. Añadir respawn de 2 s.
+6. Repetir hasta Stickiness 50 y absorber Toy Chest.
+7. Solo después, mejorar el aspecto del pegado.
+
+La primera prueba útil de hoy no es “¿se ve bonito?”, sino:
+
+> ¿Puedo pasar 60 segundos tocando cubos y sentir que mi personaje se convierte en una pila cada vez más absurda?
+
+---
+
+## 12. Decisiones provisionales por confirmar
+
+Estas decisiones no bloquean el trabajo de hoy:
+
+1. **Tres zonas en lugar de cuatro.** Neighborhood queda para semana 2; es el recorte que protege la calidad del loop.
+2. **Wraps automáticos.** Se desbloquea y equipa el más fuerte por nivel; una selección manual implicaría inventario y UI.
+3. **Sin obstáculos adicionales.** Los blockers son los obstáculos del MVP. Un hazard que empuje o quite objetos contradice la experiencia de una sola acción.
+4. **Finish / Rest Zone sin AFK.** Sirve como cierre y replay, no como economía pasiva.
+5. **Stickiness como único término.** Se elimina “Size” del HUD y de los criterios para no enseñar dos palabras para la misma progresión.
+
+Si se cambia alguna de estas decisiones, debe hacerse antes del martes al mediodía; después de ese punto solo se ajustan configuración, contenido y presentación.
+
+---
+
+## 13. Semana 2, si el prototipo valida
+
+1. Neighborhood como cuarta zona y landmark final.
+2. Sticky Collection de objetos únicos absorbidos.
+3. Selección manual y cosméticos de Sticky Wraps.
+4. Más capas de Rebirth y balance de largo plazo.
+5. Leaderboards adicionales: mejor tiempo, mayor Stickiness, más Rebirths.
+6. Monetización coherente con el loop, sin interrumpir el movimiento.
+7. Experimentos de retención basados en el embudo real, no en suposiciones.
+
+**Regla final:** cualquier feature nueva debe hacer más claro o más satisfactorio el ciclo tocar → pegar → crecer → absorber. Si lo interrumpe, espera.
