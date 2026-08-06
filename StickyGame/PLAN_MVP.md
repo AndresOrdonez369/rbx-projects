@@ -190,15 +190,15 @@ Absorber el Refrigerator:
 
 Rebirth:
 
-- requiere el nivel máximo actual;
+- requiere el nivel máximo actual **y nada más**: no exige terminar la vuelta;
 - reinicia Stickiness a 0 y Level a 1;
 - reinicia los Sticky Wraps al Basic Glue;
 - conserva Wins;
 - suma `Rebirths += 1`;
 - aumenta permanentemente el multiplicador en `+0.5x`;
-- registra que el siguiente level cap será 25.
+- sube el level cap 5 niveles y devuelve al jugador al inicio.
 
-En esta semana basta con validar Rebirth 0 → 1. Después del primer Rebirth se puede repetir la ruta con el multiplicador, pero el segundo Rebirth permanece deshabilitado hasta que existan los niveles 21–25 y Neighborhood. No se muestra una barra imposible de completar ni se construye una economía profunda de rebirth.
+El Rebirth es repetible (2026-08-06). El level cap es la fórmula `20 + 5 × Rebirths` y los niveles por encima del 20 se generan desde `GameConfig.LevelExtension`, así que dejó de existir el tope duro de un solo Rebirth. Con los valores actuales hay 17 Rebirths disponibles antes de que el techo salga de los niveles generados; a partir de ahí la pantalla muestra `MAX REBIRTH` en vez de pedir un nivel imposible.
 
 ---
 
@@ -959,3 +959,275 @@ Si se cambia alguna de estas decisiones, debe hacerse antes del martes al mediod
 7. Experimentos de retención basados en el embudo real, no en suposiciones.
 
 **Regla final:** cualquier feature nueva debe hacer más claro o más satisfactorio el ciclo tocar → pegar → crecer → absorber. Si lo interrumpe, espera.
+
+---
+
+## 14. Registro — 2026-08-06, Rebirth con pantalla propia
+
+### Construido
+
+- **Botón `RebirthOpenButton` en el HUD** con `ReadyBadge`: un punto verde que se enciende solo cuando el Rebirth está disponible. Abre la pantalla en cualquier momento de la partida.
+- **`RebirthScreen` authored** en `StarterGui.StickyHUD`: modal con fondo atenuado, título, X de cierre, comparación *Before → After* de multiplicador y level cap, aviso de reset, barra de progreso hacia el nivel requerido, botón de Rebirth y línea de mensaje. Toda la jerarquía es editable desde Explorer; el código solo la enlaza.
+- **`RebirthController`** (cliente): dueño de la pantalla y del remote. No concede nada; lee atributos replicados, pide al servidor y pinta la respuesta. `HUDController` soltó el panel viejo y conserva solo el aviso de la línea de feedback.
+- **`GameConfig.LevelExtension`**: los 20 umbrales afinados a mano se conservan y los niveles 21–100 se generan al cargar el módulo continuando el último salto con un crecimiento del 10 %.
+- **Level cap por fórmula**: `GameConfig.GetLevelCap` = `BaseLevelCap + rebirths × LevelCapPerRebirth`, con `LevelCapOverrides` para excepciones a mano. Devuelve `nil` si el techo cae fuera de los niveles generados, y `GameConfig.GetMaximumRebirth()` sustituye al viejo `MaximumImplementedRebirth` en `ProgressionService` y `DataService`.
+- **Requisito alineado con el diseño**: `FinishService.requestRebirth` dejó de exigir `RunCompleted`. Se añadió `GameConfig.Rebirth.RequestDebounceSeconds` porque el botón ya está disponible durante toda la partida.
+
+### Probado en Studio
+
+| Prueba | Resultado |
+| --- | --- |
+| Enlace de la plantilla authored | Los cuatro hijos del HUD presentes; pantalla arranca oculta |
+| Rechazo en Level 1 | `Denied / LevelRequired`; `Rebirths`, `Stickiness` y `Level` sin mutar |
+| Objeto por encima del requisito | Pickup rechazado (objeto de 25 con Stickiness 0) |
+| Ruta real hasta el cap | 88 pickups reales → `503 / Level 20 / CosmicGlue`, con `RunCompleted = false` |
+| Abrir con el botón del HUD | Clic real de ratón → `RebirthScreen.Visible = true` |
+| Rebirth 0 → 1 con el botón real | `Rebirths 1`, `2.0x`… ver fila siguiente; Stickiness 0, Level 1, wrap `BasicGlue`, Wins intactas, zona `ToyRoom`, pila 0 piezas, teleport al inicio, modal cerrado |
+| Multiplicador aplicado | Primer pickup real posterior otorgó exactamente `+1.50` |
+| Rebirth 1 → 2 (antes imposible) | 71 pickups → Level 25 → `Rebirths 2`, multiplicador `2.0x`, cap nuevo 30 |
+| Persistencia | `DataLastSavedRebirths = 2`; el clamp viejo de 1 ya no lo recorta |
+| Anti-spam del remote | 10 peticiones seguidas → 1 sola respuesta; `Rebirths` sin cambios |
+| Cierre con la X | Clic real → `RebirthScreen.Visible = false` |
+| Teardown | Studio volvió a Edit sin errores ni warnings propios |
+
+### Pendiente explícito
+
+- ~~**Wins tras Rebirth** con valor distinto de cero~~ — comprobado el 2026-08-06: `Wins 1` conservada a través del Rebirth.
+- **Balance de los niveles 21+**: la curva generada es mecánica, no diseñada. El nivel 100 pide ~1.25 M de Stickiness. Sirve para que el Rebirth sea repetible; hay que afinarla con playtests.
+
+### Corrección del mismo día — el Level ya no cae al reiniciar la vuelta
+
+El Level no se guardaba, se derivaba de la Stickiness, así que cobrar en un pedestal lo devolvía a 1. Ahora es la marca más alta del ciclo de Rebirth: `ResetRun` solo toca la Stickiness y la zona, y únicamente `TryRebirth` devuelve Level y Wrap al principio. El Sticky Wrap se conserva con él, así que cada vuelta posterior arranca más rápida.
+
+| Prueba | Resultado |
+| --- | --- |
+| Pedestal de 1 Win real, tras absorber el Toy Chest | `Stickiness 183 → 0`, `Level 12` intacto, `SuperGlue` intacto, `Wins 0 → 1`, teleport al inicio, zona `ToyRoom` |
+| Wrap conservado de verdad | Primer pickup posterior otorgó `+8`, no `+1` |
+| El Level sigue subiendo | 12 → 14 en la vuelta siguiente, sin reiniciar la cuenta |
+| Muerte y respawn | `Level 14` y `SuperGlue` conservados; Stickiness a 0 |
+| Rebirth con `Level 20` | `Level 1` y `BasicGlue`, `Wins 1` conservada, multiplicador `1.5x` |
+
+**Consecuencia de diseño a tener presente:** como la Stickiness sí vuelve a 0, subir de nivel exige alcanzar el umbral dentro de una misma vuelta. Cobrar a mitad de camino no acumula hacia niveles altos; lo que deja es velocidad. Es lo que convierte el pedestal en una decisión.
+
+---
+
+## 15. Registro — 2026-08-06, Sticky Wraps comprables con Wins
+
+### Corrección de fondo
+
+El código desbloqueaba los wraps por nivel (`UnlockLevel` 1/5/10/15) y equipaba siempre el más fuerte. El documento de diseño dice lo contrario: **"Wins are used to unlock Sticky Wraps"** y **"The equipped Sticky Wrap determines how much Stickiness the player gains"**. Con el modelo viejo no había nada que equipar y las Wins no se gastaban en nada.
+
+### Construido
+
+- **`Basic Glue` de fábrica**, los otros tres se compran con Wins: `Strong 3`, `Super 10`, `Cosmic 25`. Precios en `GameConfig.StickyWraps.WinCost`.
+- **Equipado manual.** La ganancia por objeto sale del wrap equipado, no del nivel. Comprar equipa (`GameConfig.Wraps.EquipOnPurchase`).
+- **`WrapService`** atiende el remote: valida la forma de la petición y frena el spam. Las reglas (`TryBuyWrap`, `TryEquipWrap`) viven en `ProgressionService`.
+- **Persistencia:** el perfil guarda `OwnedWrapIds` y `EquippedWrapId`. La compra fuerza guardado inmediato porque gasta moneda persistente.
+- **El Rebirth borra lo comprado** y conserva las Wins, como pide el `.md`.
+- **UI authored:** `WrapOpenButton` en el HUD (con punto que se enciende al poder comprar algo) y `WrapScreen` con lista desplazable. Las filas se clonan de la plantilla `_WrapRow`, así que añadir un pegamento es tocar `GameConfig`, no la pantalla.
+- Se retiraron `GameConfig.GetStrongestWrap` y `UnlockLevel`; entraron `GetDefaultWrap`, `IsDefaultWrap` y `GameConfig.Wraps`.
+
+### Probado en Studio
+
+| Prueba | Resultado |
+| --- | --- |
+| Enlace y construcción de filas | Cuatro filas con nombre, ganancia, color y precio correctos |
+| El nivel ya no regala wraps | 80 recogidas de Level 5 → 8 dieron `+1` siempre; antes el nivel habría subido a Strong Glue |
+| Compra con clic real | `Wins 3 → 0`, `StrongGlue` comprado y equipado, guardado inmediato (`DataLastSavedWraps = BasicGlue,StrongGlue`) |
+| La ganancia cambia de verdad | `+3.00` con Strong Glue equipado |
+| Equipar a mano | Volver a Basic Glue devolvió `+1.00`; reequipar Strong volvió a `+3.00` |
+| Comprar sin Wins | `Denied / NotEnoughWins`, estado intacto |
+| Comprar algo ya comprado | `Denied / AlreadyOwned` |
+| Comprar el de fábrica | `Denied / AlreadyOwned` |
+| Equipar algo no comprado | `Denied / NotOwned` |
+| Id inventado (`DiamondGlue`) | `Denied / UnknownWrap` |
+| Acción inválida y payload basura | Ignorados sin respuesta ni cambio de estado |
+| Rebirth borra lo comprado | `Owned BasicGlue,StrongGlue → BasicGlue`, equipado a `BasicGlue`, `Wins 3` conservadas, la tienda se actualizó sola |
+| Teardown | Studio volvió a Edit sin errores ni warnings propios |
+
+### Pendiente explícito
+
+- **Ida y vuelta de los wraps persistidos sin verificar.** El mock de DataStore de Studio vive en el VM del servidor y muere al salir de Play, así que no se puede probar reconectando. La escritura sí está verificada. Falta repetir la prueba cloud con almacén aislado, igual que se hizo con Wins/Rebirths.
+- **Cambio visual del recubrimiento.** El `.md` pide que los wraps "visibly change the player's sticky coating, material, or attachment effect". Hoy el wrap solo se distingue por color en el HUD, en el `+N` y en la tienda. Es trabajo de arte y no entró aquí.
+- **Precios sin playtest.** 3 / 10 / 25 es una escala de arranque elegida contra los pedestales de 1 / 3 / 10. Vive en `GameConfig`.
+
+---
+
+## 16. Revisión — 2026-08-06, el `.md` añade Trails y Auras
+
+Revisión del documento actualizado contra lo implementado. **No se implementaron Trails ni Auras**; solo se corrigió lo que el documento ya obliga y se dejó preparado el punto de enganche.
+
+### Lo que cambió de verdad: la fórmula de ganancia
+
+Antes el documento definía la ganancia como un solo multiplicador:
+
+```
+Stickiness Gain = Wrap Base Gain × (1 + Rebirths × 0.5)
+```
+
+Ahora define una composición de tres capas, y el orden importa:
+
+```
+Stickiness Gain = Wrap Base Gain × [1 + (Rebirths × 0.5) + Trail Addition] × Aura Multiplier
+```
+
+- El **Trail suma** al multiplicador base; no se multiplica aparte.
+- El **Aura multiplica** el resultado ya combinado.
+
+Es la parte fácil de implementar mal, así que la fórmula entera se movió a `GameConfig.GetStickinessGain` y `GameConfig.GetBaseMultiplier`. `ProgressionService` ya no calcula la multiplicación a mano.
+
+### Lo que siguió igual
+
+Base de Sticky Wraps (ganancias +1/+3/+8/+20), Rebirth (`+0.5x`, resetea Stickiness, Level y wraps, sube el techo), Level (lo llena la Stickiness, sin XP aparte), pedestales de Wins (1/3/10) y el hecho de que las Wins no se resetean. Nada de eso obligó a tocar código.
+
+### Corregido
+
+- **Cosmic Glue: 25 → 30 Wins.** El documento ahora fija los precios (`0 / 3 / 10 / 30`) y el 25 era una elección mía anterior.
+- Nuevo atributo replicado `StickinessMultiplier`: el multiplicador efectivo del jugador. Hoy coincide con el del Rebirth; con Trails y Auras dejará de coincidir, y la UI debe leerlo en vez de recalcular la fórmula por su cuenta.
+
+### Preparado para Trails y Auras
+
+`ProgressionService` tiene dos funciones `getTrailAddition(state)` y `getAuraMultiplier(state)` que hoy devuelven el valor neutro de cada uno (`0` y `1`). Son el único punto que hay que cambiar en el cálculo. Para implementar Trails/Auras haría falta, siguiendo el patrón ya montado con los Wraps:
+
+1. `GameConfig.Trails` y `GameConfig.Auras` con id, aporte, bonus de velocidad, radio de recogida, precio y color.
+2. `OwnedTrailIds` / `OwnedAuraIds` y equipados en `PlayerState` y en el perfil de `DataService`, con su normalización contra el catálogo.
+3. `TryBuyTrail` / `TryEquipTrail` y equivalentes de Aura en `ProgressionService`, clonando la forma de `TryBuyWrap`.
+4. Un servicio de remote por tienda, o generalizar `WrapService` a un `CosmeticShopService` con la categoría en el payload.
+5. Pantallas nuevas reutilizando `_WrapRow` y el patrón de `WrapController`.
+6. **Efectos que no toca la fórmula:** el bonus de velocidad va sobre `Humanoid.WalkSpeed` y el de radio sobre `GameConfig.Collection.PickupRadius`, que hoy es una constante global. Ese radio se valida en servidor (`PickupValidationSlack`), así que hacerlo por jugador exige tocar también la validación de `PickupService`.
+
+### Verificado
+
+| Prueba | Resultado |
+| --- | --- |
+| Ejemplo textual del `.md` (Strong Glue, Rebirth 2, Blue Trail, Blue Aura) | `Base = 4.5`, `Gain = 27.0`, exactamente lo que dice el documento |
+| Sin Trail ni Aura, la ganancia no cambia | Idéntica a la fórmula anterior en 6 combinaciones de rebirth y wrap |
+| Pickup real | `+1.00` con Basic Glue en Rebirth 0 |
+| Precio nuevo en la tienda | Cosmic Glue muestra `🏆 30` |
+| Teardown | Consola limpia, Studio de vuelta en Edit |
+
+### Conflicto pendiente de decisión
+
+El documento cambió **cómo se compran los Sticky Wraps**: ahora dice que se compran "*stepping into the respective plate inside the lobby*", y que cambiar de wrap es volver a pisar otra placa. Lo implementado es un botón en el HUD con pantalla. Trails y Auras sí se describen explícitamente como botón en el HUD.
+
+Las reglas de compra y equipado ya viven en `ProgressionService.TryBuyWrap` / `TryEquipWrap`, así que unas placas serían otro llamador de la misma API — el trabajo es el servicio de placas y los modelos authored, no la lógica. Falta decidir si las placas sustituyen a la pantalla o conviven con ella.
+
+---
+
+## 17. Registro — 2026-08-06, placas de Sticky Wrap en el lobby
+
+### Construido
+
+- **Ocho placas en `Zones/Lobby/Geometry`**, identificadas por su firma `7×1×7` en color `(255,176,0)`. Renombradas a `WrapPad_<WrapId>`, tagueadas `WrapPad` y con attribute `WrapId`. Fila baja (`x=-50`) = tiers 1–4, fila alta (`x=-68`) = tiers 5–8, así la escalera sube al subir el escalón. **`Lobby2` quedó intacto.**
+- **`WrapPadService`**: pisar una placa pide ese wrap. Valida contacto con `PlayerCharacterUtil`, aplica debounce por jugador y relee el `WrapId` del atributo en cada toque, para que reasignar una placa a mano en Studio no exija tocar código.
+- **`ProgressionService.RequestWrap`**: punto de entrada único — compra si no lo tienes, equipa si ya lo tienes. Lo usan la placa y la pantalla del HUD, así que no pueden divergir y el cliente ya no decide qué operación toca. Devuelve cuántas Wins faltan.
+- **`WrapPadController`**: clona el cartel authored `Assets/LobbyUI/_WrapPadSign` sobre cada placa y lo pinta con el estado del jugador. La placa equipada se pone verde, la comprable conserva su amarillo y la que no puedes pagar se atenúa. Todo local: "comprado" y "equipado" son estado por jugador.
+- **Cuatro Sticky Wraps nuevos** para llenar las ocho placas: Quantum `+50`/75, Nova `+120`/150, Galaxy `+300`/300, Infinity `+750`/600. Los cuatro del documento no se tocaron.
+- **Pasada de gratificación** en `FeedbackController`: comprar dispara sonido de absorción, ráfaga grande, sacudida y popup `<NOMBRE> UNLOCKED!` en el color del wrap; equipar dispara sonido de subida, ráfaga y popup con el nombre; no poder pagar dispara el sonido de rechazo y el popup `NEED N MORE WINS`.
+
+### Balance de los cuatro nuevos
+
+Ganancia `1 → 3 → 8 → 20 → 50 → 120 → 300 → 750`: cada peldaño multiplica por ~2,5, la misma pendiente que ya traían los cuatro del documento. Precio `0 → 3 → 10 → 30 → 75 → 150 → 300 → 600`: cada uno cuesta el doble que el anterior, o sea lo mismo que todo lo comprado hasta ese punto. La eficiencia (ganancia por Win) queda casi plana y sube un poco en los últimos, lo que premia ahorrar.
+
+### Probado en Studio
+
+| Prueba | Resultado |
+| --- | --- |
+| Descubrimiento y carteles | 8 placas tagueadas, las 8 con su cartel, nombre, ganancia y precio correctos |
+| Solo el `Lobby` | `Lobby=8`, `Lobby2=0`, fuera `0` |
+| Pisar sin Wins | `Denied / NotEnoughWins / MissingWins=3`, estado intacto |
+| Compra pisando la placa | `Wins 3 → 0`, `StrongGlue` comprado y equipado, cartel a `EQUIPPED`, placa en verde |
+| Equipar uno ya comprado | Pisar la placa de Basic Glue lo equipó |
+| La ganancia cambia de verdad | `+1.00` con Basic Glue; tras pisar la placa de Strong Glue, `+3.00` |
+| Gratificación de equipado | Popup `BASIC GLUE` + sonido `LevelUp` observados en vivo |
+| Gratificación de rechazo | Popup `NEED 10 MORE WINS` + sonido `Denied` observados en vivo |
+| Rebirth borra lo comprado | `owned` vuelve a `BasicGlue`, las 8 placas vuelven a mostrar su precio sin recargar |
+| Pantalla del HUD | Lista los 8 wraps y sigue funcionando con el contrato nuevo |
+| Teardown | Consola limpia, Studio de vuelta en Edit |
+
+### Notas y pendientes
+
+- **La pantalla del HUD se conservó.** El documento solo describe placas para los Wraps, pero la pantalla ya estaba construida y probada, sirve de catálogo con precios y es el patrón que reutilizarán Trails y Auras. Se quita en un minuto si estorba.
+- **`Touched` no dispara si el jugador aparece encima de la placa sin moverse.** Se detectó teletransportando el personaje justo sobre ella: hay que caer o caminar encima. Un jugador real siempre entra caminando, y las Wins no se ganan dentro del lobby, así que no se llega a dar el caso de estar parado encima cuando cambia lo que puedes pagar. Queda anotado por si aparece.
+- **Precios sin playtest.** Con los pedestales dando 1/3/10, el tope de ingreso por vuelta es 10 Wins, así que Infinity Glue son ~60 vueltas. Las vueltas se acortan mucho al subir de wrap, pero el ingreso por vuelta no escala. Si se quiere una escalera más corta, o suben los pedestales o bajan los precios altos.
+- **Cambio visual del recubrimiento**: sigue pendiente. El wrap se distingue por color en el HUD, en el `+N`, en la tienda y ahora en la placa, pero el personaje no cambia de aspecto.
+
+---
+
+## 18. Registro — 2026-08-06, regla de autoría y Stickiness solo por Rebirth
+
+### 1. Regla dura: si es fijo, se crea en el editor
+
+Nueva sección **5.1 de `AGENTS.md`**. Todo lo que el jugador ve —UI o mundo— y existe en cantidad fija y conocida debe estar creado a mano en el DataModel; el código no lo instancia en runtime.
+
+Que el contenido sea distinto por jugador **no** justifica crearlo por código: las escrituras del cliente sobre el Workspace son locales, así que una instancia authored compartida puede mostrar a cada jugador su propio texto y color. Ése fue el error con los carteles de las placas.
+
+**Corregido:** los 8 `WrapSign` pasaron de clonarse en runtime a ser hijos authored de cada placa en `Zones/Lobby/Geometry`. Se borró la plantilla `Assets/LobbyUI/_WrapPadSign`. `WrapPadController` ahora localiza el cartel, valida su contrato, avisa si falta y solo escribe texto y color; tamaño, offset, fuente y layout son del editor.
+
+### 2. La Stickiness solo se pierde con el Rebirth
+
+Cobrar en un pedestal ya no la reinicia, ni morir, ni el ReplayPad. `ProgressionService.ResetRun` dejó de tocar el progreso y solo reposiciona la zona lógica.
+
+Lo que sí se sigue reiniciando cada vuelta son los blockers: los atributos `CompletedZone_*` autorizan el cobro, así que sin ese reinicio se podría cobrar el mismo pedestal en bucle.
+
+### Probado en Studio
+
+| Prueba | Resultado |
+| --- | --- |
+| Un solo billboard por placa, y es el authored | 8/8 con `WrapSign`, ninguno duplicado en runtime |
+| Los carteles sobreviven a salir de Play | Presentes en Edit con su `Size` y `StudsOffsetWorldSpace` editables |
+| Textos correctos por placa | Nombre, ganancia y precio de los 8 wraps |
+| Cobrar un pedestal conserva la Stickiness | `190 → 190`, `Level 12` intacto, `Wins 0 → 3`, teleport al inicio |
+| No se puede cobrar en bucle | 3 intentos sin rehacer la ruta → `Wins` sin cambios; rehaciéndola → `+3` |
+| Morir conserva la Stickiness | `190 → 190` |
+| El Rebirth sí la reinicia | `500 → 0`, `Level 20 → 1`, `Wins 6` conservadas, multiplicador `1.5x` |
+| Teardown | Consola limpia, Studio de vuelta en Edit |
+
+### Pendiente señalado
+
+La Stickiness y el Level **siguen sin persistir entre sesiones**: `initializePlayer` los arranca en `0` y `1`. Con la regla nueva de "solo el Rebirth resetea", salir y volver a entrar es hoy la única forma de perderlos sin renacer. Si diseño quiere coherencia total hay que añadirlos al perfil de `DataService`.
+
+---
+
+## 19. Registro — 2026-08-06, HUD central de Stickiness, nivel y multiplicador
+
+El panel de arriba a la izquierda (`ProgressPanel`) daba la información pero no se leía como un simulador. Se sustituyó por un bloque central abajo, calcado en forma y color a la referencia que pidió diseño.
+
+### Qué se construyó
+
+Todo authored en `StarterGui.StickyHUD`, creado desde el editor y editable a mano:
+
+- **`StatsPanel`** (centro-abajo): `BlockerProgress` (línea del blocker de la zona), `Stickiness` (número grande abreviado), `WrapLabel` (pegamento equipado en su color, con su `+N`), `MultiplierLabel` (`x1.5 Stickiness (Rebirths)`), `LevelBar` (`Fill` + `LevelText` + `AmountText`) y `BoostRow` con 4 botones placeholder.
+- **`CounterStack`** (arriba-izquierda): `RebirthCounter` y `WinsCounter`, cada uno con `Icon` (ImageLabel vacío, listo para arrastrarle un asset) y `Amount`.
+- `ProgressPanel` borrado. `HUDController` solo localiza, valida y escribe texto, color y el `Size` del relleno de la barra.
+
+### Reglas respetadas
+
+- **Cero offsets.** Todo `Size` y `Position` del bloque nuevo va en Scale puro; verificado por script sobre todos los descendientes. Donde hacía falta forma fija (iconos circulares, badges) se usó `UIAspectRatioConstraint`, que no introduce píxeles.
+- **Autoría (5.1).** Las instancias son de cantidad fija y conocida, así que están creadas una por una en el DataModel. El código no instancia nada en runtime.
+- **La UI lee `StickinessMultiplier`**, no recalcula la fórmula. En cuanto existan Trails y Auras el número seguirá siendo correcto sin tocar el HUD.
+
+### Probado en Studio
+
+| Prueba | Resultado |
+| --- | --- |
+| Enlace de las 11 referencias authored | Sin errores; consola limpia al arrancar |
+| Recogida real (ruta física, 24 objetos en Toy Room) | `Stickiness 0 → 7`, `Level 1 → 2` |
+| Barra dentro del nivel actual | `Level 2`, `2/7`, relleno `0.286` — el tramo se mide contra el nivel, no contra el total |
+| Barra a mitad de un nivel alto | `Level 32`, `96/191`, relleno `0.503` |
+| Abreviatura de números | `14100 → "14.1K"`, `1900 → "1.9K"`, `7 → "7"` |
+| Blocker, wrap y multiplicador | `TOY CHEST 7 / 50`, `Basic Glue (+1)` en su color, `x1.0 Stickiness (Rebirths)` |
+| Contadores | `Wins 0`, `Rebirths 0`; icono cuadrado exacto (`61.32 × 61.32`) |
+| Colisiones de layout | 0 solapes entre `StatsPanel`, `CounterStack`, los dos botones y `PickupFeedback` |
+| Teardown | Consola limpia, Studio de vuelta en Edit |
+
+### Correcciones que salieron de la prueba
+
+- `CounterStack` pisaba `RebirthOpenButton` y `WrapOpenButton`. Los dos botones bajaron debajo de la pila y **pasaron de Offset a Scale**, así que en móvil ya no se quedan clavados en píxeles.
+- `PickupFeedback` caía justo encima del número grande de Stickiness. Subió a `0.6` de altura, por encima del panel.
+
+### Pendiente señalado
+
+- Los 4 botones de `BoostRow` son **placeholder visual**: no tienen dev product detrás ni `Activated` conectado. Los precios (`14/45/225/449`) son texto de ejemplo.
+- Los `Icon` de los contadores son `ImageLabel` con `Image` vacío sobre un círculo de color. Falta arte: basta arrastrar el asset en Studio, sin tocar código.
+- No se pudo tomar captura de pantalla (la herramienta agota el tiempo de espera); la verificación visual quedó en medidas numéricas. Falta una revisión a ojo en el emulador de dispositivos.

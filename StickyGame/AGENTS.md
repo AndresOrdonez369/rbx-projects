@@ -46,6 +46,22 @@ Estas reglas aplican a toda persona o agente que trabaje en este proyecto, en cu
 - Las instancias puramente transitorias o técnicas solo se permiten cuando no representan UI, arte o modelos editables y su ciclo de vida y limpieza están documentados.
 - Si un sistema requiere una plantilla, debe validar su contrato y fallar de forma explícita si falta; no debe sustituirla silenciosamente con UI o geometría generada por código.
 
+### 5.1 Regla dura: si es fijo, se crea en el editor
+
+**Todo lo que el jugador ve —en la UI o en el mundo— y existe en cantidad fija y conocida debe estar creado a mano en el DataModel, visible en el Explorer. El código nunca lo instancia en runtime.** Esto incluye carteles, billboards, letreros, paneles, iconos, marcadores y cualquier adorno de un objeto que ya está colocado en el mapa.
+
+El criterio es *quién decide el aspecto*:
+
+| Caso | Dónde nace la instancia |
+| --- | --- |
+| Cantidad fija y conocida (8 placas → 8 carteles) | **Authored, una por una**, hija del objeto al que pertenece |
+| Cantidad variable en runtime (objetos que aparecen y desaparecen) | Plantilla authored que el código clona |
+| Lista repetida a partir de configuración | Plantilla authored de una fila que el código clona |
+
+Aunque el contenido sea distinto por jugador, **eso no justifica crear la instancia por código**: las escrituras del cliente sobre instancias del Workspace son locales, así que un cartel authored y compartido puede mostrar texto y color distintos a cada jugador. El código solo escribe texto, color y visibilidad; **el tamaño, la posición, el offset, la fuente y el layout son del editor**.
+
+Motivo: si el cartel nace en runtime, cambiar su tamaño o subirlo unos studs obliga a editar código en vez de arrastrarlo en Studio, que es justo lo que esta regla existe para evitar.
+
 ## 6. Seguimiento
 
 - `PLAN_MVP.md` es el tablero de alcance y progreso.
