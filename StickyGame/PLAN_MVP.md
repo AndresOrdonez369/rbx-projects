@@ -675,22 +675,146 @@ Pruebas ejecutadas:
 - Cobrar el pedestal de 10: `Wins 3 → 13` y reinicio correcto.
 - El texto del pedestal se construye clonando la plantilla authored `_RequirementBillboard`; una BillboardGui equivalente creada a mano no renderizaba su texto.
 
+**Bug de tarjetas en negro sin número — 2026-08-05:**
+
+- Síntoma reportado: varios objetos mostraban su tarjeta de requisito como un rectángulo negro, sin la cifra.
+- Descartado primero por medición: los datos estaban bien. Los 24 objetos tenían billboard, `Text` correcto y `TextColor3` correcto (18 en verde elegible, 6 en rojo). No era un fallo de `ObjectLabelController` ni del pool de clones.
+- Causa real: el `Size` de `_RequirementBillboard` estaba en Offset (`{0,90},{0,44}`), así que **la tarjeta ocupaba 90×44 píxeles a cualquier distancia**. Con 24 objetos por sala, los lejanos proyectan sus tarjetas a tamaño completo sobre las cercanas; el fondo del `TextLabel` es opaco (`BackgroundTransparency = 0.15`), de modo que una tarjeta tapaba el número de la vecina. Y con `AlwaysOnTop = true` no hay orden por profundidad, así que la que ganaba podía ser la lejana.
+- Medido en el peor caso (cámara a ras de suelo mirando la sala a lo largo): **15 parejas de tarjetas solapadas** de 19 visibles.
+- Arreglo, todo en la plantilla authored y editable desde el Explorer: `Size` en studs (`{2.6,0},{1.27,0}`), `AlwaysOnTop = false` y `MaxDistance = 50`.
+- Resultado medido en el mismo peor caso: 3 parejas solapadas y **ninguna tarjeta sin número**, porque la que tapa es siempre la más cercana y por tanto la más grande, así que la de atrás asoma con su cifra. En vista de juego normal y en vista alta: 0 solapes.
+- Se eliminó `GameConfig.Collection.LabelMaxDistance`, que estaba muerto: ningún script lo leía y el valor real vivía en la plantilla. El tamaño y la distancia de la tarjeta se ajustan ahora en `ReplicatedStorage/Assets/Collectibles/_RequirementBillboard`.
+- Nota: los carteles de blocker y de pedestal siguen en píxeles a propósito, para que se lean igual desde toda la sala. Son instancias únicas, así que no se apilan entre ellas; solo pueden cruzarse entre sí mirando desde una sala hacia el pasillo siguiente.
+
 Pendiente, no ejecutable desde esta herramienta:
 
 - **Prueba con 2 jugadores en la misma sala** (`Test > Clients and Servers > 2 Players`). Es la verificación directa de la petición de diseño. Pasos en `MANUAL_TEST_CHECKLIST.md`.
-- Borrar `ServerScriptService.TempDiagnostics` antes de publicar.
 
 ### Jueves 6 — Arte y gratificación (8–10 h)
 
-- Elegir un único lenguaje visual: low-poly cartoon, colores saturados, siluetas grandes.
-- Reemplazar cubos por objetos temáticos de una sola pieza.
-- Vestir las tres zonas sin cambiar la ruta.
-- Auditar y borrar scripts de todos los assets importados.
-- Crear variantes de SFX de pickup, sonidos de blocker, level up, win y rebirth.
-- Añadir partículas, popups, pulsos y camera shake moderado.
-- Hacer visible el cambio de cada Sticky Wrap.
-- Pasada de iluminación y señalización.
-- Prueba de rendimiento con el máximo de attachments.
+- [x] Elegir un único lenguaje visual: low-poly cartoon, colores saturados, siluetas grandes.
+- [ ] Reemplazar cubos por objetos temáticos de una sola pieza.
+- [ ] Vestir las tres zonas sin cambiar la ruta.
+- [x] Auditar y borrar scripts de todos los assets importados.
+- [x] Crear variantes de SFX de pickup, sonidos de blocker, level up, win y rebirth.
+- [x] Añadir partículas, popups, pulsos y camera shake moderado.
+- [x] Hacer visible el cambio de cada Sticky Wrap.
+- [x] Pasada de iluminación y señalización.
+- [x] Prueba de rendimiento con el máximo de attachments.
+
+**Notas de avance — 2026-08-05, jueves fase 1 (iluminación y gratificación):**
+
+Punto de partida medido antes de tocar nada: **cero `Sound`, cero `ParticleEmitter` y cero luces en todo el place**. Las salas sí tenían paleta authored por zona (ToyRoom crema/azul, Bedroom lila, Kitchen verde) con `SmoothPlastic` y franja de ruta `Neon`, así que el lenguaje visual estaba a medias y lo que faltaba entero era la gratificación.
+
+*Iluminación y post-proceso (instancias authored en `Lighting`, todas editables desde el Explorer):*
+
+- `Brightness` 3 → 2. Estaba quemando las paredes claras.
+- `Ambient` y `OutdoorAmbient` pasan de gris `0.27` a azulado (`72,74,96` y `140,150,178`). El gris neutro desatura todo; el tinte frío da sombra de dibujo animado.
+- `ExposureCompensation` 0 → 0.15, `EnvironmentDiffuseScale` 1 → 0.6, `EnvironmentSpecularScale` 1 → 0.4, `ShadowSoftness` 0.35.
+- **`ColorCorrectionEffect` nuevo llamado `ColorGrade`** con `Saturation = 0.28` y `Contrast = 0.12`. Es el único cambio que más separa un greybox de un juego publicado.
+- `Bloom`: `Threshold` 2.0 → 1.15 e `Intensity` 1.0 → 0.65, para que brille la franja `Neon` y no las paredes.
+- `Atmosphere`: `Haze = 0.7` y `Decay` azulado, que da profundidad al fondo de la sala.
+- `SunRays`: estaba en `Intensity = 0.01`, es decir apagado; ahora 0.06.
+
+*Biblioteca authored de gratificación en `ReplicatedStorage/Assets/Feedback`:*
+
+- `Audio/`: cuatro `Sound` (`Pickup`, `Denied`, `LevelUp`, `Absorb`). Los cuatro `SoundId` son de **ProSoundEffects**, la biblioteca licenciada que Roblox distribuye gratis. Descartados a propósito los resultados más populares del Creator Store por ser rips con copyright (Mario Kart, Undertale, Sonic), que es riesgo de moderación al publicar.
+- `Particles/`: `PickupBurst` (chispa corta, 0.3 s) y `AbsorbBurst` (estallido grande, 0.85 s). Textura `rbxasset://` incluida en el cliente, sin dependencia de asset externo.
+- `UI/_ScorePopup`: `BillboardGui` en studs con `TextLabel` `Amount`. Clonado de `_RequirementBillboard`, por el problema conocido de que una BillboardGui construida a mano en este place no renderiza su texto.
+
+*`FeedbackController` (cliente):*
+
+- Recoger: sonido con **tono creciente por racha** (cada recogida encadenada dentro de `ComboWindowSeconds` sube el pitch, hasta 12 pasos), popup `+N` que sube y se desvanece, y chispa. Popup y chispa salen retrasados `Attachments.FlightSeconds`, para que el golpe coincida con el aterrizaje de la pieza en el cuerpo y no con la confirmación del servidor.
+- Rechazo: sonido propio y la racha se corta.
+- Subida de nivel: chime, popup `LEVEL N` y sacudida corta. Solo al subir; un reset a nivel 1 no suena a recompensa.
+- Absorber blocker: whoosh, estallido grande y sacudida.
+- Sacudida vía `Humanoid.CameraOffset`, que no pelea con los scripts de cámara de Roblox y se restaura sola.
+- Un único `Heartbeat` **bajo demanda** mueve popups, devuelve partículas al pool y aplica la sacudida; se corta cuando no queda trabajo. Todo con pools de tamaño fijo configurable en `GameConfig.Feedback`.
+
+Pruebas ejecutadas:
+
+- Los cuatro `SoundId` cargan de verdad en este place: `PreloadAsync` OK, `IsLoaded = true`, duraciones 0.81 / 0.78 / 1.45 / 3.03 s.
+- Pools construidos: 14 anclas, 24 sonidos, 8 emisores, 10 billboards.
+- Racha de recogida, 310 muestras: pico de 3 popups y 3 sonidos simultáneos, muy por debajo de los topes (10 y 6).
+- **Sin fugas:** 151 recogidas rápidas seguidas y el conteo de instancias en `FeedbackEffects` no se movió (71 → 71). Al parar: 0 popups encendidos, 0 sonidos sonando, `CameraOffset` exactamente `0, 0, 0`.
+- Absorción del Toy Chest: sonido `Absorb` reproducido, pico de sacudida 0.678 studs (tope 0.9, con caída cuadrática) y `CameraOffset` de vuelta a cero.
+
+**Causa raíz de las tarjetas en negro — 2026-08-05:**
+
+El arreglo anterior (tarjetas en studs, `AlwaysOnTop = false`) redujo el problema pero no lo eliminó: seguían apareciendo tarjetas con el fondo dibujado y sin número. La causa real es otra.
+
+- Diagnóstico: pintando cada familia de billboard de un color distinto se confirmó que la tarjeta muda **sí era de un objeto**. Identificada como `Collectible_40`, proyectada exactamente en el píxel del hueco negro, con `AbsoluteSize = 42×21` (o sea, con tamaño real en pantalla) pero **`TextBounds = 0,0`**.
+- **Roblox mide el texto de un `BillboardGui` una sola vez.** Si lo dispone cuando el billboard todavía no tiene tamaño en pantalla —un objeto que aparece fuera de cámara, que es lo normal al reaparecer— se queda con medida cero y no vuelve a medir. El fondo sigue dibujándose; los dígitos no.
+- Es la misma causa por la que el cartel del pedestal de Win salió mudo al construirlo a mano, y por la que clonar una plantilla ya usada lo "arreglaba": la plantilla ya venía medida.
+- Arreglo: `ObjectLabelController.healLabel` comprueba por tick si una etiqueta tiene tamaño pero medida cero y reactiva `TextScaled`, lo que fuerza el reescalado. Cuesta dos lecturas de propiedad por objeto y por tick.
+
+**Error cometido y corregido durante este arreglo:** el primer intento fue poner `TextWrapped = false`, ya que un número corto no necesita envolver. Salió peor: en Roblox `TextScaled` depende de `TextWrapped`, así que apagar el segundo **apagó el primero en silencio** en las 8 etiquetas del place, y todo el texto cayó al `TextSize = 8` de la plantilla, ilegible. Revertido y verificado que ambas quedan en `true`.
+
+Verificado tras el arreglo:
+
+- Escala del texto: ocupa el **99 %** de la altura de la tarjeta, mínima y mediana.
+- 264 comprobaciones tras 14 ciclos de "recoger de espaldas y girar la cámara", que es el patrón que provoca el enganche: **0 tarjetas sin texto**.
+- Barrido de 40 posiciones de cámara entre 12 y 60 studs y cuatro alturas: 0 tarjetas sin medir.
+
+**Limpieza de iteraciones anteriores — 2026-08-05:**
+
+Barrido de lo que dejaron de usar las iteraciones previas, comprobando referencia por referencia en vez de por intuición.
+
+Retirado:
+
+- **Modos de colocación `Markers` e `Hybrid`, con sus 36 marcadores `ItemSpawns`.** Nunca se usaron: las tres salas estuvieron siempre en `Procedural`. Fuera también `PlacementMode` (de `GameConfig`, del tipo `RoomSettings`, del lector y del `Configuration` de cada sala), el tag `ItemSpawn`, `ValidPlacementModes`, `DefaultPlacementMode`, y las funciones `readMarkerSlots` y `hideAuthoringMarkers`.
+- Las tres carpetas `Zones/<Zone>/Collectibles`, vacías desde que el render pasó al cliente.
+- `ServerScriptService.TempDiagnostics`, que ya cumplió su función.
+- Tags sin ninguna referencia en código: `RouteGuide` y `ZoneGeometry`. Y la basura que deja el plugin Tag Editor (`data-testid=…`, `size-full`, `gui-object-defaults`, `TagEditorTagContainer`).
+
+Total: 46 instancias y un modo entero del sistema.
+
+Conservado a propósito, después de comprobarlo:
+
+- **`Zones/Lobby`**, porque es donde está el `StartSpawn` (`-5, 1.5, 107`) y adonde vuelve el jugador al cobrar un pedestal. Borrarla dejaría al jugador cayendo al vacío.
+- **`Zones/Lobby2`**, por decisión del usuario, reservada para la zona de descanso.
+- **`ExitPreview`**, que parecía andamio pero es el umbral de color al Bedroom más su cartel `BEDROOM NEXT`. Sí tenía un defecto: `ExitFloor` estaba exactamente coplanar con el suelo del Bedroom (ambas caras superiores en `y = 1.0`) sobre 22×20 studs, es decir parpadeo por z-fighting. Subido 0.02 studs.
+
+Verificado tras la limpieza: las tres salas siguen generando **24 objetos con separación mínima de 8.1 studs**, y la consola queda sin errores.
+
+Pendiente de esta fase, no ejecutable desde la herramienta:
+
+- **`Lighting.Technology` sigue en su valor anterior.** La propiedad requiere capacidad `RobloxScript` y el command bar no puede escribirla. Ponerla a `Future` a mano en el Explorer es el mayor salto visual que queda, y son cinco segundos.
+- Escuchar los cuatro sonidos y ajustar a gusto: cada uno es una sola propiedad `SoundId` en `Assets/Feedback/Audio`.
+
+**Notas de avance — 2026-08-05, jueves fase 2 (auditoría, rendimiento y Sticky Wraps):**
+
+*Auditoría de scripts en assets importados — sale limpia sin tocar nada:*
+
+- Barrido de todo el DataModel buscando `LuaSourceContainer` fuera de `ServerScriptService.Server`, `StarterPlayerScripts.Client` y `ReplicatedStorage.Shared`: **cero**. Ningún asset importado trae scripts.
+- Tampoco hay `RemoteEvent`, `RemoteFunction`, `Tool`, `HopperBin` ni `Animation` sueltos en `Workspace`. Solo 24 `SurfaceGui` (los carteles authored) y 1 `Texture`.
+- Peso total de geometría: **157 BaseParts** en todo el `Workspace`, de los cuales 86 están en `Lobby` + `Lobby2`. Las tres salas de juego suman 43.
+
+*Prueba de rendimiento con la pila al máximo:*
+
+| Escenario | Resultado |
+|---|---|
+| Pila vacía (línea base) | 60 FPS, media **16.66 ms**, peor frame 19.9 ms |
+| Pila llena, quieto | 60 FPS, media **16.66 ms**, peor frame 19.2 ms |
+| Pila llena, caminando | 60 FPS, media **16.67 ms**, peor frame 19.9 ms |
+
+- Pila en el tope: **36 piezas / 47 partes / 0 sin soldar**, radio máximo 3.07 studs respecto al personaje.
+- 24 objetos renderizados en la sala, 267 BaseParts en el `Workspace` del cliente.
+- Conclusión: la pila llena **no tiene coste medible** frente a la pila vacía (0.01 ms de diferencia, dentro del ruido). Aviso honesto: esto es Studio en una máquina de desarrollo con el límite de 60 FPS. No sustituye una prueba en un móvil de gama baja, que sigue pendiente para el viernes.
+- Nota metodológica: los dos primeros intentos de esta prueba no llegaron al tope (5 y 20 piezas) porque el bucle elegía objetos al azar y la mayoría eran inelegibles. Escribir en el atributo `Stickiness` desde el servidor no sirve: `ProgressionService` lo recalcula en el siguiente pickup. La medida válida es la tercera, filtrando por objetos elegibles, que es además lo que hace un jugador real: 58 intentos para llenar la pila.
+
+*Sticky Wraps visibles:*
+
+- El `+N` de cada recogida se pinta del **color del pegamento equipado**. Es lo único que hace que mejorar de wrap se sienta mientras juegas, en vez de cambiar una palabra gris del HUD. Verificado: BasicGlue blanco `0.94`, StrongGlue verde `0.36,1.00,0.54`, SuperGlue azul `0.31,0.64,1.00`.
+- Al desbloquear un wrap sale un popup con su nombre en su color, más sonido y sacudida. Verificado: `STRONG GLUE!` verde y `SUPER GLUE!` azul.
+- Los wraps se desbloquean en los niveles 1/5/10/15, es decir en el mismo instante que una subida de nivel. Dentro de `WrapOverridesLevelSeconds` solo se anuncia el wrap, que es la noticia grande; si no, sonaban dos veces y salían dos popups encima.
+- Bajar de wrap (un reset devuelve a BasicGlue) no celebra nada: se compara `BaseGain` antes de anunciar.
+- El nombre del wrap en el HUD va en su propio color, vía `RichText` sobre la etiqueta authored. Verificado con `TextBounds = 398, 16`, o sea que renderiza de verdad.
+
+Queda del jueves, y es trabajo de arte más que de código:
+
+- **Reemplazar los props por objetos temáticos de una sola pieza.** Hoy son primitivas greybox (`ToyBlock` un cubo, `ToyBall` una esfera). El sistema ya no necesita cambios: basta sustituir la geometría dentro de cada plantilla de `ReplicatedStorage/Assets/Collectibles` conservando el nombre y el `PrimaryPart`, y todo lo demás (colocación, pila, tarjetas) sigue funcionando.
+- **Vestir las tres zonas.** La ruta no debe cambiar; el `PlacementArea` de cada sala define dónde pueden caer objetos, así que el mobiliario nuevo debe quedar fuera de ese volumen o los objetos aparecerán encima.
 
 **Entregable del jueves:** alguien puede entender y disfrutar el juego sin explicación del creador.
 

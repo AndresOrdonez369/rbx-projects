@@ -65,7 +65,10 @@ Este documento guarda el estado técnico y las decisiones que necesitamos record
 - `PickupService`: valida sesión, requisito, distancia contra la posición del servidor, personaje vivo y rate limit por token bucket. Conserva el contrato `ConnectCollected`.
 - Cliente: `CollectibleRenderer` (pool local de clones authored) y `CollectibleController` (un solo loop throttled de proximidad, sin `Touched` por objeto).
 - `ObjectLabelController`: la elegibilidad se muestra atenuando los colores propios del prop (`IneligibleTintFactor`) y haciéndolo semitransparente (`IneligibleTransparency`), no con Highlights. Roblox solo renderiza 31 Highlights por cliente y no hay forma de subirlo, así que cualquier estado por objeto basado en ellos se rompe en silencio al crecer la sala. Queda un único Highlight como marca de "este es el que vas a agarrar".
-- Plantillas authored en `ReplicatedStorage/Assets/Collectibles`: 9 props greybox y `_RequirementBillboard`.
+- Plantillas authored en `ReplicatedStorage/Assets/Collectibles`: 9 props greybox y `_RequirementBillboard`. La tarjeta se dimensiona en studs (`Size = {2.6, 0}, {1.27, 0}`), con `AlwaysOnTop = false` y `MaxDistance = 50`.
+- Plantillas authored de gratificación en `ReplicatedStorage/Assets/Feedback`: `Audio/` (`Pickup`, `Denied`, `LevelUp`, `Absorb`), `Particles/` (`PickupBurst`, `AbsorbBurst`) y `UI/_ScorePopup`. `FeedbackController` solo las clona y dispara; los pools y los tiempos viven en `GameConfig.Feedback`.
+- Pasada de iluminación: `ColorGrade` (`ColorCorrectionEffect`, `Saturation 0.28`), `Bloom` con `Threshold 1.15`, `Atmosphere` con `Haze 0.7`, ambiente azulado. `Lighting.Technology` no se puede escribir desde el command bar (requiere capacidad `RobloxScript`); ponerla a `Future` es un paso manual pendiente.
+- El Sticky Wrap equipado se lee por color: el `+N` de cada recogida usa el `Color` del wrap y el nombre en el HUD va del mismo color vía `RichText`. Al desbloquear uno sale su nombre como popup. Ver `GameConfig.Feedback.TintPopupWithWrapColor`.
 - Configuración editable a mano por sala en `Zones/<Zone>/RoomSettings` y volumen `PlacementArea` por sala.
 - `AttachmentService` reescrito: la pila pega un clon de **la misma plantilla que el jugador acaba de recoger**, no un cubo genérico. El tamaño se normaliza contra `TargetMaxSizeStuds` para que props de distinto tamaño authored se lean parecidos, y el prop conserva su color propio.
 - Las soldaduras se reconstruyen al cambiar de paso de crecimiento, para que escalar un modelo multiparte no rompa las constraints.
@@ -90,8 +93,8 @@ Este documento guarda el estado técnico y las decisiones que necesitamos record
 
 - Confirmación manual con un jugador nuevo de que Toy Room dura 45–60 segundos.
 - Prueba con 2 jugadores en la misma sala para el sistema per-player (pasos en `MANUAL_TEST_CHECKLIST.md`).
-- Borrar `ServerScriptService.TempDiagnostics`, creado solo para verificar el sistema per-player.
 - Analítica y revisión responsive del miércoles.
+- Poner `Lighting.Technology` en `Future` a mano: la propiedad no se puede escribir desde el command bar.
 
 ## Decisiones vigentes
 
@@ -111,7 +114,12 @@ Este documento guarda el estado técnico y las decisiones que necesitamos record
 - `TotalObjects` significa objetos visibles a la vez, no un total agotable por visita.
 - El tipo de objeto es variedad visual, no balance. `GainMultiplier` queda reservado en `GameConfig.CollectibleTypes` para cuando diseño quiera usarlo.
 - La configuración de cada sala se edita a mano en el Workspace (`RoomSettings`, `PlacementArea`); `GameConfig` solo aporta defaults. Un valor authored inválido cae al default con `warn` explícito, nunca en silencio.
-- Los `ItemSpawns` authored se conservan sin uso, como red de seguridad para `PlacementMode = "Markers"`, y se ocultan en runtime.
+- **Un solo modo de colocación** (2026-08-05). Se retiraron `PlacementMode`, los modos `Markers`/`Hybrid` y los 36 marcadores `ItemSpawns`. Nunca se usaron: las tres salas siempre estuvieron en `Procedural`. Mantener dos rutas de colocación sin datos era complejidad que había que leer y explicar cada vez. Si diseño quiere colocar objetos a mano en el futuro, se reimplementa.
+- **`0 slots` en una sala casi siempre significa que falta el suelo dentro de su propia `Geometry`** (2026-08-05). El raycast de `ItemPlacementService` usa un filtro `Include` limitado a la carpeta `Geometry` de esa zona. Si el suelo se borra, se renombra o se mueve a otra carpeta, no hay nada que golpear y la sala produce cero posiciones, con el aviso `ItemPlacement: <Zona> produced 0 slots`. El jugador sigue caminando porque debajo está el `Baseplate`, que no cuenta para la colocación. Antes de tocar `TotalObjects` o `MinSeparationStuds`, comprobar que `Zones/<Zona>/Geometry/Floor` existe.
+- **El audio sale de ProSoundEffects, no de lo más popular del Creator Store** (2026-08-05). Buscando SFX, casi todos los resultados mejor posicionados son rips con copyright (Mario Kart, Undertale, Sonic, Earthbound). Usarlos es riesgo de moderación al publicar. `ProSoundEffects` es la biblioteca licenciada que Roblox distribuye gratis, viene descrita y con duración, y es la fuente por defecto de este proyecto.
+- **El texto de un `BillboardGui` se mide una sola vez y se puede quedar en cero** (2026-08-05). Si Roblox dispone la etiqueta cuando el billboard todavía no tiene tamaño en pantalla, calcula `TextBounds = 0,0` y **no vuelve a medir**: la tarjeta pinta su fondo pero nunca sus dígitos. Es la causa real del "panel negro sin texto", y también de que el cartel del pedestal de Win saliera mudo al construirlo a mano. Reactivar `TextScaled` fuerza el reescalado; `ObjectLabelController.healLabel` lo hace por tick sobre las tarjetas que tengan tamaño pero medida cero.
+- **`TextScaled` y `TextWrapped` van juntos: apagar el segundo apaga el primero en silencio** (2026-08-05). Poner `TextWrapped = false` en una etiqueta con `TextScaled = true` deja `TextScaled = false` sin avisar, y el texto cae al `TextSize` de la plantilla (8 px aquí), o sea ilegible. Al tocar una de las dos, comprobar siempre la otra.
+- **Las tarjetas de requisito se dimensionan en studs, nunca en píxeles** (2026-08-05). El `Size` de un `BillboardGui` en Offset conserva su tamaño en píxeles a cualquier distancia: con 24 objetos por sala las tarjetas lejanas quedan igual de grandes que las cercanas, se apilan en pantalla y, como el fondo del `TextLabel` es opaco, una tapa el número de otra y deja un rectángulo negro sin cifra. Con `Size` en Scale (studs) la tarjeta se aleja junto con su objeto. Además `AlwaysOnTop = false`, para que al solaparse gane la más cercana en vez de un orden de dibujado arbitrario en el que una tarjeta lejana tapa a una cercana. Medido en el peor caso (cámara a ras de suelo mirando la sala entera): 15 parejas solapadas antes, 3 después, y ninguna deja una tarjeta sin número.
 - **No usar `Highlight` para estado por objeto.** Roblox renderiza como máximo 31 a la vez, los deshabilitados también ocupan slot, y no existe API para subir el límite (petición abierta en el DevForum desde 2021, sin respuesta a noviembre de 2024). Un tope por debajo de ese límite deja parte de la sala sin marcar, que se lee peor que no marcar nada. Para estado por objeto: atenuar los colores propios del prop. Los Highlight solo para elementos únicos, como el objeto enfocado.
 
 ## Reglas de trabajo acordadas
@@ -157,8 +165,7 @@ ServerScriptService/
     ItemPlanner            -- reparto equitativo, puro
     RoomItemService        -- sesión por (jugador, sala)
     PickupService          -- validación autoritativa del pickup
-    AttachmentService, BlockerService, FinishService
-  TempDiagnostics          -- TEMPORAL, borrar antes de publicar
+    AttachmentService, BlockerService, FinishService, WinPedestalService
 StarterGui/
   StickyHUD/
     ProgressPanel
@@ -176,13 +183,11 @@ Workspace/
     Zones/
       ToyRoom/
         Geometry/
-        ItemSpawns/        -- solo para PlacementMode "Markers"; ocultos en runtime
-        Collectibles/      -- ya sin uso
         Blockers/ToyChest
         StartSpawn
         PlacementArea      -- volumen invisible donde pueden caer objetos
         RoomSettings/      -- Configuration editable a mano
-          TotalObjects, MinSeparationStuds, PlacementMode
+          TotalObjects, MinSeparationStuds
           ObjectPool/      -- un ObjectValue por tipo permitido
 ```
 
@@ -217,7 +222,7 @@ La representación puede reemplazarse editando `CollectibleFactory`; las reglas 
 
 ### Contrato de una zona
 
-El Folder necesita tag `StickyZone`, attribute `ZoneId`, entrada correspondiente en `GameConfig.Zones` y folders hijos `Geometry`, `ItemSpawns`, `Collectibles` y `Blockers`. Cada zona configura `EntryStickiness`, `CollectibleRequirements` y `ActivePickupTarget`.
+El Folder necesita tag `StickyZone`, attribute `ZoneId`, entrada correspondiente en `GameConfig.Zones` y los folders hijos `Geometry` y `Blockers`. Para que aparezcan objetos hace falta además el `PlacementArea` (BasePart invisible, tagueado) y el `RoomSettings` con su `ObjectPool`. Cada zona configura `EntryStickiness`, `CollectibleRequirements`, `TotalObjects`, `MinSeparationStuds` y `WinReward`.
 
 ### Garantías verificadas
 

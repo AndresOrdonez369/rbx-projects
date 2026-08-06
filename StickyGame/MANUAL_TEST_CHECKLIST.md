@@ -40,7 +40,7 @@ Requiere `Test > Clients and Servers > Players: 2 > Start`. No se puede ejecutar
 
 - [ ] Ambos jugadores aparecen en Toy Room y cada uno ve objetos en posiciones distintas.
 - [ ] En la ventana del jugador A, el Explorer muestra `Workspace/LocalCollectibles` con 12 hijos. En la de B, otros 12 con posiciones diferentes.
-- [ ] En la ventana del **servidor**, `Workspace` no tiene `LocalCollectibles` y las carpetas `Zones/<Zone>/Collectibles` están vacías.
+- [ ] En la ventana del **servidor**, `Workspace` no tiene ningún `LocalCollectibles`: los objetos solo existen en cada cliente.
 - [ ] El jugador A recoge un objeto: su Stickiness sube y el objeto desaparece **solo en su pantalla**.
 - [ ] El jugador B no ve desaparecer nada y sus objetos siguen todos disponibles.
 - [ ] B recoge el objeto que está en la misma zona del mapa donde A ya recogió: se le concede normalmente.
@@ -59,6 +59,8 @@ Requiere `Test > Clients and Servers > Players: 2 > Start`. No se puede ejecutar
 - [ ] Añadir un `ObjectValue` nuevo en `ObjectPool` apuntando a otra plantilla de `ReplicatedStorage/Assets/Collectibles`: ese tipo empieza a aparecer y el reparto se reajusta solo.
 - [ ] Mover o redimensionar `Zones/ToyRoom/PlacementArea`: los objetos se colocan dentro del nuevo volumen.
 - [ ] Vaciar `ObjectPool`: la consola avisa explícitamente y no aparecen objetos, en vez de sustituirlos en silencio.
+- [ ] Borrar `PlacementArea` de una sala: la consola avisa y esa sala se queda sin objetos, sin romper las demás.
+- [ ] Si una sala aparece **vacía de objetos**, mirar la consola: `produced 0 slots` significa que falta `Zones/<Zona>/Geometry/Floor`, no que haya que bajar `TotalObjects`.
 
 ### Elegibilidad visible
 
@@ -67,6 +69,15 @@ Requiere `Test > Clients and Servers > Players: 2 > Start`. No se puede ejecutar
 - [ ] Al cruzar un umbral de Stickiness, todos los objetos de ese tier pasan a color pleno a la vez.
 - [ ] Solo el objeto más cercano lleva contorno resaltado, y el contorno sigue al jugador.
 - [ ] Subir `TotalObjects` a 40 o más no deja ningún objeto sin estado visual.
+
+### Tarjetas de requisito
+
+- [ ] **Ninguna tarjeta aparece en negro y sin número.** Dos formas de forzarlo: agachar la cámara a ras de suelo mirando la sala a lo largo, y **recoger objetos de espaldas y girarse de golpe** (los que reaparecen fuera de cámara son los que se enganchan).
+- [ ] El número llena la tarjeta; si se ve diminuto, comprobar que la etiqueta tenga `TextScaled` **y** `TextWrapped` en `true`: apagar uno apaga el otro en silencio.
+- [ ] Las tarjetas de los objetos lejanos se ven más pequeñas que las de los cercanos, no todas del mismo tamaño.
+- [ ] Cuando dos tarjetas se cruzan en pantalla, la que queda delante es la del objeto más cercano.
+- [ ] Los objetos a más de 50 studs no muestran tarjeta, pero se siguen distinguiendo por color y transparencia si se pueden agarrar o no.
+- [ ] A distancia de juego normal el número se lee sin esfuerzo.
 
 ### Pedestales de Win
 
@@ -96,8 +107,27 @@ Requiere `Test > Clients and Servers > Players: 2 > Start`. No se puede ejecutar
 - [ ] Tras absorber los tres blockers, los tres siguen pegados aunque recojas muchos objetos después.
 - [ ] Al morir o hacer replay la pila desaparece por completo, incluidos los blockers, y `Workspace/StickyDiscards` queda vacío.
 
+### Gratificación (audio, partículas, popups)
+
+- [ ] Cada recogida suena, saca una chispa y un `+N` verde que sube y se desvanece.
+- [ ] El popup y la chispa salen **cuando la pieza aterriza en el cuerpo**, no antes.
+- [ ] Recoger en racha sube el tono del sonido; parar un segundo lo devuelve al tono base.
+- [ ] Tocar un objeto que no puedes agarrar suena distinto y corta la racha.
+- [ ] Subir de nivel suena, saca `LEVEL N` y da una sacudida corta de cámara.
+- [ ] Absorber un blocker da whoosh, estallido grande y sacudida; la cámara vuelve a su sitio sola.
+- [ ] Morir o resetear a mitad de una sacudida **no** deja la cámara desplazada.
+- [ ] Tras un minuto recogiendo sin parar, `Workspace/FeedbackEffects` sigue con el mismo número de hijos.
+- [ ] Los cuatro sonidos suenan (no hay silencio por asset no cargado). Ajustables en `Assets/Feedback/Audio`.
+
+### Sticky Wraps visibles
+
+- [ ] El `+N` de cada recogida cambia de color al mejorar de pegamento: blanco, verde, azul, morado.
+- [ ] Al desbloquear un wrap sale su nombre en su color (`STRONG GLUE!`) con sonido y sacudida.
+- [ ] Al desbloquearlo suena **una sola vez**: no se solapa con el aviso de subida de nivel.
+- [ ] El nombre del pegamento en el HUD va en su propio color.
+- [ ] Tras un reset a BasicGlue **no** se celebra nada.
+
 ### Rendimiento y limpieza
 
 - [ ] Con los dos jugadores dentro, `Output` no muestra errores rojos.
 - [ ] Un jugador sale de la partida: no quedan objetos suyos ni errores en el servidor.
-- [ ] Borrar `ServerScriptService.TempDiagnostics` antes de publicar.
