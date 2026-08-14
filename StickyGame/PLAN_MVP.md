@@ -1231,3 +1231,129 @@ Todo authored en `StarterGui.StickyHUD`, creado desde el editor y editable a man
 - Los 4 botones de `BoostRow` son **placeholder visual**: no tienen dev product detrás ni `Activated` conectado. Los precios (`14/45/225/449`) son texto de ejemplo.
 - Los `Icon` de los contadores son `ImageLabel` con `Image` vacío sobre un círculo de color. Falta arte: basta arrastrar el asset en Studio, sin tocar código.
 - No se pudo tomar captura de pantalla (la herramienta agota el tiempo de espera); la verificación visual quedó en medidas numéricas. Falta una revisión a ojo en el emulador de dispositivos.
+
+---
+
+## 20. Registro — 2026-08-12, auditoría MCP y plan de performance v2
+
+### Alcance
+
+Se auditó mediante Roblox Studio MCP el lugar `Exposición pegajosa`
+(`PlaceId 95828455414780`) y se contrastó la implementación viva con
+`PLAN_PERFORMANCE.md`, `PLAN_PER_PLAYER_OBJECTS.md`, `PROJECT_MEMORY.md` y este tablero.
+No se modificaron scripts ni el DataModel: esta fase fue de diagnóstico y decisión.
+
+### Verificado
+
+- [x] Studio activo y PlaceId correctos; Play inició y terminó por MCP.
+- [x] Arranque de servidor y cliente sin errores; solo permanece el warning conocido de
+  ProductId placeholder de Rest Zones.
+- [x] Configuración efectiva: `MaxVisualAttachments=36` temporal, `PoolCapacity=400`,
+  `TargetMaxSizeStuds=1.6`, `StreamingEnabled=true`.
+- [x] Los collectibles del suelo son locales, anclados y sin collide/touch/query; 24 cargados
+  en Toy Room durante el smoke.
+- [x] La pila adherida sigue siendo server-side: una `WeldConstraint` al torso por cada
+  `BasePart`, con `Massless`, collide/touch/query y sombras apagados.
+- [x] Nueve plantillas actuales inspeccionadas: ocho de una parte y `ToyCar` de dos.
+- [x] Limpieza y ownership de conexiones inspeccionados en `CharacterRemoving`,
+  `PlayerRemoving` y `Destroy`.
+- [x] Se corrigió en `PLAN_PERFORMANCE.md` la extrapolación aritmética de física y se añadió un
+  plan priorizado con quick wins, arquitectura condicional, réplica/memoria y gates.
+
+### Smoke de esta auditoría
+
+| Prueba | Resultado |
+| --- | --- |
+| Identidad del lugar | `PlaceId 95828455414780`, correcto |
+| Estado inicial | 1 jugador, pila 0, 24 collectibles locales |
+| Física baseline cliente | `PhysicsStepTimeMs≈0.064`, 367 primitives, 20 moving |
+| Física baseline servidor | `PhysicsStepTimeMs≈0.015`, 321 primitives, 18 moving |
+| Join baseline | 29.109 bytes de instancia/terrain |
+| SceneAnalysis cliente | audio `≈5,25 MB`, animación `≈139 KB`, 11 instancias sin parent |
+| SceneAnalysis servidor | 7 instancias sin parent, todas BindableEvents pequeños/persistentes |
+| Memoria de scripts | no disponible por flag Studio `STUDIOPLAT37936` |
+| Consola | servicios inicializados; sin errores de runtime |
+| Teardown | Studio volvió a Edit |
+
+Este smoke valida inicialización y limpieza básica, **no** capacidad móvil.
+
+### Bloqueantes antes de cerrar performance
+
+- [ ] Matriz `1/4/8 jugadores × 0/36/110/300 visuales` en móvil low/mid real.
+- [ ] Proxies authored de exactamente una parte y presupuesto de arte representativo.
+- [ ] `ClearPlayerVisuals` amortizado y probado en pedestal, muerte, Replay y Rebirth, también
+  durante una recogida concurrente.
+- [ ] Late join con siete pilas llenas, fill simultáneo y clear simultáneo.
+- [ ] Dumps MicroProfiler cliente móvil y servidor para steady, fill, clear y join.
+- [ ] Camino exitoso, requisito/distancia/rate limit y limpieza con 2 y 8 jugadores.
+- [ ] Diez ciclos fill/clear/respawn sin pendiente creciente de memoria o instancias.
+
+**Decisión vigente:** conservar `300` como capacidad lógica, probar primero un presupuesto visual
+de `110` proxies de una parte `[PLACEHOLDER]`, y no restaurar 300 visuales en producción hasta
+pasar los gates definidos en `PLAN_PERFORMANCE.md`.
+
+---
+
+## 21. Registro — 2026-08-13, render local mobile-first implementado
+
+### Alcance
+
+Se implementó en el DataModel abierto la Fase B de `PLAN_PERFORMANCE.md`: el servidor conserva
+hasta 300 attachments lógicos por jugador y cada cliente materializa una cantidad acotada de
+proxies cosméticos. La presentación local no concede Stickiness, premios, blockers ni progreso.
+
+### Implementado
+
+- [x] 29 `AttachmentProxies` authored (9 collectibles y 20 blockers de dos mundos), exactamente
+  una `BasePart` por proxy, IDs únicos y sin collide/touch/query/sombra.
+- [x] `AttachmentProxyTemplates` valida el contrato y falla de forma explícita; no crea arte de
+  fallback por código.
+- [x] `AttachmentService` guarda capacidad lógica 300, generations/sequences y deltas/snapshots;
+  el servidor dejó de crear `StickyPile`, parts o welds cosméticos.
+- [x] `AttachmentRenderer` usa budgets `110` propios, `20` remotos y cap creado `320`
+  `[PLACEHOLDER hasta Android]`, LOD por distancia y pool client-local.
+- [x] Clear lógico atómico y liberación visual amortizada (`16` records o `1 ms` por frame), con
+  estado de release exactamente una vez.
+- [x] Sensor sin tabla `candidates` por tick; distancias al cuadrado.
+- [x] Labels event-driven, heal acotado a 8 por frame, culling a 42 studs y `_FocusHighlight`
+  authored.
+- [x] Marcadores `AttachmentServer.Flush/Snapshot`, `AttachmentRenderer.Reconcile/Animate/Release`,
+  `CollectibleSensor` y `ObjectLabels`.
+
+### Pruebas proporcionales ejecutadas por Roblox Studio MCP
+
+| Prueba | Resultado |
+| --- | --- |
+| Arranque y snapshot | PASS; `SnapshotReady=true`, conteos 0, consola sin error del sistema |
+| Pickup real | PASS; ToyBlock id 8, logical/legacy `0→1`, 1 proxy cliente |
+| Rechazo inválido | PASS; `-999999`, string y `NaN` no cambiaron Stickiness ni pila |
+| Muerte/respawn | PASS; logical/active/metadata/pending volvieron a 0 |
+| Pickup tras respawn | PASS; el proxy se reutilizó sin incrementar `Created` |
+| Stress de creación | PASS; 300 deltas a ~96/s quedaron en 110 active/metadata |
+| Física del proxy | PASS; 110 parts, 110 welds, 0 anchored y 0 flags inseguros |
+| Aislamiento servidor | PASS; 0 `StickyPile`, proxy parts o attachment welds server-side |
+| Clear + mensaje stale | PASS; generación vieja ignorada y vigente aceptada |
+| 10 + 50 fill/clear | PASS tras corregir double-release; cola final 0, sin crecimiento |
+| Pool warm | PASS; fill final 110 active/created, cap 320 respetado |
+| Consola final | PASS; sin stack/error de attachment; warnings conocidos ajenos |
+| Teardown | PASS; Studio en Edit y PlaceId `95828455414780` |
+
+### Bug encontrado y corregido durante la prueba
+
+Los ciclos comprimidos reprodujeron un double-release: un batch viejo retenía un record que ya
+había vuelto al pool y había sido readquirido. Se añadió el ciclo de vida
+`Active → Queued → Pooled/Destroyed`, borrado de la referencia antes de liberar e idempotencia en
+release/destroy. La corrección pasó 60 ciclos adicionales y respawn.
+
+### Pendiente antes de publicación/certificación móvil
+
+- [ ] Guardar y publicar manualmente el Place. El MCP no dispone de Save/Publish y Team Create
+  devolvió 503; esta sesión dejó los cambios solo en el DataModel abierto.
+- [ ] Prueba real con 2 y 8 clientes, incluyendo late join, salida del owner y siete pilas remotas.
+- [ ] Android low-end y móvil mid-end con thermal soak y dumps MicroProfiler.
+- [ ] Registrar p50/p95/p99 de frame/physics, memoria y red en empty/fill/steady/clear/join.
+- [ ] Probar pedestal, Replay y Rebirth, incluido pickup concurrente durante clear.
+- [ ] Sustituir `[PLACEHOLDER]` de budgets solo con evidencia de dispositivo.
+
+**Estado:** implementación y suite de un cliente aprobadas; no guardada/publicada y no certificada
+para `8 × 300` en Android.

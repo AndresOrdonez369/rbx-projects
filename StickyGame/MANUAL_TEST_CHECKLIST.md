@@ -16,7 +16,7 @@ Ejecutar en Roblox Studio con **Play**, sin comandos ni herramientas de automati
 
 ## Reset y estabilidad
 
-- [ ] Usa **Reset Character**: Stickiness vuelve a 0, Level a 1, desaparece la pila y Toy Chest vuelve rojo y bloqueando.
+- [ ] Usa **Reset Character**: Stickiness y Level se conservan, desaparece la pila local y Toy Chest refleja la elegibilidad conservada (verde si aún cumples 50, rojo si no).
 - [ ] Recoge objetos rápidamente durante 20–30 s: no hay premios dobles evidentes, congelamientos ni piezas con colisión.
 - [ ] Revisa **Output**: no debe haber errores rojos de `StuckToYou`, `Main`, services o controllers.
 
@@ -39,7 +39,7 @@ Requiere `Test > Clients and Servers > Players: 2 > Start`. No se puede ejecutar
 ### Aislamiento entre jugadores
 
 - [ ] Ambos jugadores aparecen en Toy Room y cada uno ve objetos en posiciones distintas.
-- [ ] En la ventana del jugador A, el Explorer muestra `Workspace/LocalCollectibles` con 12 hijos. En la de B, otros 12 con posiciones diferentes.
+- [ ] En la ventana del jugador A, el Explorer muestra `Workspace/LocalCollectibles` con 24 hijos. En la de B, otros 24 con posiciones diferentes.
 - [ ] En la ventana del **servidor**, `Workspace` no tiene ningún `LocalCollectibles`: los objetos solo existen en cada cliente.
 - [ ] El jugador A recoge un objeto: su Stickiness sube y el objeto desaparece **solo en su pantalla**.
 - [ ] El jugador B no ve desaparecer nada y sus objetos siguen todos disponibles.
@@ -55,7 +55,7 @@ Requiere `Test > Clients and Servers > Players: 2 > Start`. No se puede ejecutar
 
 ### Configuración manual desde el editor
 
-- [ ] Cambiar `Zones/ToyRoom/RoomSettings/TotalObjects` a 24 y volver a jugar: aparecen 24 objetos por jugador.
+- [ ] Cambiar `Zones/ToyRoom/RoomSettings/TotalObjects` a 32 y volver a jugar: aparecen 32 objetos por jugador.
 - [ ] Añadir un `ObjectValue` nuevo en `ObjectPool` apuntando a otra plantilla de `ReplicatedStorage/Assets/Collectibles`: ese tipo empieza a aparecer y el reparto se reajusta solo.
 - [ ] Mover o redimensionar `Zones/ToyRoom/PlacementArea`: los objetos se colocan dentro del nuevo volumen.
 - [ ] Vaciar `ObjectPool`: la consola avisa explícitamente y no aparecen objetos, en vez de sustituirlos en silencio.
@@ -76,7 +76,7 @@ Requiere `Test > Clients and Servers > Players: 2 > Start`. No se puede ejecutar
 - [ ] El número llena la tarjeta; si se ve diminuto, comprobar que la etiqueta tenga `TextScaled` **y** `TextWrapped` en `true`: apagar uno apaga el otro en silencio.
 - [ ] Las tarjetas de los objetos lejanos se ven más pequeñas que las de los cercanos, no todas del mismo tamaño.
 - [ ] Cuando dos tarjetas se cruzan en pantalla, la que queda delante es la del objeto más cercano.
-- [ ] Los objetos a más de 50 studs no muestran tarjeta, pero se siguen distinguiendo por color y transparencia si se pueden agarrar o no.
+- [ ] Los objetos a más de 42 studs no muestran tarjeta, pero se siguen distinguiendo por color y transparencia si se pueden agarrar o no.
 - [ ] A distancia de juego normal el número se lee sin esfuerzo.
 
 ### Pedestales de Win
@@ -96,9 +96,11 @@ Requiere `Test > Clients and Servers > Players: 2 > Start`. No se puede ejecutar
 - [ ] Los objetos pegados conservan su color; no se vuelven todos del mismo tono.
 - [ ] Objetos de distinto tamaño en el suelo quedan de tamaño parecido pegados al personaje.
 - [ ] Al recoger, el objeto viaja desde el suelo hasta el cuerpo en vez de aparecer de golpe, y llega bien aunque estés caminando.
-- [ ] Al llegar a 36 piezas, cada nueva recogida hace que la más antigua se encoja y se desvanezca, y la nueva ocupa su lugar.
+- [ ] `LogicalAttachmentCount` sigue subiendo hasta 300 aunque la presentación propia se limite a 110 proxies `[PLACEHOLDER]`.
 - [ ] La pila nunca deja de responder a las recogidas: sigues viendo pegarse lo último que agarras por muchos objetos que lleves.
-- [ ] Pasando de 36 objetos, la pila crece un poco y ninguna pieza se despega ni sale volando.
+- [ ] Al superar 110 records visibles, lo más reciente sustituye a lo normal más antiguo; los blockers protegidos permanecen.
+- [ ] En la ventana del servidor no aparece `StickyPile` ni geometría/welds cosméticos; en cada cliente sí existe su copia local acotada.
+- [ ] Un jugador remoto cercano usa como máximo 20 proxies `[PLACEHOLDER]`; al alejarse más de 110 studs se ocultan y al volver a 90 se restauran.
 - [ ] La pila no tapa la cámara ni la cabeza del personaje.
 - [ ] Al absorber un blocker desaparece **entero**, sin dejar ninguna pieza suelta en la puerta. Comprobarlo en las tres salas, sobre todo con la cama del Bedroom.
 - [ ] Al absorber un blocker, una copia reducida de ese mismo mueble vuela hasta el cuerpo y se queda pegada.
@@ -131,3 +133,32 @@ Requiere `Test > Clients and Servers > Players: 2 > Start`. No se puede ejecutar
 
 - [ ] Con los dos jugadores dentro, `Output` no muestra errores rojos.
 - [ ] Un jugador sale de la partida: no quedan objetos suyos ni errores en el servidor.
+
+### Capacidad móvil — implementación 2026-08-13
+
+Usar la matriz y los gates completos de `PLAN_PERFORMANCE.md`, sección 0.8. No aprobar esta
+sección con Studio ni con una captura aislada de Performance Stats.
+
+- [ ] Android low-end baseline identificado y registrado (modelo/SoC/RAM/OS/temperatura).
+- [ ] Móvil mid-end identificado y registrado.
+- [ ] A/B de `OwnVisualBudget` (72/96/110) y `RemoteVisualBudget` (8/12/20) con 1, 4 y 8 jugadores co-localizados.
+- [ ] Fill sostenido, steady, clear individual, clear de 8 y late join medidos por separado.
+- [ ] Dump MicroProfiler móvil guardado para cada estado; dump de servidor guardado.
+- [ ] Frame p95/p99, `PhysicsStepTimeMs`, `BaseParts`, welds, moving primitives, memoria y red
+  anotados, no solo FPS promedio.
+- [ ] Camino exitoso, requisito, distancia, rate limit, doble petición y limpieza pasan con 8.
+- [ ] Diez ciclos fill/clear/respawn estabilizan memoria e instancias; cero estado del jugador
+  que salió.
+- [ ] La mezcla de arte probada incluye el proxy p95 y la plantilla de peor coste.
+
+#### Suite MCP ya ejecutada (no sustituye hardware móvil)
+
+- [x] 29/29 proxies authored válidos, una parte e IDs únicos.
+- [x] Pickup real y rechazo de ID negativo/string/`NaN` sin mutación.
+- [x] Muerte, respawn y pickup posterior limpian/reutilizan el pool.
+- [x] 300 deltas a ~96/s quedan en 110 parts/welds locales y cero geometría server-side.
+- [x] Clear por generación ignora eventos stale.
+- [x] Double-release encontrado y corregido; 10 + 50 ciclos posteriores terminan con cola 0.
+- [ ] Pedestal, Replay y Rebirth con pickup concurrente durante clear.
+- [ ] Dos y ocho clientes reales, late join y salida del owner.
+- [ ] Guardado/publicación manual del DataModel; Team Create devolvió 503 y MCP no ofrece Publish.

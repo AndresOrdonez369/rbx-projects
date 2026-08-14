@@ -4,10 +4,29 @@ Este documento guarda el estado técnico y las decisiones que necesitamos record
 
 ## Estado actual
 
-**Última actualización:** 2026-08-06  
+**Última actualización:** 2026-08-13
 **Lugar de Roblox Studio:** `Exposición pegajosa`  
 **Modo verificado:** Edit  
-**Fase:** Rebirth y Sticky Wraps cerrados. El Rebirth tiene botón en el HUD, pantalla modal authored y ciclo repetible probado hasta `Rebirths 2`. Hay 8 Sticky Wraps que se compran y equipan pisando las placas del lobby (y también desde la pantalla del HUD); el Rebirth los borra. Antes: persistencia cloud, reconexión, respawn y fallos de carga aprobados; objetos per-player probados con un jugador (prueba con 2 jugadores sigue pendiente, manual).
+**Fase:** arquitectura mobile-first de attachments implementada y probada con un cliente. El
+servidor conserva 300 records lógicos y no crea geometría cosmética; cada cliente renderiza hasta
+110 propios y 20 por remoto, con cap 320 `[PLACEHOLDER hasta Android]`. Los cambios están en el
+DataModel abierto, no guardados/publicados. La prueba real de 2/8 jugadores y Android sigue pendiente.
+
+### Contrato vigente de attachments (reemplaza contratos históricos posteriores)
+
+- Autoridad: `ServerScriptService.Server.AttachmentService`, capacidad lógica 300.
+- Presentación: `StarterPlayer.StarterPlayerScripts.Client.AttachmentRenderer`, client-local.
+- Assets authored: `ReplicatedStorage.Assets.AttachmentProxies`, 29 modelos de una parte.
+- Registry: `ReplicatedStorage.Shared.AttachmentProxyTemplates`.
+- Red visual: `ReplicatedStorage.Shared.Remotes.AttachmentVisual`, protocolo v1.
+- Conteo canónico: `LogicalAttachmentCount`; `VisualAttachmentCount` es alias de compatibilidad.
+- Presupuestos iniciales: own 110, remote 20, created cap 320, show/hide 90/110 studs.
+- El clear usa generation isolation y release amortizado; un visual solo transiciona
+  `Active → Queued → Pooled/Destroyed`.
+- Ningún sistema de progreso consulta proxies locales.
+
+Las referencias posteriores a pila server-side, 30/36 visuals, `Rings`, pool server o growth
+describen iteraciones históricas y no deben usarse como contrato actual.
 
 ### Implementado
 
@@ -254,20 +273,25 @@ El Folder necesita tag `StickyZone`, attribute `ZoneId`, entrada correspondiente
 
 - Evento interno de colección con `CollectibleId`, `ZoneId` y `RequiredStickiness`.
 - Character estándar con `UpperTorso`, `Torso` o `HumanoidRootPart`.
-- Configuración `Attachments` con rings cuyo total coincida con `MaxVisualAttachments`.
+- Configuración `Attachments` con `Shell`, `MaxVisualAttachments`, tamaño objetivo y límites de pool/growth.
 
 ### Garantías
 
-- Máximo de 30 records y partes activas por jugador, configurable.
+- Máximo de `MaxVisualAttachments` records por jugador; un record puede contener varias partes,
+  por lo que el presupuesto físico debe limitarse por `BasePart`, no solo por record.
 - Todas las partes son massless y no participan en collision, touch o query.
 - Slots deterministas; ningún offset aleatorio puede tapar la cámara de forma impredecible.
 - Limpieza en `CharacterRemoving`, `PlayerRemoving` y `Destroy()`.
 - Pool libre acotado; nunca crece por encima de `PoolCapacity`.
-- Los pickups posteriores al límite solo cambian un contador escalar acotado y actualizan tamaños en un máximo de cinco ocasiones.
+- Los pickups posteriores al límite reciclan el record no protegido más antiguo, conservan los
+  blockers protegidos cuando hay alternativa y aplican como máximo cinco growth steps.
 
 ### Para portarlo
 
-Copiar `AttachmentService`, proporcionar un origen de eventos compatible y reemplazar únicamente `GameConfig.Attachments`. El servicio no depende de Toy Room, Stickiness como fórmula, HUD ni persistencia.
+Copiar `AttachmentService`, `CollectibleTemplates` y las plantillas authored requeridas; proporcionar
+orígenes de eventos compatibles con `PickupService.ConnectCollected` y
+`BlockerService.ConnectAbsorbed`; reemplazar `GameConfig.Attachments`. El servicio no depende de
+Toy Room, HUD ni persistencia, pero sí del contrato de payload y de las plantillas.
 
 ## Contrato reusable — blockers por jugador
 
@@ -493,3 +517,200 @@ El cliente conserva el aspecto authored para restaurarlo después de un reset, p
 - **`PickupFeedback` subió a `0.6` de altura**: caía justo encima del número grande de Stickiness.
 - **`screen_capture` agota el tiempo de espera en este lugar**, tanto en Play como en Edit. La verificación visual se hizo por medidas: `AbsolutePosition`/`AbsoluteSize` de cada nodo y un test de intersección de rectángulos entre los cinco elementos de primer nivel del HUD. Sirve para detectar solapes y texto que no cabe (`TextFits`), no para juzgar el aspecto.
 - Pendiente: los 4 botones de `BoostRow` son placeholder sin dev product; los `Icon` de los contadores son `ImageLabel` vacíos esperando arte; y falta una revisión a ojo en el emulador de dispositivos.
+
+### 2026-08-11 — El límite de 36 objetos pegados NO es un límite de rendimiento
+
+Auditoría de rendimiento de la pila pegada, con sonda propia y medición en Play. **Tres hipótesis previas quedaron refutadas por medición, dos de ellas mías.**
+
+**Sonda nueva.** `ServerScriptService.Server.PerfProbe` y `StarterPlayer…Client.PerfProbeController`, ambas apagables desde `GameConfig.Perf`. Publican por atributos, no por API: `execute_luau` no puede leer estado vivo de un servicio (`require` devuelve una copia), así que el reset se dispara con el atributo `ResetRequested = true` sobre el Folder de cada sonda. El Folder del servidor vive en **ServerStorage**, no en Workspace: allí sus atributos se replicarían a todos los clientes cada segundo, y una sonda que mide replicación no puede añadir replicación propia.
+
+**Refutación 1 — los draw calls no escalan con la pila.** Prueba A/B con `LocalTransparencyModifier` (cliente-local, no replica, reversible) sobre las 49 partes de una pila llena: **+0,81 draw calls**. Con clones locales soldados al personaje, de 0 a **4.834 partes**: los draw calls fueron 12 → 18, y variaron más con el ángulo de cámara que con el número de piezas. Las 9 plantillas son `Part` primitivas de 3 formas (Block/Ball/Cylinder), un solo material `SmoothPlastic` y cero texturas, así que el instancing de Roblox las colapsa en los batches que la escena ya dibuja. **Cualquier optimización cuyo argumento sea "bajar draw calls" no tiene nada que ganar aquí.**
+
+**Refutación 2 — `EditableMesh` descartada, no aplazada.** Su premisa entera era ahorrar draw calls que no se están pagando. Además: no replica entre servidor y cliente, el cliente admite un máximo de **8 EditableMesh simultáneos**, y no hay geometría fuente que unir porque las plantillas son primitivas y no `MeshPart`.
+
+**Refutación 3 — el churn de welds no es el primer cuello de botella.** `applyGrowthStep` destruye y recrea todos los `WeldConstraint` de la pila de golpe. Predije que sería lo primero en reventar. Con los 5 growth steps disparados (`VisualGrowthStep = 5`): **0 tirones en cliente**, y el único frame largo del servidor la sonda lo atribuyó a `PileAtCount = 0`, o sea que ni siquiera fue el growth step. A 49 welds el rebuild está por debajo del ruido. El mecanismo es real y es O(n), pero no justifica trabajo hoy.
+
+**Coste medido de la pila real (3 → 36 piezas):** `InstanceCount` +149 (≈4,1 instancias por pieza: Model + Part(s) + WeldConstraint(s)), `MemoryPartsMb` +0,52, `FrameMsAverage` sin cambio (16,66 → 16,67), `DataSendKbps` sin cambio.
+
+**Estrés de render (clones locales soldados, validado contra el foco de ventana):**
+
+| Piezas | Partes | FPS | Peor frame | Draw calls | Moving primitives |
+| --- | --- | --- | --- | --- | --- |
+| 0 | 0 | 60,0 | 18,4 ms | 12 | 20 |
+| 100 | 322 | 60,0 | 18,5 ms | 28 | 180 |
+| 300 | 966 | 60,1 | 18,4 ms | 28 | 402 |
+| 600 | 1.934 | 60,1 | 18,8 ms | 17 | 687 |
+| 1.000 | 3.222 | 60,1 | 18,2 ms | 20 | 1.131 |
+| 1.500 | 4.834 | 60,1 | 18,6 ms | 18 | 1.687 |
+
+Memoria total en todo el rango: +1 MB. **Degradación cero hasta 1.500 piezas.**
+
+**Trampa de medición que costó dos corridas:** Windows desprioriza las ventanas en segundo plano y Roblox baja su render a ~15 FPS. Cualquier medida de FPS tomada mientras Studio no es la ventana activa es basura, y sale como un 15 sospechosamente exacto. La versión final del arnés escucha `UserInputService.WindowFocused`/`WindowFocusReleased` y **repite la muestra** si pierde el foco, en vez de publicar un número falso. Regla general: **toda medición de FPS en este proyecto debe validarse contra el foco de la ventana.**
+
+**Conclusión.** El tope de 36 lo pone el `assert` de `AttachmentService.buildSlots`, que exige que los 5 anillos escritos a mano en `GameConfig.Attachments.Rings` sumen exactamente `MaxVisualAttachments`. Es un límite de layout, no de rendimiento. Subirlo exige sustituir los anillos por una distribución paramétrica (esfera de Fibonacci sobre un radio que crece con el conteo).
+
+**Lo que sigue sin medir, y es lo único que puede seguir siendo un muro:**
+
+1. **Replicación.** El estrés usó clones **locales**; la pila real se crea en el servidor y se replica. A 4,1 instancias por pieza, 1.500 piezas son ~6.200 instancias por jugador.
+2. **Multijugador.** Todo se midió con 1 jugador. 8 jugadores multiplican render y replicación.
+3. **Móvil.** Medido en un escritorio que sostiene 60 FPS. Móvil es la mayoría de Roblox y no se probó.
+
+**Próximo paso exacto:** sustituir los anillos por distribución paramétrica, subir `MaxVisualAttachments` sobre el sistema real (server-side) y medir `InstanceCount` y `DataSendKbps`. Eso decide si hace falta mover el render al cliente o basta con subir una constante.
+
+### 2026-08-11 — 300 objetos pegados, medidos sobre el sistema real. Bastaba con subir una constante
+
+**Cambio.** `GameConfig.Attachments.Rings` (5 anillos escritos a mano) sustituida por `Shell`, una distribución paramétrica en `AttachmentService.buildSlots`. `MaxVisualAttachments` de **36 a 300**. `PoolCapacity` de 72 a 400, para que una pila entera devuelta de golpe por `ClearPlayerVisuals` quepa en el pool en vez de destruirse y volver a clonarse.
+
+**La distribución separa dirección de radio, y esa separación es lo importante.** El radio crece con la **raíz cúbica** del índice del slot (única curva que da densidad uniforme en volumen: con crecimiento lineal las piezas se amontonan en el centro y la bola se ve hueca). La dirección sale de una **secuencia R2 de baja discrepancia**, no de una espiral de Fibonacci clásica: en la de Fibonacci la latitud se deriva del propio índice, así que la pila se llenaría barriendo de un polo al otro. Verificado antes de correrla: con 12 piezas ya ocupa 7 de 8 octantes; con 36, los 8 equilibrados.
+
+**Curva medida (1 jugador, sistema real server-side, pila replicada):**
+
+| Pila | InstanceCount | Δ | DataSendKbps | MemoryPartsMb | Frame servidor | Tirones |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0 | 39.827 | — | 0,33 | 2,15 | — | 0 |
+| 26 | 39.924 | +97 | 7,34 | 2,35 | 16,68 ms | 0 |
+| 51 | 40.014 | +187 | 7,07 | 2,54 | 16,64 ms | 0 |
+| 100 | 40.195 | +368 | 7,70 | 2,94 | 16,67 ms | 0 |
+| 150 | 40.386 | +559 | 7,00 | 3,36 | 16,68 ms | 0 |
+| 203 | 40.577 | +750 | 10,00 | 3,77 | 16,67 ms | 0 |
+| 250 | 40.746 | +919 | 9,89 | 4,16 | 16,68 ms | 1 |
+| 300 | 40.930 | +1.103 | 4,30 | 4,55 | 16,64 ms | 2 |
+
+**El `DataSendKbps` de la tabla es del arnés, no de la pila.** Los 7–10 kbps son los teletransportes y los remotes de pickup del script de farmeo. Con el arnés parado y 300 piezas encima el envío cae a **0,46 kbps**, contra 0,33 en reposo con la pila vacía. **Una pila de 300 no cuesta ancho de banda en régimen permanente**, y tiene sentido: las piezas soldadas viajan con la asamblea del personaje, así que después de crearse no replican CFrame.
+
+**Cliente con 300 piezas encima, medido con la ventana enfocada y tras reiniciar la sonda:** `Fps 59,95`, `PeakFrameMs 18,35`, **`SpikeCount 0`**, 401 partes y 1.102 instancias en `StickyPile`.
+
+**Coste unitario:** 3,68 instancias por pieza (Model + Part(s) + WeldConstraint(s)) y ~8 KB de memoria por pieza.
+
+**Conclusión histórica, limitada al arnés de un jugador/escritorio:** no hacía falta una reescritura para quitar el tope de 36 ni para alcanzar 300 en esa prueba. Draw calls, churn por weld individual y réplica *steady-state* no fueron el muro allí. La auditoría del 2026-08-12 reabrió servidor lógico + render local para el caso no medido `8 × 300` móvil, creación activa y late join. **Regla para este proyecto: medir el coste antes de diseñar la solución.**
+
+**Lo que sigue sin medir:**
+
+1. **Multijugador.** Todo con 1 jugador. Con 8 × 300 piezas son ~8.800 instancias y ~19 MB en servidor.
+2. **Coste de join.** Un jugador que entra a un servidor donde otros llevan 300 piezas recibe todas esas instancias de golpe. El join con la pila vacía transmitió 29.129 bytes.
+3. **Móvil.** Medido en escritorio a 60 FPS.
+
+### 2026-08-11 — El coste real es CPU, y es el número de partes soldadas
+
+Prueba en celular multijugador (dos capturas de la barra de Performance Stats): **CPU 39–46 ms, GPU 5,4–6,0 ms**, recibidos 40–46 KB/s, ping 113–117 ms. En esas capturas el cuello predominante fue CPU. Esto rebaja render en el greybox observado, pero no retira draw calls, overdraw ni LOD del análisis con arte real.
+
+**Trampa de método:** el frame time no sirve para medir esto. VSync lo clava en 16,67 ms mientras haya margen, así que un coste creciente es invisible hasta que revienta. **La métrica útil es `Stats.PhysicsStepTimeMs`, que no está capada.** Mirando solo FPS se concluye "no pasa nada" tres veces seguidas.
+
+**Coste medido de la pila (escritorio, cliente):**
+
+| Piezas soldadas | `PhysicsStepTimeMs` |
+| --- | --- |
+| 0 | 0,121 ms |
+| 100 | 0,190 ms |
+| 300 | 0,619 ms |
+| 600 | 0,868 ms |
+
+Lineal, **~1,4 µs por parte y por paso de física**. No es un pico por recogida: es un **impuesto permanente** mientras el jugador las lleve puestas, y se paga por cada pila cargada en el cliente, propia o ajena.
+
+**Hipótesis refutada:** creí que cada recogida forzaba un rebuild de la asamblea, con coste O(piezas). Falso. Añadir un `WeldConstraint` cuesta lo mismo con 0 piezas que con 600 (delta entre −0,023 y +0,057 ms, sin tendencia). El coste no está en soldar, está en **estar soldado**.
+
+**Comparativa que decide el arreglo (600 partes):**
+
+| Modo | Física | Lua | Total añadido |
+| --- | --- | --- | --- |
+| Ancladas, quietas | 0,022 ms | 0 | **0,022 ms** |
+| Ancladas + `workspace:BulkMoveTo` cada frame | 0,043 ms | 1,434 ms | **1,455 ms** |
+| Soldadas a `UpperTorso` | 0,490 ms | 0 | **0,468 ms** |
+
+Las partes ancladas y quietas son gratis: **el coste es al 100 % pertenecer a la asamblea en movimiento**. Pero moverlas a mano con `BulkMoveTo` cuesta **3× más** que dejar que el motor propague la asamblea — el gasto son las 600 multiplicaciones de `CFrame` en Lua.
+
+**Conclusión: soldar ya es la forma óptima de mover N partes con el personaje. La Opción A (quitar constraints y mover por código) queda descartada con medición. El único arreglo real es reducir el número de partes.**
+
+**Los hitches tienen nombre:** vaciar la pila de golpe. 600 piezas = **10,6 ms de Lua + frame siguiente de 19 ms** en escritorio, del orden de 50–100 ms en celular. `ClearPlayerVisuals` se llama al cobrar un pedestal, al morir, en el ReplayPad y en el Rebirth — o sea, en el bucle central — y lo sufre todo el que tenga esa pila cargada, no solo su dueño.
+
+**Palanca gratis y no obvia:** el tamaño visual de la bola lo fija `Shell.MaxRadius`, no el número de piezas. Subir `TargetMaxSizeStuds` y bajar `MaxVisualAttachments` conserva la silueta con una fracción de las partes. 100 piezas a 2,4 studs llenan el mismo volumen que 300 a 1,6.
+
+**Aritmética corregida el 2026-08-12:** con la pendiente documentada de `~1,4 µs/BasePart/paso`, 300 piezas ≈ 400 partes implican `~0,56 ms` de delta en escritorio. Cuatro pilas proyectan `~2,24 ms` y ocho `~4,48 ms`; aplicando el factor móvil hipotético 5–10×, ocho pilas serían `~22–45 ms`. Es una extrapolación, no una medición, y exige MicroProfiler en el escenario objetivo.
+
+**Instrumentación añadida:** etiquetas `debug.profilebegin` en `AttachmentService` (`Sticky/PlaceAndWeld`, `Sticky/ClearAll`, `Sticky/GrowthStep`, `Sticky/Acquire`, `Sticky/Animations`) y delta de `InstanceCount` por frame en las dos sondas, que separa "CPU sostenida" de "tirón por churn". `acquireVisual` se reescribió con una sola salida: su `return` temprano dejaba un `profilebegin` sin cerrar.
+
+**Pendiente de diseño, no de ingeniería.** A 300 piezas la bola mide **13 studs de diámetro** y sube **4,58 studs sobre el torso**, o sea ~2,5 por encima de la cabeza; se contaron 9 piezas interpuestas entre cámara y cabeza. El pasillo de salida de la Kitchen mide 8 studs de ancho, así que la bola lo atraviesa visualmente (no encaja al jugador: las piezas van con `CanCollide = false`). Ajustar `Shell.MaxRadius`, `VerticalScale` y `VerticalOffset` es una decisión de diseño con la palanca ya expuesta en `GameConfig`.
+
+### 2026-08-12 — Auditoría MCP: la meta 8 × 300 sigue abierta
+
+Se inspeccionó la implementación viva del lugar `95828455414780`, no solo la documentación.
+El valor efectivo es `MaxVisualAttachments=36` temporal y `PoolCapacity=400`; la pila adherida
+continúa creándose en servidor y soldando cada `BasePart` directamente al torso. Los objetos del
+suelo sí son presentación local con estado autoritativo en servidor.
+
+**Corrección crítica:** la pendiente escrita de `~1,4 µs/BasePart/paso` no cuadra con la
+extrapolación previa. `400 × 1,4 µs ≈ 0,56 ms`, no `0,31 ms`. Ocho pilas de ~400 partes proyectan
+`~4,48 ms` desktop y `~22–45 ms` con el factor móvil hipotético 5–10×. Es una extrapolación, no
+una medición, pero invalida cerrar la arquitectura para 8 jugadores sin probarla.
+
+**Lo sólido:** autoridad server, collectibles locales, rate limit, flags físicos, pools acotados,
+slots cacheados, Heartbeats bajo demanda para animaciones y limpieza explícita.
+
+**Lo no demostrado:** `8 × 300` co-localizado en móvil, creación/animación/clear de réplica,
+late join, arte multiparte y estabilidad de memoria. El `0,46 kbps` histórico describe una pila
+ya construida y quieta; no mide materialización ni `Replicator/ProcessPackets`.
+
+**Nuevo criterio de arquitectura:** separar capacidad lógica de presupuesto visual. Mantener
+300 pickups lógicos y probar `110` proxies authored de una parte `[PLACEHOLDER]`. Si no pasa los
+gates móviles, el servidor conservará solo el ring lógico y los clientes renderizarán pools
+locales con LOD propio/remoto, snapshots chunked y animaciones locales. La UI muestra el conteo
+lógico, no el número de instancias visibles.
+
+**Trabajo prioritario:** proxy de una parte; clear ≤2 ms Lua/frame con `GenerationId`; retirar el
+rebuild global de growth; eliminar allocs por objeto/tick del sensor; curar labels solo al nacer;
+A/B de BillboardGui; medir `Simulation/assemble`, `physicsStepped`, `SpatialFilter`, `SolveBatch`,
+`interpolateNetworkedAssemblies`, `Pass3dAdorn` y `Replicator/ProcessPackets`.
+
+**Smoke de auditoría:** Play limpio con 1 jugador, pila 0 y 24 collectibles locales; cliente
+`PhysicsStepTimeMs≈0.064`, servidor `≈0.015`; join baseline 29.109 bytes; Studio volvió a Edit.
+Esto valida arranque/teardown, no capacidad.
+
+`SceneAnalysisService` reportó en cliente `≈5,25 MB` de audio y `≈139 KB` de animaciones. El
+mayor audio es el core `FreeFalling` (`≈1,76 MB`); entre assets del juego destacan Rebirth
+(`≈731 KB`) y WinClaim (`≈682 KB`). Hubo 11 instancias sin parent en cliente y 7 en servidor:
+PlayerModule/Animate y BindableEvents pequeños de servicios, sin acumulación material visible en
+el baseline. Debe repetirse tras diez ciclos; una sola muestra no descarta crecimiento. La memoria
+de scripts no estuvo disponible porque Studio exige el flag `STUDIOPLAT37936`.
+
+### 2026-08-13 — Fase B implementada: servidor lógico, render local acotado
+
+**Decisión.** Para priorizar celulares low-end se eliminó la pila cosmética replicada por el
+servidor. `AttachmentService` conserva hasta 300 records compactos por jugador y emite deltas,
+clear y snapshots versionados. `AttachmentRenderer` decide la presentación local: 110 proxies
+propios, 20 por jugador remoto cercano y máximo 320 creados por cliente. Estos valores son
+`[PLACEHOLDER]` hasta Android/8 jugadores.
+
+**Arte y contratos.** Se authored 29 proxies (9 collectibles + 20 blockers de los dos mundos),
+cada uno con un único `BasePart`, `ProxyId` único y física inerte. El registry
+`AttachmentProxyTemplates` valida las plantillas y no genera geometría sustituta. El focus de
+pickup también pasó a `_FocusHighlight` authored.
+
+**Réplica y seguridad.** `AttachmentVisual` es cosmético. El cliente puede solicitar un snapshot
+con cooldown, pero no enviar records, counts ni progreso. Pickups, requisito, distancia,
+Stickiness, blockers y premios siguen validados por sus servicios de servidor. El alias
+`VisualAttachmentCount` conserva consumidores antiguos y ahora refleja el mismo conteo lógico
+que `LogicalAttachmentCount`.
+
+**CPU cliente.** Los slots de 110/20 se precalculan; un pickup no reconstruye la pila. Remotos
+usan histéresis 90/110 studs a 4 Hz. Sensor de collectibles dejó de asignar `Candidate` por item
+y usa distancia al cuadrado. Labels actualizan elegibilidad por evento, curan máximo 8 por frame
+y se desactivan a más de 42 studs.
+
+**Pruebas ejecutadas.** Arranque/snapshot, pickup real, rechazo de ID negativo/string/`NaN`,
+muerte, respawn y pickup posterior pasaron. Un stress de 300 deltas a ~96/s quedó en 110 models,
+110 parts y 110 welds locales, con 0 flags inseguros y 0 geometría cosmética server-side. Clear
+por generación ignoró el add stale y aceptó el vigente.
+
+**Bug encontrado por lifecycle stress.** Los primeros diez ciclos reprodujeron double-release:
+un batch antiguo conservaba un record ya devuelto y readquirido. Se añadió estado explícito
+`Active/Queued/Pooled/Destroyed`, borrado de la referencia antes de liberar y guards idempotentes.
+Después del fix pasaron 10 + 50 ciclos: active/metadata/pending volvieron a 0, el pool quedó
+acotado y el fill final se estabilizó en 110 creados/activos sin errores.
+
+**Estado operativo.** Consola final sin errores de `AttachmentService`/`AttachmentRenderer`;
+solo warnings conocidos de `WorldService.DebugUnlock` y Team Create 503. Studio quedó en Edit,
+PlaceId correcto. El MCP no expone Save/Publish: el cambio no está guardado ni publicado live.
+
+**Gates pendientes.** Dos y ocho clientes reales, late join/owner leave, pedestal/Replay/Rebirth
+con pickup concurrente, Android low/mid-end, thermal soak y dumps MicroProfiler cuantitativos
+para empty/fill/steady/clear/join. No declarar performance móvil cerrada antes de estos gates.
