@@ -68,3 +68,59 @@ Motivo: si el cartel nace en runtime, cambiar su tamaño o subirlo unos studs ob
 - `PROJECT_MEMORY.md` guarda estado, decisiones, pruebas y próximos pasos.
 - Actualizar ambos al cerrar una fase verificable.
 - Inspeccionar el lugar antes de editar y preservar trabajo existente que no esté dentro del cambio solicitado.
+
+## 7. Localización
+
+**Todo texto que lee el jugador debe estar localizado. Sin excepciones.** Un `Text` en español o en inglés escrito a mano en un script es un bug, igual que un número de balance fuera de `GameConfig`.
+
+### Dónde viven las cadenas
+
+- Las traducciones viven en `ReplicatedStorage.Shared.Localization`, un `LocalizationTable` **authored** y editable desde Studio (incluido el plugin oficial de Localization Tools). Es el mismo criterio de la regla 5: el contenido que se ve se edita en el editor, no en el código.
+- El idioma de origen es `en-us`. El texto `Source` de cada entrada es el que se escribe también en las plantillas authored, para que el editor enseñe el cartel de verdad y no un marcador vacío.
+- El código maneja **claves**, nunca cadenas: `"Leaderboard.Footer.Updates"`, no `"SE ACTUALIZA CADA 2 MIN"`.
+- Las claves se nombran `Sistema.Cosa.Estado`, en inglés y en PascalCase, como el resto del código.
+
+### Cómo se traduce
+
+`ReplicatedStorage.Shared.Locale` es el único punto de entrada:
+
+```lua
+local Locale = require(ReplicatedStorage.Shared.Locale)
+label.Text = Locale.Translate("Leaderboard.Footer.Updates", { minutes = "2" })
+```
+
+- Los parámetros van con `{nombre}` dentro de la entrada, nunca concatenando trozos traducidos: el orden de las palabras cambia entre idiomas y una frase partida en dos no se puede traducir bien.
+- **Los parámetros numéricos se pasan como cadena.** Si se pasa un `number`, Roblox le aplica su formato de número por idioma y un `2` sale en pantalla como `2.00`.
+- Cadena de respaldo: idioma exacto → mismo prefijo de idioma (`es-mx` → `es-es`) → idioma de origen → texto `Source` → la clave, con un `warn`. **Una clave sin traducir se pinta en pantalla a propósito**: tiene que verse, no esconderse.
+
+### Quién escribe el texto
+
+**El texto lo escribe siempre el cliente.** Un `ScreenGui` ya es por jugador, así que ahí no hay duda; el caso que se equivoca solo es el de la **UI compartida del mundo** — carteles, `SurfaceGui` y `BillboardGui` del Workspace —, que es una única instancia para todos y no puede tener el texto de nadie en particular.
+
+La regla para esa UI compartida:
+
+| Contenido | Quién lo escribe |
+| --- | --- |
+| Texto (títulos, mensajes, estados en palabras) | El controlador de cliente, por clave |
+| Nombres de jugador, números, símbolos | El servicio de servidor, directamente |
+| El **estado** que decide qué texto toca | El servidor, en un atributo replicado |
+
+Es decir: el servidor nunca manda una frase, manda un estado. `LeaderboardService` y `LeaderboardController` son la referencia de este patrón.
+
+### Qué no se localiza
+
+- Nombres de usuario y de display.
+- Números, y por ahora también sus abreviaturas (`1.65M`). Si algún día hay que adaptarlas a los idiomas que agrupan por 万 o por 억, el sitio es `GameConfig.Abbreviate` y ningún otro.
+- Símbolos que son ausencia de dato, como la raya de una fila vacía.
+- Los términos propios del juego —`WINS`, `STICKINESS`, `REBIRTH`, `ROBUX`— se mantienen sin traducir dentro de las frases, como marca. La frase alrededor sí se traduce.
+
+### Al añadir texto nuevo
+
+1. Añade la entrada al `LocalizationTable` con su `Source` y sus idiomas.
+2. Usa la clave desde el código.
+3. Si es UI compartida del mundo, pon el texto en un controlador de cliente y publica el estado desde el servidor.
+4. Prueba **al menos un idioma que no sea el de origen** antes de dar la tarea por terminada, y déjalo escrito en `PLAN_MVP.md`.
+
+### Deuda conocida
+
+Todo el texto anterior a esta regla (HUD, pantalla de Rebirth, inventario, portales de mundo, carteles de zona, mensajes de `Kick` del servidor) sigue escrito a mano en los controladores y en el DataModel. La regla aplica desde ya a lo nuevo; migrar lo viejo es trabajo pendiente y está inventariado en `PLAN_MVP.md`.

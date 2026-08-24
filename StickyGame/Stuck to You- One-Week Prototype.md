@@ -75,7 +75,6 @@ Design requirements:
 - No branching paths or searching
 - Approximately 30 seconds per zone
 - If the player has enough stickiness, they can absorb the door/object blocking the next zone.
-- 
 
 ---
 
@@ -121,6 +120,18 @@ Every object has a certain stickiness that needs to be met before picking it up.
 
 ---
 
+## Art assets
+
+Due to time constraints, focus the art efforts on creating worlds that follow a specific theme, with assets that fit into that theme.
+
+| World | Small Collectibles | Medium Collectibles | Large Collectibles | Landmark / Blockers |
+| --- | --- | --- | --- | --- |
+| 1. **Forest** | Flowers, mushrooms, sticks, acorns, crystals, small rocks | Bushes, logs, barrels, treasure chests, tree stumps, stone statues | Large trees, boulders, giant mushrooms, wagons, ancient pillars | **Giant Tree**, **Ancient Stone Gate**, **Forest Shrine** |
+| 1. **Desert Ruins** | Pots, bones, coins, scarabs, small crystals, bricks | Sarcophagi, statues, treasure chests, obelisks, broken columns | Giant statues, stone gates, large obelisks, ruined towers | **Pharaoh Statue**, **Temple Gate**, **Ancient Pyramid Piece** |
+| 1. **Volcano** | Coal, obsidian shards, fire crystals, skulls, volcanic rocks | Crystal clusters, lava rocks, mine carts, magma eggs, stone pillars | Giant crystals, lava boulders, ancient furnaces, magma statues | **Giant Lava Crystal**, **Volcanic Guardian Statue**, **Volcano Core** |
+
+---
+
 ## How the Win System works
 
 A Win is basically a currency that can be used to obtain upgrades. 
@@ -128,8 +139,6 @@ A Win is basically a currency that can be used to obtain upgrades.
 #### How to obtain a Win:
 
 A win pedestal can be found after every cleared zone, and it has a visible number on top of it to indicate the amount of wins the player will receive if they step into it. When the player steps into it, they’re granted the amount of wins the pedestal displayed, and are teleported back to the lobby.
-
-**Claiming a pedestal does not reset Stickiness.** The player keeps their Stickiness, Level and equipped Sticky Wrap; only Rebirth resets those. What the pedestal does reset is the cleared-zone state, so the route has to be walked again before the same pedestal pays out a second time.
 
 The more the player advances, the more wins the pedestals contain. (After clearing Zone 1, the player finds a Win Pedestal that awards 1 Win if they step over it. After clearing Zone 2, the Win Pedestal awards 3 wins. After clearing Zone 3, the Win Pedestal awards 10 wins, etc.)
 
@@ -153,12 +162,6 @@ The equipped **Sticky Wrap** determines how much Stickiness the player gains whe
 | Strong Glue | +3 | 3 Wins |
 | Super Glue | +8 | 10 Wins |
 | Cosmic Glue | +20 | 30 Wins |
-| Quantum Glue | +50 | 75 Wins |
-| Nova Glue | +120 | 150 Wins |
-| Galaxy Glue | +300 | 300 Wins |
-| Infinity Glue | +750 | 600 Wins |
-
-> Los cuatro últimos se añadieron el 2026-08-06 para llenar las ocho placas del lobby. Cada peldaño multiplica la ganancia por ~2,5 (la misma pendiente que traían los cuatro primeros) y cuesta el doble que el anterior, así que comprar el siguiente vale lo mismo que todo lo comprado hasta entonces. Son valores de arranque: viven en `GameConfig.StickyWraps` y se ajustan con playtest.
 
 ### How to unlock: 
 
@@ -227,6 +230,19 @@ Rebirthing:
 
 ---
 
+## How Player Level Works
+
+Level represents how far the player has progressed during the current Rebirth.
+
+- Stickiness automatically fills the Level bar.
+- Level does not use a separate XP source.
+- Gaining Stickiness increases Level progress.
+- Level resets to `1` after Rebirth.
+- Reaching the current Level cap unlocks Rebirth.
+- Every 5 (or X amount) levels, the player gains a small increase in movement speed and pickup radius.
+
+---
+
 ## How the Stickiness Stat Is Affected
 
 **Stickiness** determines which objects the player can collect.
@@ -262,10 +278,10 @@ The Trail value is **not multiplied independently**. Instead, it is added to the
 | Trail | Multiplier addition | Movement speed |
 | --- | --- | --- |
 | No Trail | +0 | +0% |
-| Basic Trail | +1.5 | +10% |
-| Green Trail | +2.0 | +15% |
-| Blue Trail | +2.5 | +20% |
-| Golden Trail | +4.0 | +30% |
+| Basic Trail | +0.5 | +10% |
+| Green Trail | +1.0 | +15% |
+| Blue Trail | +1.5 | +20% |
+| Golden Trail | +3.0 | +30% |
 
 The movement-speed bonus helps the player collect objects faster but does not directly increase Stickiness gained per object.
 
@@ -360,6 +376,7 @@ Level represents how far the player has progressed during the current Rebirth.
 - Gaining Stickiness increases Level progress.
 - Level resets to `1` after Rebirth.
 - Reaching the current Level cap unlocks Rebirth.
+- Every 5 (or X amount) levels, the player gains a small increase in movement speed and pickup radius.
 
 ---
 
@@ -407,6 +424,313 @@ Rebirthing:
 - Raises the Level cap
 - Makes future progression faster
 
+
+---
+
+## How the Rest Zone Works
+
+The **Sticky Rest Zone** is an AFK area located in the lobby. While the player remains inside, lost objects automatically stick to them, granting **Stickiness** and filling the Level bar.
+
+Rest Zones provide an alternative progression method for players who prefer to remain AFK. Higher-tier Rest Zones can eventually become more efficient than active collection for gaining Stickiness, rewarding players for unlocking stronger automation.
+
+- Stickiness is granted once every `X` seconds.
+- Sticky Wraps, Trails, Auras, and Rebirth bonuses affect the amount gained.
+- The player can reach their current Level cap while AFK.
+- Rebirth must still be activated manually.
+- Rest Zones do not grant Wins, clear zones, or unlock maps.
+- Moving outside the Rest Zone immediately stops automatic progression.
+
+### Rest Zone Stickiness Formula
+
+```
+Normal Stickiness Gain =
+Sticky Wrap Base Gain
+× (Rebirth Multiplier + Trail Addition)
+× Aura Multiplier
+```
+
+```
+Rest Zone Gain per Tick =
+Normal Stickiness Gain
+× Rest Zone Multiplier
+```
+
+The player receives the calculated amount every `X` seconds while inside the Rest Zone.
+
+### Rest Zone Progression
+
+There are multiple Sticky Rest Zones. Each zone has an unlock requirement and provides a stronger Stickiness multiplier.
+
+| Sticky Rest Zone | Rest Zone multiplier | Requirement |
+| --- | --- | --- |
+| Zone 1 | 1.00x | None |
+| Zone 2 | 1.50x | Reach Rebirth 1 |
+| Zone 3 | 3.00x | Reach Rebirth 5 |
+| Zone 4 | 5.00x | Robux purchase |
+| Zone 5 | 10.00x | Robux purchase |
+
+This creates an automation progression loop:
+
+> **Play actively → Earn Wins and Rebirths → Unlock stronger Rest Zones → Gain Stickiness faster while AFK → Return to Rebirth and progress again**
+
+Active gameplay remains necessary for earning Wins and accessing permanent content, while Rest Zones provide the most efficient way to progress Stickiness and Levels later in the metagame.
+
+---
+
+## How the World Event System works
+
+**World Events** are temporary server-wide modifiers that change the environment and provide bonuses to all players on the server.
+
+### When Events Happen
+
+Events can start in three ways:
+
+- **Automatic Events:** Trigger randomly every **10–15 minutes** while a server is active.
+- **Scheduled Events:** Trigger at specific times for updates, weekends, or special occasions.
+- **Admin Events:** Developers can activate these manually for community events or Admin Abuse sessions.
+
+For the initial version, use **Automatic Events** as the default system.
+
+**Recommended duration:** `5 minutes`  
+**Recommended cooldown:** `10–15 minutes` between events.
+
+Only **one World Event** should normally be active at a time.
+
+### Event Start
+
+When an event begins:
+
+- A server-wide announcement appears.
+- A countdown shows how long the event will remain active.
+- Sky, Lighting, particles, and environmental VFX change.
+- The corresponding gameplay modifier becomes active immediately.
+- Players already inside Rest Zones also receive the event bonus.
+
+Example:
+
+> **STICKY STORM!**  
+> **2X STICKINESS — 5:00**
+
+### Example Events
+
+| Event | Effect | Color of the sky |
+| --- | --- | --- |
+| Sticky Storm | x2 Stickiness | Intense Green |
+| Golden Goo | x2 Wins | Intense Gold |
+| Super Sticky | x3 Stickiness | Intense Magenta |
+| Object Rain | Increased object spawn rate | Aquamarine |
+| Magnetic Madness | x2 Pickup Radius | Red |
+| Hyper Speed | x2 Movement Speed | Rainbow (Changes color periodically) |
+
+### Event Formulas
+
+**Stickiness**
+
+`Event Stickiness = Normal Stickiness Gain × Event Stickiness Multiplier`
+
+**Wins**
+
+`Final Wins = Base Wins × Permanent Win Multiplier × Event Win Multiplier`
+
+**Pickup Radius**
+
+`Final Pickup Radius = Base Radius × (1 + Aura Bonus) × Event Radius Multiplier`
+
+**Movement Speed**
+
+`Final Speed = Base Speed × (1 + Trail Bonus + Aura Bonus + Permanent Bonuses) × Event Speed Multiplier`
+
+Any inactive event multiplier defaults to `1.0x`.
+
+### Event End
+
+When the timer reaches `0`:
+
+- Gameplay modifiers are removed.
+- Sky and Lighting return to the default world settings.
+- Event VFX disappear.
+- A short **“Event Ended”** notification appears.
+
+Events do not reset player progress when they end.
+
+### Design Rule
+
+Events should temporarily make progression feel significantly faster without changing the core gameplay.
+
+> **Same gameplay, temporarily much stronger rewards.**
+
+The system should be data-driven so new events can be created mainly by changing the **name, duration, visuals, modifier type, and multiplier**.
+
+
+---
+
+## Moving Platform Challenge System
+
+### Objective
+
+Provide reusable skill-based obstacle sections that can be inserted into any existing zone without changing the game’s World, zone, blocker, or Win progression structure.
+
+A zone may contain:
+
+- No moving-platform challenge.
+- One challenge.
+- Multiple challenges with different configurations.
+
+### Zone Integration
+
+```
+Zone
+├── Geometry
+├── Collectibles
+├── Blockers
+└── Challenges
+    └── MovingPlatformChallenge
+        ├── StartArea
+        ├── EndArea
+        ├── FailVolume
+        └── Lanes
+            ├── Lane1
+            ├── Lane2
+            └── Lane3
+```
+
+The challenge does not receive its own:
+
+- `ZoneId`
+- Win reward
+- Finish pedestal
+- Blocker progression
+- Saved checkpoint
+
+It remains part of its parent zone.
+
+### Core Behavior
+
+1. The player enters an existing zone.
+2. The challenge appears as one section of that zone’s route.
+3. The player crosses moving platforms to reach the remaining area.
+4. Reaching the `EndArea` completes the physical challenge.
+5. The player continues through the same zone normally.
+
+The zone’s existing blocker and Win pedestal remain authoritative.
+
+### Failure Behavior
+
+If the player touches the challenge’s `FailVolume`:
+
+- The player returns to the beginning of the current World.
+- No checkpoint inside the challenge is saved.
+- Stickiness, Wins, Wraps, Trails, Auras, Levels, and Rebirths are preserved.
+- The challenge does not reset the player’s economy or progression.
+- The server resolves the return position using the current World’s `StartZoneId`.
+
+### Roblox Configuration
+
+Suggested tags:
+
+- `MovingPlatformChallenge`
+- `MovingPlatform`
+- `MovingPlatformFailVolume`
+- `MovingPlatformEndArea`
+
+### Challenge attributes:
+
+- `ChallengeId`
+- `Enabled`
+- `DifficultyPreset`
+- `ParentZoneId`
+
+### Platform attributes:
+
+- `LaneIndex`
+- `Direction`
+- `Speed`
+- `TravelDistance`
+- `Spacing`
+- `PhaseOffset`
+
+### Technical Architecture
+
+`MovingPlatformService`:
+
+- Discovers embedded challenges.
+- Moves and recycles platforms.
+- Detects failures.
+- Validates successful crossings.
+- Returns failed players to the World start.
+- Records attempts and completion times.
+
+`MovingPlatformController`:
+
+- Handles visual smoothing.
+- Displays movement indicators.
+- Controls local sounds, effects, and camera feedback.
+
+This structure allows the same challenge system to be inserted into Forest, Desert, or Lava zones while using different platform models, movement presets, and visual themes.
+
+---
+
+## Monetization
+
+Monetization should accelerate the existing progression loop without introducing a separate paid progression system.
+
+### Permanent Gamepasses
+
+- **Permanent x2 Wins:** Permanently doubles Wins received from Win Pedestals. It appears as a button on the HUD, and as a giant trophy in the lobby. Both open the same purchase pop-up.  
+- **Permanent Speed Boost:** Permanently increases player movement speed by X amount. It appears as a button on the HUD.
+
+---
+
+### Premium Rest Zones
+
+
+- Unlocks access to higher-efficiency AFK Rest Zones.
+- Multiple premium rest zones have different prices
+- If the player has not bought a Premium Rest Zone, then it cannot be used. 
+- When the player approaches any premium rest zone that’s not been purchased, a pop-up appears to confirm the purchase.
+- The price of the premium rest zone should be visible over it.
+
+---
+
+### Premium Sticky Wraps
+
+
+- The main difference with the standard Sticky Wraps is that these do not reset after performing a rebirth.
+- These are a 1 time purchase
+- They are equipped in the exact same way as the rest of Sticky Wraps
+- When the player approaches any premium Sticky Wrap that hasn’t been purchased, a pop-up appears to confirm the purchase.
+- The price of the Premium Sticky Wraps should be visible over it. Alongside the text to indicate how much stickiness is awarded.
+
+---
+
+### Double Win Plates
+
+
+- An additional win plate that can be found at the side of each win plate at the end of each zone.
+- These Double Win Plates have a different color.
+- These Double Win Plates have their price visible above them. 
+- The Double Win Plates are repeatable purchases.
+
+- If the win plate found after completing zone 4 gives the player 10 Wins, a Double Win Plate can be found at the side, which gives 20 wins. 
+- They work the exact same way as the normal Win Plate.
+
+---
+
+### Developer Products
+
+Repeatable purchases can provide immediate progression:
+
+- **Skip Rebirth:** Instantly completes the current Rebirth and grants its permanent multiplier; keep your current stats.   
+- **Stickiness Packs:** Immediately grants a fixed amount of Stickiness. These can be found as a button in the HUD under the level bar. Each one has a different Robux Cost.  
+- **Trails and Auras Robux cost: **Trails and auras should have the option to be able to be purchased with Robux, separate from the cost of Wins.  
+- **Temporary Boosts:** Temporarily increase Stickiness or Win gain for X amount of minutes.
+
+### Monetization Rule
+
+Paid upgrades should make progression **faster or more convenient**, but should continue using the same core systems as free players.
+
+> **Free players progress through collecting, Wins, upgrades, and Rebirths. Paying players accelerate those same loops.**
+
 ---
 
 ## UI and HUD Refs
@@ -421,12 +745,32 @@ Rebirthing:
 
 ---
 
+## Icon Refs
+
++1 keyboard Escape
+
+
+---
+
+## Thumbnail Refs
+
+### Things to Keep in mind:
+
+- The most popular Roblox Character is called Bacon Hair  
+
+- The second most popular Roblox Character is the Noob  
+
+
+- It’s incredibly important to add expressions to the characters, as seen in the references.
+
+---
+
 ## Prototype Scope
 
 ### Include
 
 - 3 - 5 linear zones
-- One Size stat
+- Stickiness stat
 - Rebirth system (Falta botón y mostrar info de UI)
 - Win System (Podemos ganar wins, pero no tenemos donde gastarlas. Implementar Sticky wrap que se compran con wins)
 - Sticky Wraps (Falta. Se hace hoy)
@@ -460,3 +804,11 @@ The prototype succeeds when:
 > **Everything collectible follows one rule: it sticks when the player is big enough.**
 
 Any feature that complicates or interrupts that rule should remain outside the one-week prototype.
+
+
+---
+
+## Ideas sin validación
+
+  
+Rest Zone - Puede ser un threadmill que tiene varios canales, así el player se mueve de izquierda y derecha para agarrar más puntos.
