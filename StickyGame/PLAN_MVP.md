@@ -1357,3 +1357,116 @@ release/destroy. La corrección pasó 60 ciclos adicionales y respawn.
 
 **Estado:** implementación y suite de un cliente aprobadas; no guardada/publicada y no certificada
 para `8 × 300` en Android.
+
+---
+
+## 22. Registro — 2026-08-26, feedback de avatar en Rest Zones
+
+> **Histórico sustituido:** la variante con hebras `Beam` se reemplazó el mismo día por
+> **Sticky Snap**, documentado en la sección 23.
+
+### Decisión e implementación
+
+Se implementó la primera versión del concepto **Sticky Pull**: mientras el jugador permanece en
+una Rest Zone válida, reproduce un gesto R15 de amasar/atraer pegamento hacia el pecho y muestra
+dos hebras cortas desde las manos. Cada concesión real de Stickiness lleva la pose al punto de
+contacto y ensancha brevemente las hebras, de modo que el feedback coincide con el tick validado
+por servidor y no con una simulación visual independiente.
+
+- `ReplicatedStorage.Assets.RestZone.StickyPullR15` es una `KeyframeSequence` authored y editable.
+- `ReplicatedStorage.Assets.RestZone.StickyStrand` es la plantilla authored de `Beam`; en runtime
+  solo se clonan dos instancias transitorias por personaje.
+- `RestZoneAvatarController` es presentación exclusivamente cliente y observa el atributo
+  replicado `RestZoneId` y el evento existente `RestFeedback`.
+- La duración, fade, pulso, escala y nombres de assets viven en `GameConfig.RestZones.Presentation`.
+- No se añadieron remotos, progreso cliente, partes físicas, polling por frame ni texto visible.
+- R6, assets ausentes, zona vacía/inválida, cambios rápidos, muerte, respawn y `Destroy` tienen
+  salidas explícitas y limpieza. La pista se carga una vez por personaje y se reutiliza.
+
+### Pruebas en Studio
+
+| Caso | Resultado |
+| --- | --- |
+| RestZone1 desbloqueada | PASS; `RestZoneId=RestZone1`, 2 hebras habilitadas, 1 pista activa y Stickiness `0.70→1.05` |
+| Salida de la zona | PASS; zona vacía, 0 hebras habilitadas y 0 pistas reproduciéndose; las 2 instancias quedan reutilizables |
+| RestZone2 bloqueada | PASS; con 0 Rebirths no activó zona, animación ni hebras |
+| Muerte y respawn | PASS; personaje nuevo con 2 hebras limpias, 0 habilitadas, 0 pistas activas y zona vacía |
+| Stress de lifecycle | PASS; 20 entradas/salidas rápidas terminaron con exactamente 2 hebras, 0 habilitadas y 0 pistas activas |
+| Pulso por concesión | PASS; ancho base `0.105`, máximo medido `0.22575`, igual a `0.105 × 2.15` |
+| Consola final | PASS; sin errores del sistema nuevo; permanece solo el warning conocido de ProductIds placeholder |
+| Teardown | PASS; Studio volvió a Edit, PlaceId `95828455414780` |
+
+### Rendimiento observado
+
+- Scene Analysis reportó el mismo conteo visible con las hebras apagadas y encendidas en la vista
+  de prueba: 39,172 triángulos opacos/32 draws, 24 transparentes/2 draws y 3,220 UI/8 draws.
+- El clip `StickyPullR15` ocupó 2,461 bytes de memoria de animación en la sesión.
+- El controlador no registra `Heartbeat`, `RenderStepped` ni otro loop frecuente.
+- La única `AnimationTrack` retenida por el módulo es intencional, acotada a una por personaje y
+  no creció tras respawn ni los 20 ciclos.
+
+### Pendiente antes de declarar cierre de plataforma
+
+- [ ] Validar sensación, encuadre y costo en un dispositivo móvil real.
+- [ ] Probar con 2–8 clientes para observar simultaneidad, respawn remoto y distancia de cámara.
+- [ ] Guardar/publicar manualmente el Place; el cambio permanece en el DataModel abierto.
+
+**Estado:** implementación de un cliente y casos borde aprobados; pendiente validación móvil,
+multicliente y publicación manual.
+
+---
+
+## 23. Registro — 2026-08-26, Sticky Snap sin cables
+
+### Decisión e implementación
+
+Se retiró por completo la hebra `Beam`. El feedback actual conserva el gesto R15 y, ante cada
+`RestFeedback.Kind == "Granted"` válido, hace volar tres objetos básicos translúcidos hacia el
+torso para simular que se pegan. Son `ToyBlock`, `ToyBall` y `Mug`, proxies authored ya
+existentes en `ReplicatedStorage.Assets.AttachmentProxies`; funcionan aunque el jugador llegue
+al lobby con cero objetos reales.
+
+- `RestZoneStickySnapController` sustituyó a `RestZoneAvatarController` en `ClientMain`.
+- `StickySnapR15` sustituyó a `StickyPullR15`; `StickySnapHighlight` es la nueva plantilla
+  authored y `StickyStrand` fue eliminado.
+- Hay exactamente tres clones pooled por personaje. Se crean una vez, viven en un contenedor
+  local separado del character y permanecen invisibles fuera de un snap.
+- Cada viaje dura 0.48 s, con 0.07 s de stagger y actualización acotada por `Heartbeat`; no hay
+  conexión o loop persistente cuando el efecto está quieto.
+- Los offsets se escalan con el tamaño de `UpperTorso`/`Torso`; no se busca ni se toca la
+  superficie de ropa, layered clothing, accesorios o skin.
+- R15 reproduce la animación; R6 conserva la ilusión de objetos y omite solo el clip R15.
+- Sigue sin haber progreso cliente, remotos nuevos, física, colisiones, raycasts ni texto nuevo.
+
+### Pruebas en Studio
+
+| Caso | Resultado |
+| --- | --- |
+| RestZone1 con pila vacía | PASS; Stickiness `0→0.70`, 3 objetos y 3 highlights simultáneos, 1 pista activa |
+| Salida | PASS; 3 modelos pooled, 0 visibles, 0 highlights y 0 pistas activas |
+| RestZone2 bloqueada | PASS; con 0 Rebirths no activó zona, objetos ni animación |
+| Muerte/respawn | PASS; 1 contenedor nuevo, 3 modelos invisibles, sin contenedor anterior |
+| 20 entradas/salidas | PASS; terminó con 1 contenedor, 3 modelos, 0 visibles y 0 pistas |
+| 30 grants rápidos | PASS; máximo 3 modelos/3 visibles/3 highlights; al finalizar volvieron a invisibles |
+| Payload inválido/fuera de zona | PASS; string, `Kind` incorrecto y `ZoneId` ajeno no mostraron objetos |
+| Proporciones R15 distintas | PASS; width 0.72, height 1.15, depth 1.18 y head 0.85 mantuvieron 3 objetos visibles |
+| Consola final | PASS; sin errores del sistema nuevo; solo warning conocido de ProductIds placeholder |
+| Teardown | PASS; Studio volvió a Edit, PlaceId `95828455414780` |
+
+### Rendimiento observado
+
+- Con cámara fija, Scene Analysis midió exactamente lo mismo idle y durante Sticky Snap:
+  69,856 triángulos y 99 draw calls totales (incluidos shadows), sin delta visible en esa vista.
+- El clip `StickySnapR15` ocupó 2,461 bytes.
+- Después de respawn, 20 ciclos y 30 grants rápidos no quedaron Models, Parts ni Highlights
+  unparented. La única instancia retenida por el controlador fue una `AnimationTrack` de 1 por
+  personaje, intencionalmente cacheada y reutilizada.
+
+### Pendiente
+
+- [ ] Validar sensación y costo en móvil real.
+- [ ] Ejecutar una prueba con 2–8 clientes y LOD social.
+- [ ] Guardar/publicar manualmente el Place; los cambios permanecen en el DataModel abierto.
+
+**Estado:** implementación y suite de un cliente aprobadas; pendiente móvil, multicliente y
+publicación manual.

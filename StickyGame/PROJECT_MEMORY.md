@@ -742,3 +742,59 @@ PlaceId correcto. El MCP no expone Save/Publish: el cambio no está guardado ni 
 **Gates pendientes.** Dos y ocho clientes reales, late join/owner leave, pedestal/Replay/Rebirth
 con pickup concurrente, Android low/mid-end, thermal soak y dumps MicroProfiler cuantitativos
 para empty/fill/steady/clear/join. No declarar performance móvil cerrada antes de estos gates.
+
+### 2026-08-26 — Sticky Pull para Rest Zones
+
+**Decisión de game feel.** La primera versión evita objetos físicos pegándose al avatar. Usa una
+animación R15 authored de brazos/torso y dos hebras `Beam` cortas mano→pecho; comunica “amasar y
+atraer pegamento” sin añadir assemblies, colisiones ni trabajo de servidor. En cada `Granted` del
+remoto existente se refuerza el contacto con un snap de pose y un pulso de ancho.
+
+**Arquitectura.** Se añadieron las plantillas authored
+`ReplicatedStorage.Assets.RestZone.StickyPullR15` y `StickyStrand`, el módulo cliente
+`RestZoneAvatarController`, su registro en `ClientMain` y la configuración
+`GameConfig.RestZones.Presentation`. El servidor sigue siendo autoridad y no se añadieron remotos
+ni textos localizables. El módulo reutiliza una pista y dos hebras por personaje, no hace polling
+por frame y limpia conexiones/tareas/instancias en cambio de personaje, muerte y `Destroy`.
+
+**Casos borde comprobados.** RestZone1 concedió progreso (`0.70→1.05`) con 2 hebras y 1 pista;
+salida y RestZone2 bloqueada dejaron 0 efectos activos; muerte/respawn creó un estado limpio; 20
+ciclos rápidos terminaron sin acumulación (2 hebras totales, 0 activas, 0 pistas reproduciéndose).
+El pulso midió `0.22575`, exactamente `0.105 × 2.15`.
+
+**Perfil observado.** Scene Analysis no mostró delta de triángulos ni draw calls al habilitar las
+dos hebras desde la cámara probada. El clip temporal ocupó 2,461 bytes y la única pista retenida
+quedó estable por personaje. Consola final limpia para este sistema; solo apareció el warning
+conocido de ProductIds placeholder. Studio terminó en Edit, PlaceId `95828455414780`.
+
+**Pendiente.** Probar game feel y costo en móvil real, ejecutar 2–8 clientes y guardar/publicar el
+Place manualmente. No declarar certificación móvil o multicliente con la evidencia de un cliente.
+
+### 2026-08-26 — Sticky Snap reemplaza Sticky Pull
+
+**Decisión.** Se eliminó la hebra `Beam` porque se leía como cable desde ambos lados y no
+representaba el verbo central de pegar objetos. Ahora cada grant confirmado hace que `ToyBlock`,
+`ToyBall` y `Mug` translúcidos vuelen y se desvanezcan contra el jugador. Son proxies authored
+del catálogo existente, así que el lobby comunica el sistema aunque el conteo real de objetos sea
+cero y sin fingir inventario persistente.
+
+**Compatibilidad y arquitectura.** `RestZoneStickySnapController` usa tres clones pooled en un
+Folder local separado del character. Los offsets dependen del tamaño del torso, no de la superficie
+de la skin, ropa o accesorios. R15 añade `StickySnapR15`; R6 conserva los snaps sin intentar cargar
+ese clip. `StickySnapHighlight` es authored, `StickyStrand` y el controlador anterior fueron
+retirados. No se añadieron remotos ni autoridad cliente.
+
+**Lifecycle comprobado.** Éxito con pila vacía mostró 3 objetos y 3 highlights; salida y zona
+bloqueada dejaron cero visibles; respawn dejó un solo contenedor con tres objetos pooled. Veinte
+ciclos de entrada/salida y treinta grants a 50 Hz no crearon instancias extra. Payloads inválidos o
+fuera de zona fueron ignorados. Una prueba R15 con escalas width 0.72, height 1.15, depth 1.18 y
+head 0.85 mantuvo los tres objetos.
+
+**Perfil observado.** La cámara fija reportó 69,856 triángulos/99 draws tanto idle como durante el
+snap. El clip ocupó 2,461 bytes. No quedaron Models, Parts ni Highlights unparented; la única
+`AnimationTrack` retenida es la pista intencional cacheada por personaje. Consola final limpia
+para el sistema y Studio terminó en Edit.
+
+**Pendiente.** Móvil real, 2–8 clientes y Save/Publish manual. La captura automática de Studio fue
+intermitente, pero la presencia simultánea, posición, fade y cleanup se verificaron por estado
+runtime; el game feel final todavía merece revisión humana en Play.
