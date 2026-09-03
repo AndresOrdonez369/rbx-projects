@@ -1470,3 +1470,527 @@ al lobby con cero objetos reales.
 
 **Estado:** implementación y suite de un cliente aprobadas; pendiente móvil, multicliente y
 publicación manual.
+## Shop unificado de Robux · ✅ HECHA (2026-08-24)
+
+Tienda única del juego, pedida por el game designer sobre una referencia visual de cards con
+precio en Robux. Sustituye a los paneles sueltos que vendían lo mismo desde el HUD.
+
+**Alcance decidido:** solo Robux. 5 secciones y 11 tarjetas.
+
+| Sección | Origen del catálogo | Tarjetas |
+| --- | --- | --- |
+| GAME PASSES | `Monetization.GamePasses` | 2 |
+| STICKINESS PACKS | `Boosts.Packs` | 4 |
+| X2 BOOSTS | `Boosts.Timed` | 2 |
+| PREMIUM WRAPS | `StickyWraps` con `ProductId` | 2 |
+| SKIP REBIRTH | `Rebirth.Skip` | 1 |
+
+**Fuera de alcance a propósito.** Los 8 tiers `DoubleWin_*` **no** son packs de Wins: son bandas
+de precio del premio de un pedestal concreto y solo valen con una reclamación viva. Vendidos
+sueltos pagarían `FallbackWins` (20 Wins por R$25), el peor cambio del juego. Si alguna vez hace
+falta un pack de Wins de verdad, se añade su catálogo a `SECTION_SOURCES` y una sección authored
+con ese `SectionId`.
+
+**Qué se creó**
+- `StarterGui.StickyHUD.ShopScreen` authored: `Backdrop`, `Window` (`TitleBar` + `CloseButton`,
+  `Sections`, `Message`), las 5 secciones `Section_*` con atributo `SectionId`, y la plantilla
+  `_Card`.
+- `StarterGui.StickyHUD.ShopOpenButton`, en la misma columna que Rebirth e Inventory.
+- `StarterPlayer.StarterPlayerScripts.Client.ShopController`, registrado en `ClientMain`.
+- `GameConfig.UI.CompactAttributes.CellSize = "CompactCellSize"`.
+
+**Qué se retiró**
+- `GamePassPanel`, `BoostPanel` y `StatsPanel.BoostRow` del HUD.
+- `GamePassController` se queda solo con el trofeo del lobby (tag `GamePassDisplay`).
+- `BoostController` se queda solo con `ActiveBoostChip` y su cuenta atrás.
+
+**PC y móvil.** El grid reparte por ancho disponible y las secciones tienen `AutomaticSize`, así
+que en pantalla estrecha caben menos tarjetas por fila y la sección crece sola; el
+`AutomaticCanvasSize` del scroll se ajusta detrás. `CompactCellSize` solo encoge la celda.
+
+**Pruebas (Play, un cliente)**
+- [x] 11 tarjetas construidas en las 5 secciones, con título, tagline y precio correctos.
+- [x] Consola sin errores ni warnings; ningún controlador falló al arrancar.
+- [x] Estados: `OwnedGamePassIds=DoubleWins` → OWNED; `OwnedWrapIds` con `EternalGlue` → OWNED;
+      `ActiveBoosts=Boost_Wins:<expiry>` → ACTIVE. El resto siguió comprable.
+- [x] Tagline dinámico de los packs: con BasicGlue/R0 daba `S=+250 M=+1K L=+5K XL=+25K`; con
+      OmegaGlue y 5 rebirths pasó a `S=+350K M=+1.4M L=+7M XL=+35M`.
+- [x] Layout compacto aplicado con el presupuesto de píxeles de un móvil horizontal (817×369):
+      todo legible, sin solapes, scroll correcto.
+- [ ] **Pendiente:** pasada final en el emulador de dispositivo de Studio (el MCP no puede
+      cambiar el viewport de Play; el compacto se validó aplicando sus valores a mano).
+- [ ] **Pendiente:** los prompts fallarán hasta que existan los dev products y game passes reales
+      y sus ids se peguen en `GameConfig` (`IdsArePlaceholders = true`).
+
+---
+
+## Registro — 2026-08-19, props de `Level_02` en el mundo 2
+
+Los 31 props de `Workspace.GameplayProps.Level_02` sustituyen a los placeholders en las 10 salas
+del mundo 2 (Desert). **Ningún prop se usa como puerta**: las 10 puertas del mundo 2 quedan
+exactamente como estaban, y los 31 props están dentro de pools de sala.
+
+Mismo pipeline que el mundo 1, así que no hubo que tocar una sola línea de código: plantilla en
+`Assets/Collectibles`, proxy con el mismo nombre en `Assets/AttachmentProxies` con su
+`AttachmentScale`, y `ObjectValue` en el `ObjectPool` de la sala. Los ProxyId nuevos van del 77
+al 107.
+
+### Escalas de pegado
+
+Calculadas para que todo lo pegado se lea a ~2,2 studs, igual que en el mundo 1. Van de `1.000`
+(Pot_01, Brick_01 — se pegan a tamaño real) a `0.050` (Pillar_01, que mide 44 studs). Cada una
+es editable a mano en `Assets/AttachmentProxies/<Prop>/AttachmentScale`.
+
+### Los pools, repartidos por huella y no por carpeta
+
+La carpeta `MediumProps` de `Level_02` mezcla un cristal de 5,3 studs de ancho con un sarcófago
+de 15,6. Es el **ancho** lo que decide cuántos caben en una sala, así que el reparto se hizo por
+huella horizontal:
+
+| Sala | Objetos | Sep. | Caben | Pool |
+| --- | --- | --- | --- | --- |
+| W2_ToyRoom | 32 | 8 | 32 | Pot_01/02/03, Brick_01 |
+| W2_Bedroom | 32 | 8 | 38 | Coins_01/02/03, Brick_02 |
+| W2_Kitchen | 32 | **5** | 41 | Scarab_01/02/03, Brick_03 |
+| W2_Zone4 | 32 | 8 | 34 | Bone_01, Bone_03, Pot_01, Coins_02 |
+| W2_Zone5 | 32 | **7** | 36 | Brick_01/02/03, Scarab_01 |
+| W2_Zone6 | 32 | 8 | 33 | Pot_02, Pot_03, Coins_03, Bone_03 |
+| W2_Zone7 | 20 | 8 | 26 | SmallCrystal_01/02/03, Cactus_01 |
+| W2_Zone8 | 10 | 11 | 13 | Cactus_02, Cactus_03, Chest_01, Chest_02 |
+| W2_Zone9 | 10 | 12 | 14 | Chest_03, Sarcophagi_01, Sarcophagi_02, Cactus_02 |
+| W2_Zone10 | 8 | 15 | 11 | Obelisk_01/02/03, Pillar_01/02/03 |
+
+Los 31 props están usados; ninguno se quedó fuera.
+
+### La capacidad de una sala se mide, no se estima
+
+En el mundo 1 estimé los slots a partir del área y acerté por poco. En el desierto la estimación
+se equivoca mucho: las salas tienen obstáculos y retos de plataforma que comen suelo, y el
+`raycast` de `ItemPlacementService` solo acepta puntos con suelo propio debajo.
+
+El método que funcionó, y que conviene reutilizar: **poner `TotalObjects` a 100 temporalmente**.
+Con eso `targetCount` llega al tope de `MaxSlotsPerZone` y el generador no para antes de tiempo,
+así que el aviso imprime la capacidad **real** de la sala. Tres pasadas de medición dieron la
+columna "Caben" de la tabla.
+
+Ejemplo de por qué importa: `W2_Kitchen` mide 62 × 88 —más grande que cualquier sala del mundo
+1— y con separación 8 solo produce **17 slots**.
+
+### Dos avisos que ya venían de antes
+
+Al medir salió que `W2_Kitchen` (17 slots) y `W2_Zone5` (30) **ya pedían 32 objetos con los
+placeholders**, así que arrastraban el aviso de `ItemPlacement` desde antes de este cambio. Se
+arreglaron de paso bajando su separación a 5 y 7: los props de `Level_02` de esas salas miden
+2–3,7 studs, así que a esa distancia no se tocan, y las dos vuelven a servir sus 32 objetos.
+
+### Lo que cambia de balance
+
+Las siete primeras salas conservan sus 32 objetos por vuelta. `W2_Zone8`, `W2_Zone9` y
+`W2_Zone10` bajan a 10, 10 y 8, y `W2_Zone7` a 20. No es una decisión de diseño: son props de 13
+a 31 studs de ancho en salas que solo dan 11–26 slots. **Hay que mirarlo en playtest.** La
+palanca para recuperarlo es agrandar la `PlacementArea` de esas cuatro salas.
+
+### Pruebas (Studio, Play, un jugador)
+
+| Comprobación | Resultado |
+| --- | --- |
+| Contrato de proxies (`ValidateAll`) | Válido; 107 proxies, 31 plantillas de Level_02 |
+| Recorrido lógico por las 10 salas del mundo 2 | **Ningún aviso de `ItemPlacement`** |
+| Render de W2_ToyRoom | 32 objetos: Pot_01 x8, Pot_02 x8, Pot_03 x8, Brick_01 x8 |
+| Props apoyados en el suelo | Base a `0.00` studs del suelo en las cuatro muestras |
+| Tarjeta de requisito | Offset por plantilla (`+2.26`, `+2.74`, `+3.07`), texto correcto |
+| Recogida real en el mundo 2 | 20 objetos visitados, 12 recogidos y pegados |
+| Tamaño de lo pegado | AABB 2,70–3,22 studs, el mismo rango que los props del mundo 1 |
+| Puertas del mundo 2 | Intactas: 4 partes cada una, ningún prop de `Level_02` dentro |
+
+`[MovingPlatform] fallo en Desert_ZoneN` aparece en consola durante las pruebas: es un `print`
+del reto de plataformas del desierto, disparado porque el arnés teletransporta al personaje por
+las salas. No es un error ni tiene que ver con este cambio.
+
+### Pendiente señalado
+
+- `Level_01/SmallProps` tiene ahora **22 props**, siete más que los 15 que importé en la sesión
+  anterior. Los nuevos no están en `Assets/Collectibles` ni en ningún pool. Se importan con el
+  mismo procedimiento en cuanto se pidan.
+- `Level_03` (23 props: 12 Small, 5 Medium, 6 Big) sigue sin usar, a la espera del mundo 3.
+- La captura de pantalla de Studio dio timeout en esta sesión, así que la verificación del mundo
+  2 es numérica (posiciones, tamaños y contados), no visual.
+
+---
+
+## Registro — 2026-08-25, props de `Level_03` en el mundo 3
+
+Los 23 props de `Workspace.GameplayProps.Level_03` sustituyen a los placeholders en las 10 salas
+del mundo 3 (Lava). **Ningún prop se usa como puerta**: las 10 puertas del mundo 3 quedan como
+estaban y los 23 props están dentro de pools de sala.
+
+Con esto los tres mundos usan sus props reales. Cero cambios de código en las tres sesiones
+después de la primera: el pipeline (plantilla en `Collectibles` → proxy con el mismo nombre y su
+`AttachmentScale` → `ObjectValue` en el pool) aguantó los tres sets sin tocar nada.
+
+| Set | Plantillas | ProxyIds |
+| --- | --- | --- |
+| Level_01 (Forest) | 37 | 40–76 |
+| Level_02 (Desert) | 31 | 77–107 |
+| Level_03 (Lava) | 23 | 108–130 |
+
+### Escalas de pegado
+
+Calculadas para leerse a ~2,2 studs, igual que en los otros dos mundos. Van de `1.000`
+(LavaRocks_02, se pega a tamaño real) a `0.039` (GuardianStatue_01, que mide 57 studs de alto —
+el prop más grande de todo el juego). Editables a mano en
+`Assets/AttachmentProxies/<Prop>/AttachmentScale`.
+
+### Los pools
+
+| Sala | Objetos | Sep. | Caben | Pool |
+| --- | --- | --- | --- | --- |
+| W3_ToyRoom | 32 | 6,5 | 40 | Mineral_01/02/03, Coal_01 |
+| W3_Bedroom | 32 | 6,5 | 46 | Mineral_04/05/06, Coal_02 |
+| W3_Kitchen | 32 | 8 | 43 | Obsidian_01/02, LavaRocks_01/02 |
+| W3_Zone4 | 32 | 6,5 | 38 | Coal_01, Coal_02, Mineral_01, Obsidian_01 |
+| W3_Zone5 | 32 | 7 | 35 | LavaRocks_01/02, Mineral_04, Obsidian_02 |
+| W3_Zone6 | 32 | 8 | 44 | Mineral_02, Mineral_05, Coal_01, Obsidian_01 |
+| W3_Zone7 | 14 | 9 | 19 | MineCart_01/02, Egg_01, Egg_02 |
+| W3_Zone8 | 16 | 11 | 22 | Egg_03, Egg_01, MineCart_01/02 |
+| W3_Zone9 | 10 | 10 | 14 | BigCrystal, Pillar_01, Pillar_02, AncientPillar_01 |
+| W3_Zone10 | 12 | 12 | 16 | AncientPillar_02, GuardianStatue_01, BigCrystal, Pillar_01 |
+
+Los 23 props están usados; ninguno se quedó fuera.
+
+**Las seis primeras salas conservan sus 32 objetos**, pero para conseguirlo hubo que **bajar** la
+separación de cuatro de ellas (ToyRoom, Bedroom y Zone4 a 6,5; Zone5 a 7). Con la separación 8
+que probé primero, ToyRoom daba 30, Bedroom 27 y Zone4 27, por debajo de los 32 que piden. Los
+minerales de `Level_03` miden 2,1–4,3 studs, así que a 6,5 siguen sin tocarse.
+
+### Lo que cambia de balance
+
+`W3_Zone7`, `W3_Zone8`, `W3_Zone9` y `W3_Zone10` bajan de 32 a 14, 16, 10 y 12 objetos. Son
+props de 11 a 40 studs de ancho en salas que dan 14–22 slots. **Hay que mirarlo en playtest**; la
+palanca para recuperarlo es agrandar la `PlacementArea` de esas cuatro salas.
+
+`W3_Zone9` y `W3_Zone10` llevan los props más grandes de todo el juego (28,9 a 39,9 studs de
+huella, y la estatua mide 57 de alto). A separación 10 y 12 **se solapan de forma visible**, y no
+hay configuración que lo evite: a separación 14 la sala 9 solo produce 8 slots y a 18 produce 7,
+que es por debajo del `MinSlotsPerZone`. Se eligió la opción jugable —más objetos, con solape—
+sobre la opción limpia con 8 objetos y cero margen de respawn. Si diseño prefiere lo contrario,
+es cambiar dos números.
+
+### Pruebas (Studio, Play, un jugador)
+
+| Comprobación | Resultado |
+| --- | --- |
+| Contrato de proxies (`ValidateAll`) | Válido; 130 proxies, 23 plantillas de Level_03 |
+| Recorrido lógico por las 10 salas del mundo 3 | **Ningún aviso de `ItemPlacement`** |
+| Render de W3_ToyRoom | 32 objetos: Mineral_01 x8, Mineral_02 x8, Mineral_03 x8, Coal_01 x8 |
+| Props apoyados en el suelo | Base a `0.00` studs del suelo en las cuatro muestras |
+| Tarjeta de requisito | Offset por plantilla (`+2.66`, `+2.87`, `+3.08`), texto correcto |
+| Recogida real en el mundo 3 | 16 objetos visitados, 9 recogidos y pegados |
+| Tamaño de lo pegado | AABB 2,87–3,53 studs, el mismo rango que los mundos 1 y 2 |
+| Props multiparte pegados | 3 de las 9 piezas tienen 2 partes y su AABB sigue siendo pequeño: las partes extra viajan soldadas, no se quedan atrás |
+| Puertas del mundo 3 | Las 10 intactas; ningún prop de `Level_03` dentro de un blocker |
+| Captura visual | W3_ToyRoom con sus minerales apoyados y la pila en el personaje |
+
+### Pendiente señalado
+
+- `Level_01/SmallProps` sigue teniendo **22 props**, siete más que los 15 importados en su día.
+  Los nuevos no están en `Assets/Collectibles` ni en ningún pool.
+- Los requisitos de los objetos del mundo 3 se leen ahora en el orden de `2,25 × 10¹³`
+  (`22.5T` en las tarjetas). No es de este cambio, pero conviene confirmarlo con diseño.
+
+## Registro — 2026-08-27, cierre de la migración del HUD, escala por viewport y rendimiento
+
+Continuación de la migración del HUD desde el place de pruebas (`Lugar de tvg_andy`,
+placeId 80814338519901) al place de producción (`Exposición pegajosa`, placeId
+95828455414780). La copia de la plantilla estaba **completa**: los 941 descendientes de
+`StickyHUD` son idénticos propiedad a propiedad en los dos lugares. Lo que faltaba era
+todo lo demás.
+
+### Lo que faltaba
+
+**1. Tres paneles se quedaron con la paleta anterior.** `ShopScreen`, `RunFailureOverlay`
+y `RestZoneStatus` solo existen en producción, así que la copia no los tocó: seguían en
+azul marino con radios de 18/14/12 px, mientras el resto del HUD ya era la paleta
+`Ink` + `Surface` con radio de panel 5 y de control 0.02 en escala. Se confirmó
+comparándolos con `ServerStorage.HUDMigrationBackup_20260827`: su `Window` tiene el mismo
+color exacto que antes de migrar.
+
+Se restilizan contra el token que corresponde a su **rol**, no por gusto: `RestZoneStatus`
+y `RunFailureOverlay` como chips o avisos flotantes (relleno `Ink`, esquina 0.05, contorno
+de 3 en el color que da el significado), igual que `ActiveBoostChip` y `WorldEventBanner`;
+`ShopScreen` como ventana modal (superficie blanca, contorno de tinta de 5, secciones en
+`SurfaceAlt`, tarjetas con la receta de `_CosmeticRow`), igual que `InventoryScreen`.
+
+**2. Trece etiquetas seguían en `GothamSSm` y `LegacyArial`.** Pasan a `FredokaOne`.
+
+**3. Dos elementos del HUD estaban apagados.** `TopStats.BlockerProgress` (la línea de
+objetivo, "TOY CHEST 0 / 25") y `StatsPanel.PerkRow` (los chips de SPEED y MAGNET) tenían
+`Visible = false`. En el backup previo a la migración los dos estaban en `true`, y
+`HUDController` los sigue calculando y escribiendo en cada actualización. Es estado del
+sandbox de Andy que viajó con la copia. Se devuelven a `true`.
+
+**4. `TopStats` estaba fuera de su marco.** Sus cuatro etiquetas tenían la `Position` base
+con la Y en **escala 4.32 a 5.02** —entre 294 y 341 px por debajo de un marco de 68 px de
+alto—, así que flotaban sueltas a media pantalla, justo donde salen los avisos de acción.
+Solo se veía en layout ancho: el juego compacto de atributos (`CompactPosition`) sí era
+correcto, y la ventana de pruebas de Andy (1108x612) entraba en compacto. Se recolocan
+dentro de la banda y el bloque entero se ancla ahora **encima de la barra de nivel**
+(`AnchorPoint` 0.5,1 y `Position` {0.5,0},{1,-166}), con `CompactAnchorPoint` para que en
+móvil siga arriba.
+
+**5. `ScreenInsets`** pasa de `DeviceSafeInsets` a `None`, que es lo que tiene el place de
+Andy. En escritorio no cambia nada (`IgnoreGuiInset` ya era `true`); importa en móviles con
+recorte. **Aviso**: `None` significa que el HUD ignora el área segura, así que hay que
+mirarlo en un teléfono con notch antes de publicar.
+
+### Por qué el HUD se veía más pequeño
+
+No se veía más pequeño: **a igual viewport los dos HUD son idénticos al píxel**. Lo que
+cambia es el tamaño de la ventana de pruebas, y varios bloques están dimensionados en
+**píxeles fijos**: `TopStats` y `StatsPanel` llevan el alto en offset, y `NavGrid` y
+`UtilityRow` lo llevan en las dos dimensiones. La misma banda de 68 px es el 11,1 % de una
+pantalla de 612 de alto y el 6,3 % de una de 1080; el texto va con `TextScaled` dentro de
+esa caja, así que encoge con ella hasta quedarse en 14 px.
+
+`DesignSystem.Scale` ya describía la solución —tokens escritos para 720p de alto,
+multiplicados por el viewport y acotados entre 0.70 y 1.50— pero **nadie la había
+conectado**. Ahora la conduce `ResponsiveLayout`, que ya era el dueño de adaptar el HUD al
+tamaño de pantalla:
+
+- Un `UIScale` **authored** llamado `ViewportScale` dentro de cada bloque que lo necesita.
+  Añadir o quitar un bloque del escalado es crear o borrar esa instancia en Studio.
+- Va por bloque y **no en la raíz del `ScreenGui`** a propósito: un `UIScale` en la raíz
+  escalaría también las `Position` en escala de sus hijos y mandaría fuera de pantalla todo
+  lo anclado a un borde (`UtilityRow`, `GamePassPanel`, `NavGrid`).
+- Atributo authored `ScaledOffset = true` para el problema hermano: un bloque que crece
+  también tiene que separarse lo proporcional de sus vecinos. El `-166` de `TopStats` es
+  62 + 96 + 8 medidos a 720p; sin escalarlo, un `StatsPanel` de 144 px se lo come.
+- En layout compacto el factor se fuerza a 1: los atributos `Compact*` ya están calibrados
+  para pantallas pequeñas.
+
+Resultado a 1918x1080: `TopStats` pasa del 6,3 % al 9,4 % del alto (el objetivo del sistema
+de diseño; en la ventana de Andy era el 11,1 %) y `NavGrid` del 18,1 % al 27,2 %. El cuerpo
+de letra de la Stickiness pasa de 27 a 40 px y el de las líneas auxiliares de 14 a 21.
+
+**Pendiente**: `RestZoneStatus` no escala. Ya tiene un `UIScale` (`PulseScale`) que anima
+`RestZoneMachineController`, y Roblox solo aplica uno por objeto. Además, ahora que
+`StatsPanel` es más alto, ese panel tapa más de la barra de nivel de lo que tapaba antes.
+Las dos cosas se arreglan juntas moviéndolo, y es decisión de diseño.
+
+### Rendimiento del HUD
+
+Medido en Studio, cliente, 1918x1080. En reposo el HUD ya estaba limpio (0 reescrituras en
+6 s, antes y después). El coste estaba en los **picos**: abrir el inventario, cambiar de
+tamaño la ventana y, sobre todo, cualquier repintado de un botón.
+
+| Cambio | Medida |
+| --- | --- |
+| `DesignSystem.ApplyRim`: huella de las 6 entradas que deciden el bisel, guardada en un atributo de la propia instancia. Era idempotente en el RESULTADO, pero rehacía el trabajo: dos secuencias nuevas (`ColorSequence` + `NumberSequence`) de cuatro puntos por pieza, cada vez | Barrido global de 271 biseles: 2,67 → 0,92 ms (−66 %) |
+| `RimScaler`: cola de instancias sucias en vez de barrido global. Antes, cambiar el color de UN botón re-aplicaba el bisel a los 271 | Repintar un botón: 2,67 → 0,009 ms (**293x menos**) |
+| `TextStrokeScaler`: caché por etiqueta de las cuatro entradas de `padTo` y `applyTo`. El barrido reescribía padding y contorno de las ~180 etiquetas para corregir dos | Barrido en reposo: −38 % |
+| `TextStrokeScaler`: `DescendantRemoving` filtrado. Sin la condición, cualquier instancia que desapareciera lanzaba un barrido completo, y desaparecen constantemente sin que nadie toque una letra (los `UIScale` de `PressFeedback`, los biseles, los iconos del pinner) | Elimina una clase entera de barridos |
+| `TextIconPinner`: caché de lado, ancho de texto y alineación. Está enganchado a tres señales por etiqueta y las tres se disparan juntas en cada cambio de contador; reescribía ocho propiedades cada vez | 2 de cada 3 disparos salen sin escribir |
+| `HUDController`: los 16 `GetAttributeChangedSignal` se juntan en un `update()` diferido por frame. Una recogida movía hasta cuatro atributos y producía cuatro repintados completos | 4 → 1 por frame |
+| `HUDController.updatePerk`: sale antes si el valor, el siguiente escalón y el prefijo no se movieron. El caso normal es que el nivel no cambie y la Stickiness sí | Dos `string.format` con RichText menos por actualización |
+
+### Pruebas (Studio, Play, un jugador, 1918x1080)
+
+| Comprobación | Resultado |
+| --- | --- |
+| Consola durante toda la sesión | Solo los dos avisos previos (ids placeholder de compra, `ZoneFailSafe` sin volumen) |
+| Apilado vertical del HUD inferior | `BlockerProgress` 729–750, `Stickiness` 755–796, wrap y multiplicador 800–821, `PerkRow` 844–915, `LevelBar` 958–1019, `BoostRow` 1035–1080. Sin solapes, nada fuera de pantalla |
+| Ráfaga de 4 atributos en el mismo frame | Un solo repintado, aplicado antes del frame siguiente; Stickiness, objetivo, nivel, barra y los dos perks correctos; restaurar los valores los devuelve |
+| Shop abierto con clic real | Ventana blanca con contorno de tinta, secciones lavanda, tarjetas con acento por producto, desenfoque del modal activo |
+| Inventario abierto con clic real | 40 filas clonadas; 271 objetos piden bisel, **271 lo tienen y 271 tienen huella** (la cola de sucios no deja piezas sin biselar) |
+| `RunFailureOverlay` y `RestZoneStatus` forzados visibles | Paleta correcta y coherente con los chips ya migrados |
+| Contraste de todo lo restilizado | 14 pares medidos, todos por encima del mínimo. La X blanca sobre coral da 2,88:1 igual que en Inventory y World, y se lee por el halo de tinta: se le puso el mismo `ApplyStrokeMode = Contextual` que allí |
+| Reposo, 6 s | 0 reescrituras de padding, contorno, gradiente o icono |
+
+### Decisión que conviene revisar
+
+Las cinco secciones del Shop tenían cada una un contorno de color distinto (amarillo, cian,
+morado, rosa, dorado) como identidad de sección. Se han unificado a contorno de tinta, que
+es lo que hacen el resto de contenedores del HUD migrado, y el color de producto se queda
+donde `ShopController` ya lo pone: en el borde de cada tarjeta. **Si esa identidad por
+sección importaba, se recupera cambiando cinco `Stroke.Color`.**
+
+## Registro — 2026-08-27 (2), retoque de tamaño y agrupación del HUD en PC
+
+Continuación directa del registro anterior, sobre una captura real en PC. Tres quejas:
+todo se veía pequeño menos los botones de la derecha, la barra de abajo estaba pegada al
+borde y le faltaba tamaño, y los textos de encima de la barra se leían sueltos porque no
+estaban cerca de la barra ni entre sí.
+
+### Lo que se descartó por el camino
+
+El `ViewportScale` del registro anterior **no vale para `TopStats` ni `StatsPanel`**, y esto
+es la lección del día: un `UIScale` escala por igual las dos dimensiones. Esos dos bloques
+tienen el **ancho en escala y el alto en offset**, así que el ancho —que ya era
+proporcional— se multiplicaba otra vez: con el factor a 1,875 la barra de nivel pasó del
+50 % al **94 %** de la pantalla.
+
+El `UIScale` se queda solo donde es correcto: bloques con las dos dimensiones en píxeles
+(`NavGrid`, `UtilityRow`). Para los otros dos la solución es más simple y no necesita
+factor: **escribir el alto también en escala**, que es proporcional por definición. Con eso
+desaparece también el atributo `ScaledOffset`, que existía para escalar la separación entre
+los dos bloques y ya no tiene nada que escalar.
+
+### Presupuesto vertical del bloque inferior, en fracción del alto de pantalla
+
+    BlockerProgress  0.0250   \
+    aire             0.0019    |  TopStats   0.6315 .. 0.7324   ancho 0.34
+    Stickiness       0.0463    |  (antes 0.50: por eso las dos
+    aire             0.0037    |   etiquetas de abajo quedaban
+    Wrap+Multiplier  0.0241   /    a 347 px una de otra)
+    aire             0.0139  <- separación entre bloques
+    PerkRow          0.0556   \
+    aire             0.0083    |  StatsPanel 0.7463 .. 0.9546   ancho 0.50
+    LevelBar         0.0806    |
+    aire             0.0083    |
+    BoostRow         0.0556   /
+    margen inferior  0.0454  <- antes 0: `BoostRow` colgaba fuera del panel
+                                (Position Y 1.2675) y tocaba el borde
+
+### Agrupación horizontal
+
+- **La banda de `TopStats` baja de medio ancho de pantalla a un tercio.** Es lo que junta
+  el bloque de texto en vez de estirarlo de lado a lado.
+- **`WrapLabel` y `MultiplierLabel` se dan la vuelta.** Estaban ancladas a los extremos de
+  la banda y alineadas hacia fuera, así que su texto se iba a los dos bordes. Ahora se
+  anclan junto al centro y alinean hacia él, con un 4,4 % de la banda de aire en medio
+  (29 px a 1080p). Llevan `CompactAnchorPoint` porque el ancla no viaja en el juego de
+  atributos compacto y sin él se saldrían de la banda en móvil.
+- **Los chips de perk pasan del 49 % al 34 % del panel cada uno.** Al estrecharlos, su
+  `UIListLayout` centrado los junta en el medio en vez de dejar "SPEED" en un extremo y
+  "MAGNET" en el otro.
+
+### Tamaño de letra: dos causas distintas
+
+**1. Cuatro etiquetas no tenían `TextScaled`.** `SpeedChip.Value`, `SpeedChip.Next` y sus
+gemelas de `RadiusChip` tenían `TextScaled = false` con un `TextSize` authored de 8, así que
+subían al **mínimo** de su `UITextSizeConstraint` y se quedaban clavadas en 14 px con la
+caja a 43. Por eso los chips de perk se leían diminutos por grandes que fueran. Es un fallo
+anterior a la migración, no de ella.
+
+**2. Varias estaban topadas por `MaxTextSize` con caja de sobra.** Se suben los topes solo
+donde la caja lo permite: los cuatro tiles de `NavGrid` 16 → 22, los cuatro `BoostRow.Amount`
+26 → 34 y `LevelBar.AmountText` 36 → 38. **`GamePassPanel` no se toca**: los botones de la
+derecha se ven bien y se quedan como están.
+
+**Y un efecto secundario que hubo que arreglar:** `LevelBar.LevelText` tenía el ancho clavado
+en 76 px de offset. Al crecer la barra, "Level 1" ya no cabía y se partía en dos líneas. Pasa
+a `{0.16, 0}` en escala de la barra, con un `CompactSize` de `{0, 76}` porque en móvil la
+barra es estrecha y 0,16 de ella no da ni para el mínimo de 14 px.
+
+### Resultado medido a 1918x1080
+
+| Elemento | Antes | Ahora |
+| --- | --- | --- |
+| `Stickiness` | 40 px | 49 px |
+| `BlockerProgress` | 21 px | 26 px |
+| `WrapLabel` / `MultiplierLabel` | 21 px | 25 px |
+| `LevelText` | 58 px **en dos líneas** | 40 px en una |
+| `SpeedChip.Value` | 14 px | 38 px |
+| `SpeedChip.Next` | 14 px | 24 px |
+| `BoostRow.Amount` | 26 px | 34 px |
+| Etiqueta de `NavGrid` | 16 px | 22 px |
+| Alto de `LevelBar` | 61 px | 85 px |
+| Alto de `BoostRow` | 45 px | 59 px |
+| `NavGrid` | 7 % x 27 % | 7 % x 34 % |
+| `CounterStack` | 12 % x 17 % | 12 % x 14 % del alto, 25 % más grande en escala |
+| Margen bajo la fila de boosts | 0 px | 49 px (4,5 %) |
+| Ancho de la banda de texto | 50 % | 34 % |
+| Hueco "Basic Glue" / "x1.0 Stickiness" | 347 px | 29 px |
+
+### Pruebas (Studio, Play, un jugador, 1918x1080)
+
+| Comprobación | Resultado |
+| --- | --- |
+| Apilado vertical completo | 682–709 / 711–761 / 765–791 / 811–870 / 878–964 / 972–1031, aires de 2, 4, 20, 9 y 9 px. Sin solapes |
+| Margen inferior | 49 px, la fila de boosts ya no toca el borde |
+| Ráfaga de 4 atributos con valores altos (4.2K Stickiness, Level 7) | Un solo repintado; "Level 7" y "4.2K Stickiness" siguen en una línea y dentro de su caja (291 px de texto en 652 de banda) |
+| Consola | Limpia |
+| Reposo, 5 s | 0 reescrituras de padding o contorno: las optimizaciones del registro anterior siguen en pie |
+
+### Palanca para seguir ajustando
+
+`ScaleBoost` es un atributo numérico authored que se lee desde Studio: multiplica el factor
+de viewport del bloque que lo lleva. Hoy `NavGrid` y `UtilityRow` van a 1.25. Subir o bajar
+el tamaño de esos bloques es escribir otro número, sin tocar código. Los bloques con el alto
+en escala (`TopStats`, `StatsPanel`) se ajustan cambiando esas fracciones en el editor.
+
+## Registro — 2026-08-27 (3), contadores de la izquierda y fila de utilidades
+
+### Sonido y ajustes, escondidos
+
+`StickyHUD.UtilityRow.Visible = false`. Los dos botones llevan el atributo authored
+`Placeholder = true` y **ningún script del juego los referencia** (cero menciones a
+`SoundSlot` en todo el datamodel), así que no se pierde comportamiento. Se esconde la fila
+entera en vez de borrarla: volver a encenderla es marcar `Visible` en el Explorer.
+
+Conserva su `ViewportScale` y su `ScaleBoost`, así que si se reactiva vuelve con el tamaño
+que le tocaba.
+
+### Contadores de la izquierda, más grandes
+
+**Lo que de verdad los limitaba no era el `Size`.** `CounterStack` tiene un
+`UISizeConstraint` con `MaxSize = 230x150`, y a 1918x1080 ya estaba clavado en el tope: el
+`Size` en escala pedía 288x227 y la restricción lo recortaba. Agrandar la escala no habría
+hecho absolutamente nada.
+
+| | Antes | Ahora |
+| --- | --- | --- |
+| `SizeLimits.MaxSize` | 230x150 | 330x205 |
+| `Size` | {0.15}, {0.21} | {0.19}, {0.23} |
+| `Position` Y | 0.15 | 0.125 (sube para no chocar con `NavGrid` al crecer) |
+| Fila de Rebirth / Wins | 45 px | 62 px |
+| Icono | 45 px | 62 px |
+| Número | 38 px | 52 px (tope subido de 50 a 56 para que mande la caja) |
+| Hueco hasta `NavGrid` | 55 px | 27 px |
+
+### Un desbordamiento que llevaba ahí desde siempre
+
+`SpeedCounter` y `ReachCounter` medían 0.65 y 0.60 del ancho de su fila: **1.25 más el
+padding del `UIListLayout`**, así que el de alcance siempre salía por la derecha del
+bloque. Con el bloque a 230 px se salía 57 y se perdía sobre el fondo; al subir a 330 se
+plantó encima del cartel de WORLDS y se hizo evidente. Los dos pasan a 0.44, que con el
+padding suma 0.925 y cabe.
+
+Verificado en Play: los cuatro contadores dentro del bloque, desborde máximo 0 px.
+
+### Pendiente que aparece al encender la línea de objetivo
+
+`TopStats.BlockerProgress` ahora se lee, y dice **"BLOCKER 0 / 25"**. No es un fallo del
+HUD: `GameConfig` tiene `BlockerDisplayName = "Blocker"` en **las 30 zonas**, es un texto de
+relleno que nunca se rellenó. Los datos para hacerlo bien ya están al lado (`BlockerId` vale
+`ToyChest`, `Bed`, `Refrigerator`, `Zone4Gate`...), pero derivarlo del id daría "ZONE 4 GATE"
+en siete de cada diez zonas. Necesita una pasada de contenido, y por la regla 7 debería
+entrar ya como claves de localización, no como texto a mano.
+
+### Añadido al registro (3): zapato y mano verde escondidos
+
+`CounterStack.CounterStack.Visible = false`. Los dos contadores que colgaban de esa fila
+—`SpeedCounter` (zapato) y `ReachCounter` (mano verde)— usan **exactamente los mismos
+assets de icono** que `PerkRow.SpeedChip` (`137108235876714`) y `PerkRow.RadiusChip`
+(`120376248907319`), o sea que representaban velocidad y radio de recogida, lo mismo que
+los dos chips de encima de la barra.
+
+Y no estaban enlazados a nada: `SpeedCounter` y `ReachCounter` no aparecen en un solo
+script del juego, y `HUDController` solo busca dentro de `CounterStack` los nombres
+`RebirthCounter`, `WinsCounter` y un `ObjectCounter` opcional. Su "0" era el texto authored
+de la plantilla, congelado: no cambiaba nunca. Los chips de perk sí muestran el valor real
+y además la siguiente mejora.
+
+Al quedarse el bloque con dos filas se le ajusta la caja para que coincida con lo que
+enseña —un frame cuyos límites no coinciden con su contenido obliga a adivinar la
+separación con los vecinos, que es como estuvo a punto de pisar `NavGrid`—:
+
+| | Antes | Ahora |
+| --- | --- | --- |
+| `SizeLimits.MaxSize` | 330x205 | 330x135 |
+| `Size` | {0.19}, {0.23} | {0.19}, {0.155} |
+| Fracción de cada fila | 0.3033 | 0.466 (para que sigan midiendo 63 px) |
+| Hueco hasta `NavGrid` | 27 px | 97 px |
+
+Verificado en Play: dos filas de 63 px con icono de 63 y número de 53, la fila del zapato
+oculta, consola limpia.

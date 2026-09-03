@@ -798,3 +798,165 @@ para el sistema y Studio terminó en Edit.
 **Pendiente.** Móvil real, 2–8 clientes y Save/Publish manual. La captura automática de Studio fue
 intermitente, pero la presencia simultánea, posición, fade y cleanup se verificaron por estado
 runtime; el game feel final todavía merece revisión humana en Play.
+- **Y vuelve a pasar: el mismo destrozo reapareció en `W2_Lobby` al rato de arreglar `Lobby`.**
+  29 parts de W2 —las 8 WrapPad, `WorldPortal.Pad`/`Arch`, las 7 `RestPad_RestZone*`, los 11 de
+  `WinsTrophy` y un `Part`— quedaron en `CanTouch=false`/`CanQuery=false` mientras W1 (ya reparado)
+  y W3 seguían sanos. No es un daño histórico que se limpia una vez: es una operación de edición
+  que se repite cada vez que se manipula un lobby en el Explorer y que apaga las dos casillas
+  juntas. Mientras no se identifique la operación (o el plugin) que lo hace, conviene correr el
+  barrido de `CanTouch=false` sobre instancias con tag tocable antes de dar por buena cualquier
+  sesión en la que se hayan movido assets.
+- **`GameConfig.Tags.PlayerStart` está definido y ningún script lo consume.** Sale en el barrido
+  como "placa rota" y no lo es. Antes de reparar por patrón, comprobar que el tag tiene un
+  consumidor real.
+- **Un catálogo con `ProductId` no es, por eso solo, algo que se pueda poner en una tienda.** Los
+  8 tiers `DoubleWin_*` tienen id de producto y precio, y parecían la sección "Wins Packs" del
+  Shop. No lo son: son bandas de precio de un premio de pedestal concreto, y sin reclamación viva
+  el recibo paga `FallbackWins` — 20 Wins por R$25. La pista estaba en los campos vecinos
+  (`MaxReward`, `PendingClaimSeconds`), no en el precio. Antes de vender un catálogo, leer quién
+  lo consume: `GetDoubleWinTier(reward)` recibe un premio, así que el producto depende de un
+  contexto que una tienda no tiene.
+- **Pintar el color del producto de fondo funciona en filas y no en tarjetas.** El Inventario usa
+  el color del item como fondo de su fila y se lee bien porque el texto va a un lado, sobre poco
+  color. En una tarjeta el título va **encima**, y Omega Glue es casi blanco: título blanco sobre
+  fondo blanco. La escalera de rareza se mantiene igual de legible llevando el color al borde, que
+  además es lo que hacía la referencia del diseñador.
+- **Los emoji no son todos iguales para Roblox.** 🫧 salía como hueco en blanco con FredokaOne
+  mientras 👑 🏆 👟 ⚡ ✨ 🔁 💧 se pintaban sin problema. Un icono que falta no da error ni warning:
+  solo deja la tarjeta muda. Cualquier emoji nuevo hay que verlo en una captura, no darlo por bueno.
+- **El servidor no ve las instancias que clona el cliente.** Una sonda que leía las tarjetas del
+  Shop desde el datamodel Server devolvió cero filas y parecía que no se habían construido. El
+  `PlayerGui` replica, pero lo que crea un LocalScript dentro no sube. Para comprobar UI hay que
+  leer desde Client aunque el estado que la mueve se escriba desde Server.
+- **El `require` del command bar devuelve otra instancia del módulo, no la que corre.**
+  `ShopController.GetStats()` daba `Cards=0` con 11 tarjetas ya pintadas en pantalla. Un `GetStats`
+  vale para lo que corre dentro del juego; desde el MCP hay que verificar contra la jerarquía real.
+
+### 2026-08-27 — cierre de la migración del HUD, escala por viewport y rendimiento
+
+Estado: la migración del HUD de `Lugar de tvg_andy` a `Exposición pegajosa` queda cerrada.
+Detalle completo y tabla de pruebas en `PLAN_MVP.md`, registro del 2026-08-27.
+
+Backup previo intacto en `ServerStorage.HUDMigrationBackup_20260827`
+(`StickyHUD_PreMigration`, `StickyHUD_PreMigration_Original`, `Client_PreMigration`).
+
+Próximos pasos señalados:
+
+- `RestZoneStatus` no escala con el viewport y tapa parte de la barra de nivel, más ahora
+  que `StatsPanel` es más alto. No puede llevar `ViewportScale` porque ya tiene el `UIScale`
+  `PulseScale` que anima `RestZoneMachineController`. Decisión de diseño: moverlo.
+- `ScreenInsets = None` hay que verlo en un teléfono con recorte antes de publicar.
+- Las cinco secciones del Shop perdieron su contorno de color propio al unificarse a tinta.
+  Si esa identidad importaba, son cinco `Stroke.Color`.
+
+Lecciones de esta sesión:
+
+- **Una plantilla copiada al píxel no es una migración terminada.** Los 941 descendientes de
+  `StickyHUD` eran idénticos propiedad a propiedad en los dos lugares, y aun así faltaban
+  tres paneles sin restilizar, trece fuentes, dos elementos apagados y un bloque colocado
+  fuera de su marco. Lo que no viaja en una copia es lo que **solo existe en el destino**:
+  `ShopScreen`, `RunFailureOverlay` y `RestZoneStatus` no estaban en el origen, así que nadie
+  los tocó y se quedaron con la paleta anterior. Al migrar UI, la pregunta que encuentra los
+  huecos es "¿qué hay en el destino que no estaba en el origen?", no "¿se copió todo?".
+- **Un bug de layout puede vivir escondido en el juego de atributos que no se usa.** Las
+  cuatro etiquetas de `TopStats` tenían la Y base en escala 4.32–5.02 y sus `CompactPosition`
+  correctas. La ventana de pruebas del sandbox (1108x612) entraba en layout compacto, así que
+  el valor roto **nunca se pintaba allí**. Con dos juegos de valores authored hay que mirar
+  los dos, y la ventana de Studio decide cuál estás viendo.
+- **"Se ve más pequeño" puede no ser un cambio, sino la ventana.** A igual viewport los dos
+  HUD eran idénticos al píxel. Lo que cambiaba era 1108x612 contra 1918x1080 y el hecho de
+  que varios bloques están dimensionados en píxeles fijos: la misma banda de 68 px es el
+  11,1 % de una pantalla y el 6,3 % de la otra. Antes de buscar qué se rompió, comparar a
+  igualdad de viewport.
+- **Un `UIScale` en la raíz del `ScreenGui` no sirve si el layout mezcla escala y offset.**
+  Escala también las `Position` en escala de los hijos, así que todo lo anclado a un borde
+  (`UtilityRow` al 0.967, `GamePassPanel` al 0.97) se va fuera de pantalla. La forma que sí
+  funciona es un `UIScale` por bloque, dentro del bloque.
+- **Escalar un bloque obliga a escalar su separación.** El `-166` de `TopStats` era
+  62 + 96 + 8 medidos a 720p. Al crecer `StatsPanel` a 144 px, ese offset dejaba a `TopStats`
+  dentro de él. De ahí el atributo `ScaledOffset`: un offset es una distancia en la misma
+  escala que los tamaños.
+- **"Idempotente" describe el resultado, no el coste.** `DesignSystem.ApplyRim` dejaba el
+  bisel exactamente igual en cada llamada, y para eso construía dos secuencias nuevas de
+  cuatro puntos por pieza. Con 271 biseles, repintar un botón costaba 2,67 ms de trabajo
+  tirado. Una huella de las entradas en un atributo de la instancia lo baja a 0,009 ms.
+- **Un `DescendantRemoving` sin filtrar es un generador de barridos.** `TextStrokeScaler`
+  lanzaba una pasada completa por cualquier instancia que desapareciera del HUD, y del HUD
+  desaparecen cosas constantemente que no son texto: los `UIScale` de `PressFeedback`, los
+  biseles de `RimScaler`, los iconos del pinner.
+- **Una señal por atributo es una repintada por atributo.** `HUDController` tenía 16
+  `GetAttributeChangedSignal` conectadas directamente a `update()`. Una recogida mueve cuatro
+  atributos en el mismo frame, o sea cuatro repintados completos con sus formatos y su
+  RichText para enseñar un solo estado. Un `task.defer` con bandera los junta sin retrasar
+  nada: corre antes de que el frame se dibuje.
+- **La escritura de atributos en el cliente es local y sirve para probar la UI.** Poner
+  `Stickiness`, `Level` y los perks desde el datamodel Client dispara exactamente las mismas
+  señales que la replicación real, sin tocar el servidor ni arriesgar el DataStore. Es la
+  forma barata de probar el camino de pintado del HUD.
+
+### 2026-08-27 (2) — retoque de tamaño y agrupación del HUD en PC
+
+Detalle y tabla de medidas en `PLAN_MVP.md`, segundo registro del 2026-08-27.
+
+Lecciones:
+
+- **Un `UIScale` escala las DOS dimensiones, así que solo sirve para bloques con las dos
+  en píxeles.** `TopStats` y `StatsPanel` tienen el ancho en escala y el alto en offset: el
+  ancho ya era proporcional y el factor lo multiplicaba otra vez, dejando la barra de nivel
+  al 94 % de la pantalla en vez del 50 %. Para un bloque así la solución no es escalarlo,
+  es **escribir el alto también en escala**: proporcional por definición y sin factor que
+  cuadrar. Hoy el `ViewportScale` se queda solo en `NavGrid` y `UtilityRow`.
+- **`TextScaled = false` con un `UITextSizeConstraint` clava el texto en el MÍNIMO.** Los
+  cuatro textos de los chips de perk tenían `TextSize = 8` authored y un cap de 14–38: se
+  renderizaban a 14 px con la caja a 43, y agrandar el chip no cambiaba nada. Cuando una
+  etiqueta se ve pequeña "haga lo que haga la caja", el sospechoso es `TextScaled`, no el
+  layout.
+- **Y el sospechoso complementario es `MaxTextSize`.** El resto de etiquetas pequeñas
+  estaban topadas con caja de sobra. Merece la pena separar las dos listas al auditar:
+  las que no escalan, las que topan, y las que de verdad las limita su caja.
+- **Agrandar una caja puede partir su texto en dos líneas.** `LevelBar.LevelText` tenía el
+  ancho clavado en 76 px de offset; al crecer la barra, "Level 1" dejó de caber a lo ancho
+  y `TextWrapped` lo partió. Un ancho en offset dentro de un contenedor que escala es una
+  bomba de relojería.
+- **Dos etiquetas ancladas a los extremos y alineadas hacia fuera se leen como dos cosas.**
+  `WrapLabel` y `MultiplierLabel` estaban así y quedaban a 347 px una de otra. Anclarlas
+  junto al centro y alinearlas hacia él las convierte en una sola línea. Cuidado: el
+  `AnchorPoint` no viaja en el juego de atributos `Compact*`, así que cambiarlo obliga a
+  añadir `CompactAnchorPoint` o el móvil se rompe.
+- **Un hijo con `Position` fuera de la caja de su padre acaba pegado al borde de la
+  pantalla.** `BoostRow` colgaba en Y 1.2675 de un `StatsPanel` anclado abajo, así que su
+  margen inferior real era cero y no había forma de despegarlo sin mover el panel entero.
+  Meterlo dentro de la caja es lo que hace que el margen del padre signifique algo.
+
+### 2026-08-27 (3) — contadores de la izquierda y fila de utilidades
+
+Detalle en `PLAN_MVP.md`, tercer registro del 2026-08-27.
+
+- **Un `UISizeConstraint` puede estar mandando sin que se note.** `CounterStack` tenía
+  `MaxSize = 230x150` y ya estaba clavado en el tope: subir su `Size` en escala no habría
+  cambiado un píxel. Antes de tocar el `Size` de algo que "no crece", mirar si tiene una
+  restricción y si ya está tocando el límite.
+- **Un hijo que suma más del 100 % dentro de un `UIListLayout` no da error, se sale.**
+  `SpeedCounter` y `ReachCounter` medían 0.65 y 0.60 del ancho: el segundo llevaba desde
+  siempre fuera del bloque. Con el bloque pequeño el desborde caía sobre el fondo y no se
+  veía; agrandar el contenedor es lo que lo destapó. Al ampliar un contenedor conviene
+  comprobar que sus hijos suman <= 1 antes de dar por bueno el resultado.
+- **Esconder no es borrar, y para un placeholder es lo correcto.** `SoundSlot` y
+  `SettingsSlot` llevan `Placeholder = true` y no los referencia ningún script; apagar
+  `UtilityRow.Visible` los quita de la vista conservando su tamaño y su `ScaleBoost` para
+  cuando existan de verdad.
+
+Pendiente nuevo: `GameConfig.BlockerDisplayName` vale `"Blocker"` en las 30 zonas. Se veía
+como texto muerto mientras la línea de objetivo estuvo oculta; ahora que se lee, dice
+"BLOCKER 0 / 25". Necesita una pasada de contenido y debería entrar como claves de
+localización (regla 7), no como texto a mano.
+
+- **UI duplicada que además no está enlazada: mirar el asset del icono.** El zapato y la
+  mano verde del `CounterStack` usaban los mismos `rbxassetid` que `SpeedChip` y
+  `RadiusChip`, que es lo que delató que mostraban la misma información. Y no las escribía
+  nadie: su "0" era texto authored congelado. Un `grep` del nombre de la instancia en todo
+  el datamodel resuelve en un segundo si un elemento del HUD está vivo o es decorado.
+- **Al esconder filas de un stack, ajustar también la caja del contenedor.** Las filas se
+  dimensionan en fracción del alto del bloque, así que quitar una y no tocar nada deja el
+  frame con un tercio de vacío por debajo, y ese vacío se comporta como si fuera contenido
+  al calcular separaciones con los vecinos.
