@@ -960,3 +960,831 @@ localización (regla 7), no como texto a mano.
   dimensionan en fracción del alto del bloque, así que quitar una y no tocar nada deja el
   frame con un tercio de vacío por debajo, y ese vacío se comporta como si fuera contenido
   al calcular separaciones con los vecinos.
+
+### 2026-09-04 — QA de #rnd-roblox: pila de un solo modelo y portal del desierto
+
+Tres reportes de Daniel Bautista. Dos resueltos, uno auditado sin encontrar el defecto.
+
+- **Los trofeos protegidos se comían la pila entera.** Cada blocker absorbido entra como
+  registro `Protected` y **nunca** se desaloja; la pila solo se vacía en el Rebirth, no al
+  reiniciar la vuelta, y cada vuelta reabsorbe los mismos ~10 blockers. Simulado con la
+  regla vieja: a partir de la **vuelta 11** las 110 ranuras visuales son trofeos y ningún
+  objeto recogido vuelve a verse. Como los 60 proxies `Blocker_*` comparten las mismas tres
+  mallas, el resultado en pantalla es una bola de un único modelo — exactamente la captura
+  de QA. El comentario de `GameConfig` ("only three blockers exist per run") describía el
+  supuesto que se rompió. Arreglo: `GameConfig.Attachments.ProtectedShare` (0.25) acota los
+  trofeos a una fracción de la capacidad, en servidor (`AttachmentService`), en cliente
+  (`AttachmentRenderer`) y en el snapshot; el trofeo más antiguo cede su sitio al nuevo.
+- **Un casco de colisión decorativo puede tapar por completo un sensor.** El arco
+  `Cube.004` del portal de mundos del desierto tenía `CanCollide = true` con
+  `CollisionFidelity.Default`, y su casco cubría entero el `Pad` que lleva el tag
+  `WorldPortal`. Medido con un mapa de paso: **0 casillas** donde el jugador pudiera estar
+  de pie sobre el `Pad`, así que el `Touched` que abre la pantalla de mundos no llegaba a
+  dispararse nunca. Con el arco sin colisión, 25. El portal de Lava ya tenía su `Arch` sin
+  colisión; era el desierto el que se salía del patrón.
+- **La colisión invisible del último cuarto no aparece en la geometría.** Auditados los
+  tres mundos con paso de 2 studs por todo el ancho de Zone10, su pasillo y la FinishZone:
+  lo único invisible con colisión en la ruta es lo que debe estar (el `Collision` del
+  blocker, las jambas `GateWall` y las placas de descanso). Lo que sí falta es la
+  **FinishZone del desierto**: `Geometry` y `Dressing` están vacías, el suelo del pasillo
+  acaba en X 14060 y el `ReplayPad` flota solo sobre el vacío. Pendiente de arte.
+
+Método reutilizable: el "mapa de paso" (rayo al suelo + `GetPartBoundsInBox` a la altura
+del cuerpo, dibujado como rejilla de texto) encuentra en segundos lo que en el viewport
+cuesta media hora. Ojo con dos trampas: apoyar la caja en `suelo + 3` la sube por encima de
+una losa flotante, y agrupar por `GetFullName` mezcla partes distintas que se llaman igual.
+
+## Pantalla de Playtime Rewards alineada al HUD (2026-09-08)
+
+La pantalla nació con un lenguaje visual propio —Gotham, esquinas de 24 px, banda azul, scrim
+`#0C1423`— mientras el resto del HUD (Shop, Rebirth, Free Gift, Daily Rewards) usa **Fredoka One,
+esquinas de 5 px, contorno de tinta `#3A174B`, scrim `#24102F` a 0.78, CTA verde `#A8E52A` y
+cerrar rojo `#FF6374`**. Se reescribió el estilo de `StarterGui.StickyHUD.PlaytimeRewardsScreen`
+contra esa paleta. Copia previa en `ServerStorage.PlaytimeRewardsUIBackup_20260908`.
+
+Tres defectos reales, no solo estética:
+
+- **Ni una sola etiqueta tenía `UITextSizeConstraint`.** Con `TextScaled` y sin techo, el
+  `+N OBJECT VALUE` salía más grande que el `2 MIN` que lo titula, y la jerarquía de la tarjeta
+  se leía al revés. Ahora cada texto lleva `TextSizeLimits` y `TextOutline`, como en el resto
+  del HUD. **Regla para pantallas nuevas: `TextScaled` sin `UITextSizeConstraint` es un bug.**
+- **La topbar de Roblox se comía el título.** `StickyHUD.IgnoreGuiInset = true`, así que la
+  ventana centrada empezaba por debajo de los iconos del sistema solo por suerte del alto de
+  pantalla. La ventana baja 16 px y la cabecera mide 66 px fijos.
+- **La cabecera y la rejilla medían en escala.** En un móvil de 361 px de alto la celda
+  quedaba en 69 px y el botón de claim pisaba el texto. Cabecera, márgenes y pie ahora van en
+  offsets y solo el contenido de la tarjeta va en escala, con `TouchTarget` de 28 px mínimo
+  en el claim (antes 23 px, por debajo de un objetivo táctil cómodo).
+
+En `PlaytimeRewardsController` los colores del claim pasaron a la paleta compartida, y la barra
+de progreso se oculta cuando la recompensa ya está lista o cobrada —llena y verde competía con
+el propio botón— igual que el `State` cuando la tarjeta está cobrada, porque el botón ya dice
+CLAIMED.
+
+Probado en Play con los tres estados a la vez (cobrada, lista, bloqueada) en 749x361 y con el
+frame raíz encogido a 568x320 para emular un móvil pequeño en horizontal: celda de 94 px, claim
+de 28 px, separación positiva entre barra, estado y botón en las seis tarjetas, sin desbordes.
+Falta probar en un dispositivo Android real. Los cambios están en el DataModel abierto, sin
+guardar ni publicar.
+
+## El ranking de Stickiness se congelaba en 9Qa (2026-09-08)
+
+`GameConfig.Leaderboards.MaxScore = 9e15` no era una guarda contra valores corruptos: era el
+techo real del tablón. `LeaderboardService.scoreFor` hacía `math.clamp(math.floor(raw), 0,
+MaxScore)`, así que todo el que pasaba de 9Qa se publicaba **exactamente igual** que cualquier
+otro que también lo hubiera pasado. Efectos visibles: el #1 clavado en `9Qa`, los que iban
+detrás sin poder adelantarlo, y la caché `PublishedScores` suprimiendo la escritura por
+"score sin cambios" en cuanto el jugador tocaba el tope una vez.
+
+El 9e15 venía de una restricción real: `OrderedDataStore` guarda enteros y Luau cuenta en
+doubles, que dejan de ser exactos por encima de 2^53 (~9.007Qa). La Stickiness de por vida ya
+cruza ese límite (16.3Qa en la partida de QA), así que el tope no se podía subir sin más.
+
+Solución: el score se **codifica** al escribir y se descodifica al leer
+(`GameConfig.EncodeLeaderboardScore` / `DecodeLeaderboardScore`).
+
+- Por debajo de `ScoreLinearMax` (9e15) la codificación es la identidad. Las entradas ya
+  escritas siguen ordenando y leyéndose igual: **no hay que migrar ni versionar el almacén**.
+- Por encima pasa a escala logarítmica, `ScoreLogDecade` = 5e10 unidades por década, con tope
+  `MaxScore` = 9.007e15. Son 140 décadas por encima del tramo lineal, o sea ~1e156 de
+  Stickiness real, y toda la escala vive por debajo de 2^53: cada valor escrito sigue siendo
+  un entero exacto.
+- La codificación es monótona, así que el orden que devuelve `GetSortedAsync` se conserva y
+  `readTop` solo tiene que descodificar antes de pintar.
+
+Verificado en Edit con la escala real: 16.3Qa y 16.4Qa dan enteros distintos y ordenan bien
+contra entradas antiguas sin codificar (3.04Qa, 9Qa), el round-trip tiene un error relativo
+de ~1e-11 —el tablón abrevia a tres cifras— y ningún valor escrito supera 2^53.
+
+Pendiente relacionado: `GameConfig.Abbreviate` se queda sin unidades en `Qi` (1e18) y a partir
+de ahí escribe el número entero. Antes no importaba porque el clamp lo hacía inalcanzable;
+ahora sí es alcanzable, aunque queda 61 veces por encima del top actual. La tabla
+`ABBREVIATION_UNITS` está duplicada en `GameConfig`, `HUDController`, `BoostController`,
+`ShopController` y `OfflineGainsController`: ampliarla es tocar las cinco.
+
+Los cambios están en el DataModel abierto, sin guardar ni publicar.
+
+### Segunda pasada: la iconografía de Daily (2026-09-08)
+
+La tarjeta se rehízo con el reparto de `_DayCard`: título arriba, **arte en el centro**,
+cantidad debajo y **una sola ranura abajo que alterna botón verde y texto de estado**. Copia
+previa en `ServerStorage.PlaytimeRewardsUIBackup_20260908.PlaytimeRewardsScreen_PreIconPass`.
+
+Lo que se aprendió mirando `DailyRewardsController`: **en este juego el color de la tarjeta no
+distingue el premio, lo distingue el icono.** Las siete tarjetas de Daily son el mismo cian
+`#53CBEF` (`#678FA1` cobrada, `#FFD235` la destacada, con el arte tintado en `#20102B` para que
+no se pierda sobre el oro) y lo que cambia de una a otra es el arte. Playtime hacía lo contrario:
+seis colores distintos y ningún icono, que es justo lo que la hacía parecer de otro juego. Ahora
+sigue la misma regla, y el color por tramo de `GameConfig.PlaytimeRewards.Milestones[i].Color`
+—que si no se quedaba sin uso— pinta el subrayado de progreso.
+
+El icono es el splat de stickiness `rbxassetid://71531193209869`, el mismo de la Day 2 del Daily:
+`Playtime.FeedbackClaimed` dice "+{amount} STICKINESS CLAIMED!", así que el premio es stickiness
+aunque la tarjeta lo exprese en valor de objeto.
+
+El botón gris de "CLAIM" apagado desapareció: como en Daily, sólo hay botón cuando se puede
+cobrar, y el resto del tiempo la ranura la ocupa el estado (`IN 4:28`, `CLAIMED` en verde claro).
+La barra de progreso ya no cabía en la pila y pasó a ser un **subrayado al borde inferior** de la
+tarjeta, visible sólo mientras falta tiempo.
+
+**Defecto encontrado y corregido en la prueba:** cobrada y desbloqueada son ciertas a la vez, así
+que `Claim.Visible = unlocked` devolvía el botón verde a una tarjeta ya cobrada. Manda cobrada.
+
+Probado en Play con las tres situaciones a la vez y capturas de los dos extremos (todo bloqueado
+y varias listas): seis tarjetas cian con la destacada en oro, sin desbordes en 749x361.
+
+## +1 Sticky Charms — primera versión (2026-09-08)
+
+Tercera capa de progresión permanente, detrás de Glues y de Trails/Auras. La diferencia de
+diseño frente a los cosméticos es que aquí se llevan **varios a la vez**: el jugador no elige
+el mejor, elige una combinación, y por eso el número de huecos es en sí mismo una recompensa.
+
+### Las tres decisiones que explican el resto
+
+**1. La rotación no se persiste: se deriva.** `GameConfig.GetCharmShopOffers(userId, cycle,
+refreshes)` es una función pura, y el ciclo es `floor(os.time() / RestockSeconds)`. De ahí sale
+todo lo demás casi gratis: la oferta es idéntica en todos los servidores, sobrevive a
+reconectar sin escribir nada, y la cuenta atrás del cliente **no puede desviarse de lo que el
+servidor aceptaría comprar**, porque los dos leen el mismo tramo con la misma cuenta. Lo único
+que se guarda es cuántos refrescos de pago se han gastado dentro del ciclo, que es lo único que
+el reloj no sabe. El documento pedía persistir la rotación y el timestamp; derivarlos cumple el
+requisito con menos estado y sin posibilidad de desincronía.
+
+**2. Los huecos tampoco se guardan.** Salen de `Rebirths` en `GameConfig.GetCharmSlotCount`:
+3 de partida, +1 cada 4 Rebirths, tope 6. Un campo propio en el perfil sólo podría contradecir
+al Rebirth. El hueco de Game Pass está declarado (`SlotGamePassId`, hoy `nil`) pero sin conectar.
+
+**3. El servidor publica el RESULTADO, no la lista.** `CharmBonusStickiness`, `CharmBonusWins`
+y `CharmBonusCollection` son atributos con la fracción ya sumada y acotada. `PerkService`
+consume el de alcance sin saber que existen los Charms —igual que no sabe cómo se compra un
+Aura— y el HUD no puede recalcular mal la suma.
+
+### Dónde entra cada bonus
+
+| Tipo | Consumidor | Verificado |
+| --- | --- | --- |
+| Stickiness | `AddStickinessFromCurrentWrap` / `GetStickinessPerObject` | ganancia por objeto 1.00 → 1.05 con +5% |
+| Wins | `AwardWins` | `AwardWins(100)` concede 108 con +8% |
+| Collection | `PerkService`, perk `PickupRadius` | radio 5 → 5.3 con +6%, y vuelve a 5 al quitarlo |
+
+Los Charms entran **fuera** del cap de las fuentes temporales (`CombineAdditiveMultipliers`):
+son progreso permanente y ya traen su propio techo, `MaximumBonusPerKind` = 0.60. Meterlos
+dentro les habría hecho competir con los boosts comprados, que es lo contrario de lo que ese
+cap protege.
+
+Las categorías AFK, Rebirth y Defense del documento **no** están en esta versión, y es
+deliberado: un tipo declarado y no conectado es un bonus que el jugador paga y no recibe. Están
+marcadas como pendientes en `GameConfig.Charms.BonusKinds`.
+
+### Piezas
+
+- `Shared.GameConfig`: bloque `Charms` (huecos, tienda, rarezas, tipos de bonus) y
+  `CharmCatalog` (12 entradas, 3 por rareza, una por tipo de bonus). Helpers de catálogo,
+  rotación, ciclo y precio de refresco. `GetPerkBonusFactor` gana un tercer sumando.
+- `Server.CharmService`: gemelo de `CosmeticService`. Un solo par de remotes para seis
+  acciones discriminadas por `Action`; valida la **forma** y delega toda la regla en
+  `ProgressionService`. Cada respuesta lleva la rotación vigente, así que una pantalla abierta
+  se repinta sin pedir nada.
+- `Server.ProgressionService`: estado, atributos, persistencia y las seis operaciones
+  autoritativas. `EquipBestCharms` ordena por valor de bonus con desempate por id, para que
+  pulsar el botón dos veces no reordene la columna.
+- `Client.CharmsController`: las dos pantallas en un solo dueño, porque comparten todo el
+  estado y partirlas obligaría a que una escuchara el remote de la otra.
+- Authored en `StarterGui.StickyHUD`: `CharmsScreen`, `CharmShopScreen`, `_CharmCell`,
+  `InfoCard` y `NavGrid.CharmsOpenButton`. Todo clonado de `InventoryScreen` y `ShopScreen._Card`
+  para heredar degradados, patrones, biseles y esquinas: **ninguna propiedad estética nació en
+  código**. Los 6 huecos y las 3 tarjetas de oferta son cantidad fija y conocida, así que están
+  creados uno a uno (regla 5.1); si el editor tiene menos de los que pide la configuración, el
+  controlador avisa en voz alta en vez de crear uno por código.
+
+### Detalles que costaron una pasada
+
+- **El `Glyph` de `_Card` viene apagado de fábrica.** En el Shop casi todas las tarjetas llevan
+  dibujo, así que heredarlo dejaba las tarjetas de Charm con el centro vacío. `paintArt` lo
+  enciende sólo cuando no hay `IconId`, para que el catálogo siga decidiendo y no la pantalla.
+- **`CompactCellSize` sobre el `ScrollingFrame` reventaba `ResponsiveLayout`.** Ese atributo
+  sólo tiene sentido sobre el `UIGridLayout`, que es quien tiene la propiedad `CellSize`. El
+  módulo levanta el error a propósito y hace bien.
+- **La `NavGrid` se rellena en vertical, dos tiles por columna.** Un botón más añade media
+  columna a lo ANCHO, no una fila a lo alto: subirle el alto sólo estiraba las celdas. Se
+  devolvió a los 70x196 del editor.
+- **La columna de equipados es un `ScrollingFrame`.** Con tres huecos no se nota; con los seis
+  de R8 en adelante es la diferencia entre verlos todos y perder los dos últimos, porque el
+  objetivo táctil de 48px no se puede encoger para que quepan.
+
+### Localización
+
+38 entradas nuevas en `Shared.Localization`, los 15 idiomas de la tabla completos. `CHARMS`,
+`WINS` y `STICKINESS` se dejan sin traducir dentro de las frases, como marca, igual que el
+resto del juego. La línea de bonus se compone con parámetros (`Charms.BonusLine`,
+`"+{value}% {kind}"`) y **no** concatenando trozos traducidos, porque el orden cambia entre
+idiomas —en ja/ko/zh el nombre va delante—; el porcentaje viaja como cadena para que Roblox no
+lo convierta en `8.00`. El nombre que se mete dentro de una frase se traduce antes de
+componerla; el resto del texto es authored y lo resuelve `LocalizationController` por Source.
+
+### Analytics
+
+Seis eventos nuevos (`CharmPurchased`, `CharmPurchaseFailed`, `CharmEquipped`,
+`CharmUnequipped`, `CharmEquipBestUsed`, `CharmShopRefreshed`) → 57 de 100. Las superficies
+`CharmShop` y `CharmInventory` reutilizan los eventos de cliente que ya existen.
+
+**El SKU de un Charm es su RAREZA, no su id**, y es una decisión de presupuesto: Roblox sólo
+grafica los primeros 100 SKUs, el catálogo está pensado para crecer, y doce ids de hoy serían
+cuarenta mañana empujando fuera del informe a productos que sí se cobran en Robux. Quedan 96 de
+100. El id concreto no se pierde: viaja en el Custom Field, que es donde se lee un id.
+
+### Probado en Play
+
+- Rechazos: `NotForSale` (fuera de rotación), `NotEnoughWins`, `AlreadyOwned`,
+  `AlreadyEquipped`, y el equipado sin hueco.
+- Camino feliz: compra de las tres ofertas, equipado automático, quitar uno, volver a
+  equiparlo, `UnequipAll`, `EquipBest`, y refresco de pago (50 → 100 dentro del mismo ciclo,
+  con rotación distinta después).
+- Persistencia: guardar y releer conserva colección, equipado **en orden** y ciclo/refrescos.
+  Un equipado que no se posee, uno repetido y uno inexistente se caen al cargar. Más equipados
+  que huecos se recortan al número de huecos.
+- Rebirth: cuatro seguidos, la colección sobrevive entera y los huecos suben de 3 a 4.
+- Pantallas: rejilla, columna de equipados con nombre y emoji, ofertas con rareza/nombre/bonus,
+  insignia `OWNED` sobre la ya poseída, precio en oro cuando alcanza y en gris cuando no,
+  cuenta atrás y precio de refresco escalado. Capturas en 749x361, el caso compacto extremo.
+
+**No probado, y por qué:** el clic real sobre el tile de `NavGrid`. La entrada de ratón
+sintética de esta sesión de Studio no llega a la GUI —una pulsación sobre el botón de cerrar de
+`WorldScreen`, que ya funcionaba antes de este trabajo, tampoco hace nada—, así que la apertura
+se verificó abriendo la pantalla desde el cliente. El cableado es el mismo `Activated:Connect`
+que usan los otros seis tiles y el botón es un clon de uno que funciona, pero el clic queda
+pendiente de una prueba a mano.
+
+Los cambios están en el DataModel abierto, sin guardar ni publicar.
+
+## Sticky Charms — rediseño con copias y doble moneda (2026-09-09)
+
+El documento `+1 Sticky Charms System.md` se reescribió (pasó de 5 KB a 11,7 KB) y el cambio no
+era un ajuste: **cambiaba el modelo de datos**. Lo que se implementó ayer asumía propiedad
+booleana y una sola moneda; el documento nuevo pide copias, dos vías de pago y dos categorías
+de bonus más. Esto es el registro de qué cambió y cómo quedó.
+
+### Lo que cambió en el documento, y qué obligó a rehacer
+
+| Cambio | Consecuencia |
+| --- | --- |
+| **Se poseen COPIAS, no propiedad** | `OwnedCharmIds: {string}` → `OwnedCharms: {[string]: number}` en perfil, estado, atributos y UI |
+| Varias copias equipables a la vez | La regla del sistema pasa a ser `EquippedCopies <= OwnedCopies`, comprobada en cada carga y cada escritura |
+| Cada Charm se compra con Wins **o** Robux | 20 Developer Products nuevos + el del refresco, con sus recibos |
+| Catálogo fijo de 20 items | Se tiró el catálogo inventado de 12 y se copió la tabla del documento |
+| Dos categorías más: AFK Rewards y Rebirth Bonus | Dos consumidores nuevos, uno de ellos con persistencia propia |
+| Huecos fijos en 3 | Se quitó el escalado por Rebirth |
+| Una compra por oferta y rotación, estado `Bought` | La rotación deja de ser 100 % derivable: hay que persistir qué ofertas se gastaron |
+| El refresco pasa a Robux | Deja de cobrarse en Wins |
+| Botón `Chances` con probabilidades exactas | Panel nuevo, alimentado por los mismos pesos del sorteo |
+| `Remove All` en vez de `Unequip All` | Renombrado, y evento de analytics propio |
+
+### Las tres decisiones que costaron pensar
+
+**1. La rotación se sigue derivando; lo que se persiste es lo comprado.** La versión anterior
+derivaba todo del reloj y del UserId y no guardaba nada. El documento pide ahora que una oferta
+comprada se quede comprada y que **reconectar no la restaure**. La solución conserva lo bueno de
+antes: la lista de ofertas sigue siendo función pura de `(UserId, ciclo, refrescos)` —idéntica en
+todos los servidores, sin estado que desincronizar— y lo único que se guarda es
+`CharmShopBought`, válido solo dentro de su ciclo. Al cruzar el restock se vacía solo.
+
+**2. El bonus de Rebirth se acumula, no se deriva.** El documento es explícito: modifica *solo*
+el multiplicador que concede la acción de Rebirth, y no multiplica repetidamente el histórico.
+Eso significa que se cobra **en el instante del Rebirth** y que el extra es permanente. Derivarlo
+del equipado actual habría hecho que quitarse el Charm borrara multiplicador ya ganado. Por eso
+existe `CharmRebirthBonus` en el perfil: se le suma `GetRebirthAddition(siguiente) × bonus` en
+cada Rebirth y entra en la fórmula por el mismo hueco aditivo que el Trail, porque es
+literalmente lo mismo —un incremento del multiplicador base.
+
+Verificado: incremento base 0.50, Charm del 12% → +0.06 acumulado, multiplicador 1.50 → 1.56, y
+al quitarse el Charm el 0.06 **se queda**.
+
+**3. La idempotencia de recibos se invierte respecto a los cosméticos.** En un Trail, "ya lo
+tenía" significa "este recibo ya se entregó, devuelve `true`". Aquí eso sería un robo: el
+producto es repetible y el jugador espera una copia por pago. La deduplicación la hace
+`PurchaseService` con `PurchaseId`, que es el único dato que distingue un reintento de una
+segunda compra. `GrantCharm` concede una copia **siempre**.
+
+Verificado: recibo A concede (0→1), recibo A repetido no concede (1→1), recibo B concede (1→2).
+
+### Dónde entra cada una de las cinco categorías
+
+| Categoría | Consumidor | Verificado |
+| --- | --- | --- |
+| Stickiness | factor en `AddStickinessFromCurrentWrap` | 3× Slime Heart = +36%, el ejemplo del documento |
+| Wins | factor en `AwardWins` | +8% → `AwardWins(100)` concede 108 |
+| Collection | sumando del perk `PickupRadius` | radio 5 → 5.3 con +6% |
+| AFK | factor que **solo** entra por la vía del descanso | 2× Eternal Moon: ganancia normal 1.0, en Rest Zone 1.7 |
+| Rebirth | escala el incremento de ese Rebirth | 0.50 × 12% = 0.06 permanente |
+
+El AFK se pasa como **bandera explícita** (`isRestZone`) desde `RestZoneService` y no se deduce
+de que venga un `sourceMultiplier`: un objeto con multiplicador también trae uno y quedaría
+cobrando el bonus del sofá.
+
+El orden de la fórmula es el que fija el documento —`Base × Glue × Rebirth × Charm × Boost
+temporal × Game Pass`—, con los Charms **fuera** del cap de las fuentes temporales: son
+permanentes, ya traen su propio techo y ese cap existe para impedir que los boosts se apilen
+entre sí.
+
+Los máximos con tres huecos reproducen la tabla del documento clavados: Stickiness +60%,
+Wins +54%, Collection +90%, AFK +105%, Rebirth +36%.
+
+### Monetización
+
+Veinte Developer Products (`1000000200..219`) más el del refresco (`1000000220`), todos en el
+rango reservado de marcadores de posición, así que `GetPlaceholderPurchaseIds` los lista y
+`PurchaseService` avisa al arrancar. **El flujo está entero**; falta pegar los ids reales.
+
+Son Developer Products y no Game Passes porque hay que poder pagar veinte veces por veinte
+copias, que es justo lo que un pase no permite. El precio lo fija la RAREZA y no la entrada
+(29 / 79 / 199 / 499): repetirlo en las veinte entradas serían veinte sitios donde puede
+desviarse. Mientras los ids sean placeholder ese número solo sirve para pintar el botón; con
+productos reales manda el precio que devuelve Roblox.
+
+### UI
+
+Sobre lo authored de ayer, sin rehacerlo:
+
+- **Celda**: insignia de cantidad (`x3`) junto al arte y una insignia de estado que dice
+  `2 / 3` —copias puestas de las que se tienen— en vez de `EQUIPPED`. Con duplicados,
+  "EQUIPPED" a secas mentiría.
+- **Oferta**: dos botones de compra apilados, oro con trofeo para Wins y verde con el icono de
+  Robux para la otra vía, e insignia `BOUGHT` cuando la oferta se gasta. **Nunca `OWNED`**: el
+  documento lo prohíbe como estado final, porque poseer el Charm no impide comprar otra copia.
+- **Ficha**: efecto por copia, poseídas, equipadas, bonus combinado activo y los dos precios.
+- **`Chances`**: panel con la probabilidad exacta de cada rareza, calculada de los MISMOS pesos
+  que usa el sorteo, así que lo que se promete y lo que ocurre no pueden separarse.
+
+Dos correcciones de layout que salieron de mirar la pantalla y no el código:
+
+- La franja de los dos botones mide **104 px fijos** (2 × 48 de objetivo táctil + aire) y no
+  puede encogerse, así que en compacto la tarjeta tuvo que crecer de 196 a 220: con 196 la línea
+  de efecto —la razón por la que alguien compra el Charm— caía justo detrás del botón de Wins.
+- El botón de Wins heredaba el `TextIcon` de Robux de la plantilla del Shop, así que las dos
+  vías se anunciaban con el mismo símbolo.
+
+### Localización
+
+33 entradas nuevas y los 20 nombres del catálogo, los 15 idiomas completos; las 12 entradas de
+los nombres del catálogo anterior se retiraron para no dejar trabajo muerto al traductor.
+
+La línea de efecto se compone con parámetros (`Charms.BonusLine`, `"+{value}% {kind}"`) y no
+concatenando trozos: en japonés, coreano y chino el nombre de la categoría va **delante** del
+porcentaje, y una concatenación fija habría dejado esos tres idiomas al revés. Se comprobó en
+es-es y ja-jp: `+10% ALCANCE POR COPIA` frente a `1 個につき 回収範囲 +10%`.
+
+### Analytics
+
+59 de 100 eventos, 96 de 100 SKUs, 7 de 10 funnels.
+
+Las dos vías de compra son eventos **separados** (`CharmPurchasedWithWins`,
+`CharmPurchasedWithRobux`) y no uno con dimensión de moneda: la pregunta de negocio es cuántos
+de los que podían pagar con Wins pagaron con Robux, y eso se lee de un vistazo con dos series y
+no filtrando una.
+
+Cinco de los eventos que pide el documento —`CharmInventoryOpened`, `CharmShopOpened`,
+`CharmOfferViewed`, `CharmRestockViewed`, `CharmPurchasePrompted`— **no** se añadieron como
+nombres propios: son los eventos de cliente que ya existen con las superficies `CharmInventory`
+y `CharmShop`. Miden lo mismo, se comparan con el resto de tiendas del juego y ahorran cinco de
+los 100 nombres que Roblox permite. `CharmHovered` se deja fuera a propósito: un hover no es una
+decisión, se dispara docenas de veces por sesión y lo único útil que diría ya lo da
+`OfferImpression`.
+
+### Probado en Play
+
+- **Duplicados**: comprar, refrescar y volver a comprar acumula copias (x3); tres copias del
+  mismo Charm suman tres veces su efecto; `EquippedCopies <= OwnedCopies` rechaza la cuarta.
+- **Una oferta por rotación**: el segundo intento en la misma tanda devuelve `AlreadyBought`, y
+  refrescar cambia la tanda entera.
+- **Recibos**: A concede, A repetido no, B concede.
+- **AFK**: solo cuenta en la Rest Zone (1.0 frente a 1.7 con 2× Eternal Moon).
+- **Rebirth Bonus**: se acumula en el Rebirth y sobrevive a quitarse el Charm.
+- **Persistencia**: cantidades, equipado en orden con repeticiones, ciclo y compras. Tres copias
+  equipadas con solo dos poseídas se recortan a dos al cargar.
+- **Quitar por hueco**: `Unequip` con índice retira exactamente esa copia.
+- **Localización**: cadenas compuestas correctas en en-us, es-es y ja-jp.
+
+**No probado, y por qué:** sigue pendiente el clic real sobre el tile de `NavGrid` y el hover de
+la ficha. La entrada de ratón sintética de esta sesión de Studio no llega a la GUI —una pulsación
+sobre el botón de cerrar de `WorldScreen`, que ya funcionaba antes de este trabajo, tampoco hace
+nada—, así que las pantallas se abrieron desde el cliente y la ficha se validó por sus cadenas.
+Queda para una prueba a mano.
+
+### Pendiente
+
+- **Ids reales de los 21 Developer Products.**
+- **`Lock` y `Delete`** de la lista de acciones: el propio documento los marca como no
+  recomendados para la primera versión.
+- **Arte propio.** Cada Charm lleva un emoji de respaldo; algunos (🪙, 🪶) apenas se ven al
+  tamaño de la tarjeta. Se rellena `IconId` en el catálogo y el glifo se apaga solo.
+- **Precios dinámicos desde Roblox** en vez del número de la rareza, cuando existan los productos.
+- **Balance**: los costos en Wins son los del documento (5K a 100B) y no se han contrastado
+  contra la curva real de Wins del juego.
+
+Los cambios están en el DataModel abierto, sin guardar ni publicar.
+
+### Repaso de UI de Charms (2026-09-09, segunda pasada)
+
+Dos defectos reportados mirando la pantalla, y los dos tenían la misma forma: una propiedad que
+manda sobre la que yo estaba tocando.
+
+**1. `CHARMS SHOP`, `EQUIP BEST` y `REMOVE ALL` pintaban el texto a 8 px y sin contorno.**
+
+Al clonarlos de `ShopScreen._Card.BuyButton` les borré la etiqueta hija `Price` y escribí el
+texto en la propiedad `Text` del propio `TextButton`. En este HUD eso **no** es el patrón: el
+texto vive en una etiqueta hija que trae `TextScaled`, su `UITextSizeConstraint` y el
+`TextStroke` de tinta. Sin ella, el botón pinta con el `TextSize` crudo de la plantilla —8— y
+sin perfilar.
+
+Rehechos desde la plantilla completa, con la etiqueta renombrada a `Label`. El techo de cuerpo
+subió de su valor original a 28: el de la plantilla está calibrado para una cifra corta (`199`),
+no para dos palabras. Alto 48 → 56, que es el mínimo que `DesignSystem.Touch` pide para un botón
+de compra, y los tres comparten ahora la misma línea base (antes la fila de acciones iba 6 px
+por encima del botón de la tienda, porque uno usaba `-40` y el otro `-34`).
+
+De paso, `UNEQUIP ALL` pasó a `REMOVE ALL`, que es como lo llama el documento. La entrada de
+localización se retiró y se volvió a crear con el `Source` nuevo: `LocalizationController`
+traduce por coincidencia exacta, así que cambiar el texto sin cambiar la entrada habría dejado
+el botón sin traducir en los 15 idiomas.
+
+**2. El tile de `CHARMS` se pisaba con el cartel del Sticky Wrap activo.**
+
+El cartel es **mundo**, no HUD, así que no hay layout que lo aparte: lo que había que hacer era
+que la rejilla ocupara menos ancho.
+
+`NavGrid` se rellena en VERTICAL con dos tiles por columna, así que cada botón nuevo añade media
+columna **a lo ancho**, no una fila a lo alto. Con siete tiles, la tercera columna llegaba hasta
+donde vive el cartel.
+
+Y aquí el detalle que costó una pasada: bajar `Size` y `CompactSize` **no movió un solo píxel**,
+porque `UISizeConstraint.MinSize` valía `70x180` y el suelo del constraint manda sobre la
+propiedad. Había que bajar los dos.
+
+| | Antes | Ahora |
+| --- | --- | --- |
+| `MinSize` | 70x180 | 46x96 |
+| `Size` / `CompactSize` | 70x196 / 56x100 | 58x182 / 48x96 |
+| `CellPadding` X | 10 | 7 |
+| `ScaleBoost` | 1.25 | 1.12 |
+| Ancho ocupado (ancho / compacto) | 230 / 188 px | 188 / 158 px |
+
+Se recortó el **ancho** y casi nada el alto, a propósito: el alto del tile es el objetivo táctil
+—el cell mide 0.44 del frame en compacto, o sea 42 px de dedo— y ese ya iba justo por debajo de
+los 48 que pide `DesignSystem`. Lo que sobraba y estorbaba era el ancho.
+
+Verificado en Play a 1020x468: los tres botones pintan a 28 px con contorno, y el cartel del wrap
+ya no cae debajo del tile.
+
+### Charms: Developer Products reales y precios (2026-09-09, tercera pasada)
+
+El documento llegó con los 20 Product ID ya creados en Roblox y con la tabla de precios movida.
+Integrado en `GameConfig.CharmCatalog`, verificado fila a fila contra el documento: 0
+discrepancias en id y 0 en precio.
+
+**Precios por rareza, antes → ahora:** Common 29 → 11, Rare 79 → 49, Epic 199 (igual),
+Mythic 499 → 399.
+
+**El precio pasó de derivarse de la rareza a vivir en la entrada, y no es un capricho.** Estaba
+derivado para no repetir el número veinte veces, y con la tabla nueva eso se rompe: dos Charms de
+Collection Range se crearon **fuera** de su rareza.
+
+| Charm | Rareza | Tabla de rarezas | Producto real |
+| --- | --- | --- | --- |
+| Tiny Magnet | Common | R$11 | **R$29** |
+| Seeker Compass | Rare | R$49 | **R$79** |
+
+Los otros 18 sí siguen su rareza. Derivar el precio habría pintado R$11 en un botón que cobra
+R$29 —el peor fallo posible en un botón de compra—, así que `RobuxPrice` se escribe por entrada y
+`GetCharmRobuxPrice` lee la entrada primero. El precio de la rareza se queda como respaldo, para
+que una entrada nueva no salga sin cartel mientras se crea su producto.
+
+**Esas dos filas quedan pendientes de confirmar contigo**: o el documento las dejó con el precio
+viejo por descuido, o Collection Range vale más a propósito. El código sigue al producto real,
+que es lo que Roblox va a cobrar de todas formas.
+
+**Sigue siendo marcador de posición el producto del refresco de tienda** (`1000000220`): el
+documento lo menciona (`Refresh Now`) pero no da su id. `PurchaseService` ahora avisa solo de
+ese, que es exactamente el estado real.
+
+Verificado en Play: los 21 productos registrados sin duplicados, recibo real de `SlimeHeart`
+(`3712131260`) concede una copia y el mismo `PurchaseId` repetido no concede otra, y la tienda
+pinta R$79 para Seeker Compass y R$11 para Sticky Sprout —los dos casos que separan la tabla
+nueva de la excepción.
+
+**Nota de sesión, no del juego:** durante las capturas el `StickyHUD` apareció apagado. Lo apaga
+el script `Freecam` de Studio (Shift+P), que desactiva todos los `ScreenGui`; ningún script del
+juego toca `StickyHUD.Enabled`.
+
+## FTUX sin caja y fila de utilidades (2026-09-10)
+
+Copia de seguridad previa en `ServerStorage.UtilityRowFTUXBackup_20260910`: las dos jerarquías
+authored (`FTUEBanner`, `UtilityRow`) y los cuatro scripts tocados, antes de nada.
+
+### El contorno de texto necesitaba una excepción, y por eso es un atributo
+
+Quitarle el rectángulo al cartel del FTUX es apagar seis cosas (`BackgroundTransparency`,
+`UIStroke`, `Fill`, `Pattern`, `Rim` y los dos `ImageLabel`). Lo que no era obvio: **escribir el
+borde negro en el editor no basta**. `TextStrokeScaler` repinta en runtime el color de todo
+`UIStroke` contextual con `DesignSystem.TextStrokeColorFor`, que para letra clara devuelve el
+morado-tinta `#3A174B`. El negro authored duraba hasta el primer barrido.
+
+La regla del `DesignSystem` es correcta y no se toca: vale para texto **dentro** de una
+superficie del HUD, que es casi todo. Deja de valer para texto que se lee directamente sobre el
+mundo 3D, porque ahí el fondo no lo elige el HUD —cielo, lava, una pared clara— y el morado se
+pierde contra la mitad de ellos.
+
+Solución: atributo authored `TextStrokeColor` en la etiqueta. Si está, gana; si no, se calcula
+como siempre. Es el mismo patrón que `NoRim`, `Pulse`, `SheenWhen` o `TextFloorException`:
+**poner otro texto sobre el mundo es escribir un `Color3` en el Explorer, no editar código.**
+
+La celebración del paso completado también cambió de sitio por fuerza: pintaba el fondo de
+verde y ya no hay fondo, así que ahora tiñe la propia línea de tarea con
+`DesignSystem.Color.Success`. `Step.Icon` sigue en `GameConfig` y el controlador ya no lo lee;
+los dos `ImageLabel` se quedan apagados en el Explorer, que es como se esconde lo que puede
+volver.
+
+### El fallo del acento: nunca leas como origen algo que tu propio código pisa
+
+`UtilityController` guardaba el tono del botón de sonido leyendo `sound.BackgroundColor3` en
+`Init`. Parece inocente y no lo es: el estado apagado **escribe** esa misma propiedad con el gris
+de control inactivo. Un segundo `Init` con la música apagada capturaba el gris como si fuera el
+color de diseño, y a partir de ahí encender la música ya no devolvía el cyan **nunca**.
+
+Lo destapó una prueba de tres ciclos apagar/encender con reinicio del controlador entre medias;
+un solo ciclo pasaba limpio. Arreglo: el tono vive en el atributo authored `AccentColor`, y
+`BackgroundColor3` solo es el respaldo para una plantilla a la que aún no se le ha escrito.
+`Destroy` además devuelve el botón a su aspecto authored.
+
+Es exactamente el mismo cuidado que ya documentan `HUDController` —que solo mide la posición
+base del aviso de recogida **mientras está oculto**, porque leerla desplazada acumularía el
+desplazamiento— y `TutorialController` con su `StrokeSnapshot`. Va tres veces: conviene tratarlo
+como regla. **Si un controlador escribe una propiedad, esa propiedad no puede ser su fuente de
+verdad; la fuente va en un atributo.**
+
+### Apagar la música es un factor más, no un `Stop()`
+
+`MusicController` ya calculaba el volumen como un producto de factores para no tener dos tweens
+peleándose por `SoundGroup.Volume`. El silencio entra por la misma puerta:
+
+    volumen = MusicVolume x (descansando ? RestVolumeScale : 1) x duck x mute
+
+Dos ventajas que se cobran solas: las pistas no se paran nunca —pararlas obligaría a
+reiniciarlas al volver, y eso suena a corte igual que cruzar el pasillo—, y un factor se combina
+con los demás sin casos especiales. Verificado: con `mute = 0`, un `Duck()` deja el volumen en
+0.000 en vez de resucitar la música. Alcance deliberado: apaga el grupo `Music`, no el `SFX`,
+así que el `pop` de cada recogida —donde vive la respuesta del juego— se sigue oyendo.
+
+### La esquina superior derecha no estaba libre, y no por poco
+
+La fila de utilidades se colocó primero en `{1,-14},{0,84}` y se solapaba entera con el panel de
+gamepasses. Midiendo el HUD real en compacto (749x361) salió el mapa de ocupación:
+
+| Bloque | x | y |
+| --- | --- | --- |
+| `DailyTopRight` | 700..740 | -50..-9 |
+| `GamePassPanel` | 626..739 | **-22..155** |
+
+Los 177 px de alto del segundo no son el panel: son sus **iconos, que desbordan sus botones casi
+40 px por arriba y por abajo**. Medir solo el `Frame` padre habría dado el visto bueno a un
+solape real. Al buscar hueco en un HUD lleno hay que medir el bloque **con sus descendientes**.
+
+La salida fue usar el sistema responsive tal como está pensado, con una colocación por variante:
+
+| Layout | Sitio | Valor |
+| --- | --- | --- |
+| Ancho | horizontal, entre el diario y la tienda | `{1,-14},{0,84}` |
+| Compacto | **de pie**, en el pasillo de ~62 px entre el FTUX y la tienda | `{0.82,0},{0,66}`, `CompactFillDirection = Vertical` |
+| Portrait | la misma columna, bajo la tienda | `{0.986,0},{0.40,0}` |
+
+`CompactFillDirection` ya existía en `GameConfig.UI.CompactAttributes` y no lo usaba nadie; va en
+el `UIListLayout`, no en el `Frame`, porque `ResponsiveLayout` busca el atributo en la instancia
+que tiene la propiedad.
+
+### Estandarización: el tono en la propiedad, el degradado en la rampa
+
+Cada slot llevaba su tono **horneado dentro del `UIGradient`** (el de sonido en coral, el de
+ajustes en gris). Así, repintar un botón pedía tocar dos sitios y acertar con el degradado, que
+es justo lo que hace imposible cambiar de color en runtime. Ahora el degradado es solo **valor**
+—claro arriba, 58 % abajo, el mismo en los tres— y el tono vive únicamente en
+`BackgroundColor3`, con `AccentColor` como origen. `DesignSystem.FillRange` sigue calculando bien
+el bisel porque lee las dos cosas.
+
+De paso, el botón de sonido dejó el coral: en el `DesignSystem` significa "cerrar, denegado,
+destructivo" y este botón no es ninguna de las tres. Pasa a `Cyan`, el token informativo que ya
+usa el tile de Inventory; invitar se queda `Primary`, que es el verde de acción positiva y la
+única llamada a la acción de la fila.
+
+Lo que **no** hizo falta escribir: pulsación, bisel, contorno de texto y click. Los cuatro los
+dan los scripts aditivos (`PressFeedback`, `RimScaler`, `TextStrokeScaler`, `FeedbackController`)
+sobre cualquier botón authored, sin tocar código. Es la prueba de que esos contratos funcionan.
+
+### Limitación de la sesión, otra vez
+
+La entrada de ratón sintética sigue sin llegar a la GUI —se comprobó contra
+`NavGrid.InventoryOpenButton`, que ya funcionaba, y tampoco reaccionó—, así que el toque real
+sobre los dos botones nuevos queda pendiente de una prueba a mano. Lo que sí está verificado es
+que `Init` llega a su última línea, así que los `Activated:Connect` que van antes se ejecutaron.
+
+## La tarjeta de revivir mezclaba fracción y píxeles (2026-09-10)
+
+Copia previa en `ServerStorage.ReviveCardLayoutBackup_20260910`.
+
+`ReviveCard` mide `{0.46},{0.38}` del viewport y su `SizeLimits` la deja entre **190 y 280 px**
+de alto: en un móvil se queda clavada en el mínimo y en un PC en el máximo, así que su alto real
+varía casi un 50 % entre las dos pantallas.
+
+Todo lo de dentro estaba escrito en fracción de ese alto —y por tanto acompañaba al cambio—
+**menos los dos botones**, que estaban en píxeles: `Position` y=88, `Size` alto=63. Se quedaban
+donde se midieron mientras el resto se movía:
+
+| Alto de tarjeta | Barra (fracción 0.33..0.435) | Botones (píxeles) | Resultado |
+| --- | --- | --- | --- |
+| 190 (móvil) | 62..83 | 88..151 | se salva por 5 px |
+| 280 (PC) | 92..122 | 88..151 | **34 px de solape** |
+
+Y como los botones llevan `ZIndex` 34 y la barra 33, en PC el temporizador no es que se solapara:
+**desaparecía entero debajo**. Por eso en la captura del reporte no se veía barra ninguna.
+
+Arreglo: los botones pasan a fracción como el resto, centrados en la banda libre entre la barra
+(acaba en 0.435) y la línea de estado (empieza en 0.82). El centro de esa banda es 0.6275,
+redondeado a 0.63, con `AnchorPoint` vertical 0.5 para que crezcan simétricamente. El
+`UISizeConstraint` baja de 63 —un número escrito a mano— a `DesignSystem.Touch.MinPurchaseTarget`
+(56), que es un suelo táctil, no una medida de diseño: solo entra en juego en la tarjeta más
+pequeña, donde 0.26 se queda en 49 px.
+
+**La lección, que vale para cualquier tarjeta de este HUD: dentro de un contenedor que se mide en
+fracción, un hijo en píxeles es un hijo que se desalinea.** No falla donde se authored —ahí se
+midió— sino en el otro extremo del `SizeLimits`, que es justo la pantalla que el autor no tenía
+delante. Al revisar una tarjeta conviene listar qué hijos están en offset y por qué.
+
+Misma clase de fallo, encontrada en la misma pasada: `CloseButton` medía 54x54 en píxeles
+mientras `HeartBadge`, su gemelo de la esquina opuesta, medía `{0.16},{0.26}` en fracción. Los
+dos llevan el mismo `UIAspectRatioConstraint`, así que igualar el `Size` los deja idénticos a
+cualquier tamaño; antes, en PC, el aspa se veía a 54 px al lado de un corazón de 73.
+
+## "Don't Leave Yet!": por qué un nivel no se regala sumando uno (2026-09-11)
+
+El documento pedía `+4 niveles al instante`. La implementación obvia —`state.Level += 4`— es la
+que **no** funciona en este juego, y conviene dejar escrito por qué.
+
+El `Level` de Stuck to You no es una moneda: es una lectura de la Stickiness acumulada
+(`GameConfig.GetLevel`) que además nunca baja y se detiene en el techo del Rebirth. Se recalcula
+en **cada** ganancia, dentro de `refreshLevel`. Sumarle cuatro a mano tiene dos consecuencias, y
+las dos son invisibles hasta que alguien se queja:
+
+1. **El regalo se evapora.** El siguiente objeto recogido vuelve a pasar por `refreshLevel`, que
+   toma `max(state.Level, GetLevel(state.Stickiness))`. El número aguanta mientras nadie recoja
+   nada y desaparece al reconectarse.
+2. **No sobrevive a la sesión.** Lo que se guarda en el perfil es la Stickiness, no el Level:
+   `initializePlayer` lo deriva al entrar. Un Level regalado no llega a existir en el DataStore.
+
+Por eso `ProgressionService.GrantLevels` concede **la Stickiness que hace falta para llegar a ese
+nivel**, que es exactamente lo que el jugador habría recogido. Hereda sola cualquier cambio
+futuro de la curva y se persiste por el camino de siempre.
+
+Y no es "el coste de cuatro niveles" sino "lo que falta para el nivel objetivo": a quien va por
+la mitad de un nivel, sumarle el coste entero de cuatro le daría casi cinco. La diferencia entre
+las dos fórmulas solo se ve a mitad de nivel, que es donde está casi todo el mundo casi siempre.
+
+**En el techo del Rebirth el caso se invierte.** Ahí el Level está congelado hasta renacer, así
+que no hay nivel al que llegar. En vez de no dar nada, se concede lo que esos cuatro niveles
+habrían costado: sigue sirviendo, porque los blockers de las últimas salas piden Stickiness y la
+Stickiness sí sube por encima del último umbral de nivel del ciclo. Medido con un jugador en
+nivel 11 (tope de R0): el premio informa `levels = 0` —que es la verdad, y la tarjeta no promete
+cuatro niveles que no han llegado— y entrega 125 de Stickiness, `T[15] - T[11]` exacto.
+
+## La velocidad temporal entró por el hueco que ya existía (2026-09-11)
+
+El daily del día 5 concede `+10` de velocidad **permanente** y lo hace fuera de
+`ApplyPerkBonus`, que es donde viven todos los techos del juego; por eso `PerkService` le puso un
+techo propio y un recorte final contra el del perk. La velocidad de "Don't Leave Yet!" es el
+mismo tipo de número —plano, no porcentual— pero temporal.
+
+La decisión fue **no darle un reloj a `PerkService`**. Quien lleva el reloj es
+`DontLeaveService`, que publica en `DontLeaveSpeedBonus` el bonus **ya resuelto**: 10 mientras
+vale, 0 cuando caduca. `PerkService` solo añade ese atributo a la lista que ya vigilaba y lo suma
+en el mismo hueco que el permanente, compartiendo el recorte final. El resultado es que apagar el
+bonus es una escritura de atributo, no un caso especial, y que sumar los dos no puede desbordar
+`MaximumWithEvent`.
+
+La caducidad se guarda como marca de tiempo **absoluta**, igual que `BoostExpiry`: guardar lo que
+queda convertiría 30 minutos en infinitos para quien sepa desconectarse.
+
+## El debounce compartido se comía el premio (2026-09-11)
+
+El remote de "Don't Leave Yet!" lleva cuatro acciones: `Claim` y tres señales de analítica
+(`Shown`, `Resumed`, `Closed`). Empezó con **un solo debounce de un segundo para todas**, copiado
+del daily, donde el remote solo tiene una acción.
+
+El resultado: al cerrar el menú se envía `Resumed`, y el `Claim` que el jugador pulsa medio
+segundo después —que es lo normal, porque la tarjeta está justo delante— llegaba dentro de la
+ventana y se descartaba en silencio. El premio no se concedía y la tarjeta se quedaba mirando.
+
+Ahora el debounce es **solo del claim**; las señales ya tenían su propio freno, que es la cuota
+por minuto. La lección: un debounce por remote solo vale si el remote hace una cosa. En cuanto
+lleva acciones distintas, el freno va por acción, y la que concede progreso no comparte ventana
+con las que solo informan.
+
+## El suelo monótono que impedía probar (2026-09-11)
+
+`DontLeaveLastClaimDay` nació con un suelo monótono en `DataService.UpdateProfile` —no puede
+retroceder— por analogía con los históricos (`TotalWinsEarned`, `DailyCycle`). Parecía prudente y
+no protegía de nada: el único que escribe ese campo es `DontLeaveService`, siempre con el día de
+**hoy**, el cliente no lo toca y `normalizeProfile` ya lo acota al cargar.
+
+Lo único que conseguía era impedir que una prueba simulara "lo cobré ayer", que es justo el caso
+que hay que poder probar. Se quedó solo el techo (no puede adelantarse, porque un día futuro
+bloquearía el premio hasta que el calendario lo alcance).
+
+**Un invariante que no protege de nada y bloquea la prueba del caso principal no es prudencia:
+es una prueba menos.**
+
+## Probar un sistema cuyo disparador no se puede disparar (2026-09-11)
+
+`GuiService.MenuOpened` no se puede provocar desde Studio: la tecla está reservada al CoreGui
+—la entrada sintética responde *"key is permanently bound to a CoreGUI core action"*— y
+`SetMenuIsOpen` es de CoreScript. Sin más, la mitad de cliente del sistema queda sin probar.
+
+La salida fue un `BindableFunction` solo-Studio en el `PlayerGui`
+(`DontLeaveControllerTestBridge`), con el mismo criterio que los puentes de servicio que ya usa
+el proyecto, y con una regla que importa: **llama a los mismos manejadores que las señales
+reales, no a una copia**. Lo que se prueba es el camino de producción; lo único que queda fuera
+es si Roblox dispara la señal cuando toca.
+
+El detalle que casi se cuela: la acción `Close` del puente saltaba la guarda `if not menuOpen`
+que sí tiene el botón real, así que una prueba pasaba por un camino que en producción no existe.
+Un puente de pruebas que es **más permisivo** que la UI real no prueba la UI real.
+
+## Dos peticiones que eran una sola regla (2026-09-11)
+
+Pedido: que el daily se abra solo al terminar el FTUE, **y** que se abra en cada entrada detrás
+de Offline Gains. Suena a dos disparadores y el código obvio son dos: uno colgado de que termine
+el tutorial y otro colgado de la entrada.
+
+Ese código tiene un agujero que no se ve hasta que alguien se queja: **el jugador que termina el
+FTUE y vuelve a entrar el mismo día ve la ventana dos veces**, una por cada disparador.
+
+La regla que los une es *se abre una vez por sesión, en cuanto se cumplen las tres condiciones*:
+el daily está desbloqueado, su estado ha llegado del servidor, y Offline Gains ya no está en
+pantalla. El jugador que vuelve las cumple al cerrar Offline Gains; el nuevo las cumple en el
+instante en que el FTUE termina, porque hasta entonces `DailyUnlocked` es falso. Un solo camino,
+una sola bandera, y los dos casos del diseño salen de él.
+
+**La lección: cuando dos peticiones se parecen a dos disparadores, conviene buscar la condición
+que ambas satisfacen.** Casi siempre existe, y es la que no deja huecos entre los dos.
+
+## Esperar a una pantalla ajena sin acoplarse a ella (2026-09-11)
+
+El daily tiene que aparecer **detrás** de Offline Gains, nunca encima. La vía fácil habría sido
+que `OfflineGainsController` avisara al terminar, pero eso ata dos controladores que hoy no se
+conocen y convierte el orden de `ClientMain` en una dependencia dura.
+
+En vez de eso, el daily observa dos hechos que ya existen:
+
+- el atributo `OfflineGainReady`, que el servicio publica **siempre** —haya premio o no—, y que
+  significa "Offline Gains ya decidió";
+- la propiedad `Visible` de su overlay authored, que significa "su tarjeta está delante".
+
+Tres estados, y el del medio es el que importa: tarjeta en pantalla → esperar **sin tope**,
+porque taparla sería peor que llegar tarde; atributo publicado → adelante; ni una cosa ni la otra
+pasado un techo de 12 s → adelante por descarte, porque el servicio puede no llegar a publicar
+(un perfil que no carga) y el daily no puede quedarse esperando una señal que no va a venir.
+
+Queda una carrera real: los dos controladores escuchan `OfflineGainReady`, y en ese instante la
+tarjeta todavía no se ha hecho visible. Si el daily corriera primero leería "no hay tarjeta". Lo
+resuelven dos cosas, y hacen falta las dos: el orden en `ClientMain` (Offline Gains va antes) y
+**la revalidación completa tras la pausa de 0,6 s**, que es la que atrapa el caso si el orden
+alguna vez cambia. Una pausa que solo adorna la transición es una pausa desaprovechada.
+
+### Cómo se probó que no se cuela
+
+Forzando la recompensa offline con su puente de pruebas y terminando el FTUE **con la tarjeta en
+pantalla**. El daily siguió cerrado a los 3 y a los 7 segundos, y apareció al cerrarla. Sin ese
+orden forzado la prueba no vale: en Studio el mock no conserva `LastSeenAt` entre sesiones, así
+que la tarjeta de Offline Gains no sale nunca sola.
+
+## Contrato reusable — Admin Abuse (2026-09-14)
+
+- **Fuente de verdad del diseño:** `Admin Abuse- Diseño de Evento Global Automático de Recolección y Mutaciones.md`.
+- **Decisión de adaptación:** los objetos son privados por jugador, así que presupuesto, sequía y
+  pity del Rare Spawn Director son **por jugador**; el techo de servidor solo protege rendimiento.
+  Los anuncios Zone/Server son sociales: nadie puede quitarle un raro a otro.
+- **La fase no se replica:** se deriva de `StartTime` + `GameConfig.AdminAbuse.Phases`
+  (`Shared.AdminAbuse.PhaseAt`). El servidor solo publica ventana (`RunId/StartTime/EndTime/
+  Stopped/Sequence`) y `PhaseSequence` como commit.
+- **Multiplicadores:** progreso entra en el cap aditivo de boosts; la mutación viaja en
+  `Item.GainMultiplier` fijado al aparecer (cambio de fase no altera el valor); radio Overdrive =
+  `max` con el evento de mundo; respawn dividido por `SpawnRateMultiplier` con el mismo suelo.
+- **Frenzy necesita `Director.NoneWeight`:** multiplicar todos los pesos de mutación por igual no
+  cambia nada sin una opción "no convertir" que no se multiplique.
+- **Ganchos:** `RoomItemService.SetItemHooks({Decorate, SessionClosed})` y `ConvertItem` (Consumed
+  + Spawned, sin protocolo nuevo). Sin registro, RoomItemService se comporta como antes.
+- **Pruebas desde MCP:** el BindableFunction `AdminAbuseTestBridge` no se puede invocar (capabilities);
+  usar el atributo `DebugCommand` de `Shared.AdminAbuseState` (solo Studio):
+  `start|dur|offset|runId`, `stop|true/false`, `clear`, `force|userId|Mutation`, `stats|userId`;
+  resultado JSON en `DebugResult`.
+- **Perfil:** campo `AdminAbuse = {Index, Collected, Milestones, Runs}`, normalizado con techos
+  (`Index.MaximumEntries`, `MaximumStoredRuns`). Único escritor: `MutationIndexService`.
+- **Para portarlo:** copiar `Shared.AdminAbuse`, los tres servicios, `MutationVisuals`,
+  `AdminAbuseController`, `Assets.AdminAbuse`, las tres UIs authored y la sección de GameConfig;
+  proveer los ganchos de spawn/pickup y un `ProgressionService` con `AddStickiness/GrantLevels`.

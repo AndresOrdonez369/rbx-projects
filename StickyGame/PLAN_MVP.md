@@ -1994,3 +1994,512 @@ separación con los vecinos, que es como estuvo a punto de pisar `NavGrid`—:
 
 Verificado en Play: dos filas de 63 px con icono de 63 y número de 53, la fila del zapato
 oculta, consola limpia.
+
+## Sticky Charms — primera versión (2026-09-08)
+
+Sistema del documento `+1 Sticky Charms System.md`, implementado y probado en Play. El detalle
+técnico y las decisiones de diseño están en `PROJECT_MEMORY.md`; aquí queda el estado de alcance.
+
+### Entregado
+
+| Criterio del documento | Estado |
+| --- | --- |
+| Comprar, equipar y quitar Charms | Hecho, server-authoritative |
+| Equipados y disponibles visualmente separados | Hecho: columna de huecos y rejilla de colección |
+| Ficha de información en hover / mantener pulsado | Hecho, con reposicionamiento en los bordes |
+| Bonus calculados por el servidor | Hecho: se replica el resultado, no la lista |
+| Inventario y loadout sobreviven a Rebirth y a reconectar | Verificado |
+| La tienda no puede cobrar dos veces ni duplicar | Verificado (`AlreadyOwned`, `NotForSale`) |
+| `Equip Best` calculado en servidor | Hecho |
+| Rotación personal por jugador con restock | Hecho, derivada del reloj y del UserId |
+| Refresco de pago, con precio visible y nunca obligatorio | Hecho, se paga con Wins |
+| Analytics | Seis eventos nuevos, 57 de 100 |
+| Localización | 38 entradas, los 15 idiomas |
+
+### Pendiente, marcado a propósito
+
+- **Categorías AFK, Rebirth y Defense.** Esta versión conecta Stickiness, Wins y Collection,
+  que son las tres que tenían consumidor real. Un tipo declarado y no conectado sería un bonus
+  que el jugador paga y no recibe.
+- **Duplicados.** `GameConfig.Charms.AllowDuplicates` existe y está en `false`. Encenderlo
+  además exige guardar cantidades en el perfil: hoy la propiedad es un conjunto, no un contador.
+- **Game Pass de huecos extra.** `SlotGamePassId` está declarado y sin conectar; los huecos
+  salen sólo del Rebirth.
+- **Arte propio.** Cada Charm lleva un emoji de respaldo (`Glyph`) y un `IconId` vacío. Cuando
+  haya dibujo se rellena el campo en el catálogo y el glifo se apaga solo.
+- **El clic sobre el tile de `NavGrid` no se pudo probar**: la entrada de ratón sintética de
+  esta sesión de Studio no llega a la GUI, ni siquiera sobre botones que ya funcionaban. Queda
+  para una prueba a mano.
+- **Balance.** Los precios (25 / 150 / 900 / 5000 Wins por rareza) son un primer pase
+  deliberadamente barato: un Charm debe ser la compra pequeña que se hace mientras se ahorra
+  para la estela del ciclo, no competir con ella.
+
+## Sticky Charms — actualizado al documento del 2026-09-09
+
+El documento se rehízo y cambió el modelo de datos: copias en vez de propiedad, dos monedas por
+Charm, cinco categorías de bonus y catálogo cerrado de 20 items. El sistema se rehízo entero
+sobre lo authored del día anterior. Detalle técnico y decisiones en `PROJECT_MEMORY.md`.
+
+### Entregado
+
+| Criterio del documento | Estado |
+| --- | --- |
+| Comprar el mismo Charm varias veces | Hecho; cada compra concede una copia |
+| Wins y Robux conceden una copia cada una | Hecho; Robux por Developer Product |
+| Las copias duplicadas persisten | Verificado |
+| Inventario muestra poseídas, disponibles y equipadas | Hecho: insignia `x3` y estado `2 / 3` |
+| No se pueden equipar más copias de las que se tienen | Verificado (`NoCopiesLeft`) |
+| Los efectos duplicados se suman | Verificado: 3× Slime Heart = +36% |
+| Cada copia ocupa un hueco | Hecho; huecos fijos en 3 |
+| Una compra por oferta y rotación | Verificado (`AlreadyBought`) |
+| Rotaciones futuras venden más copias | Verificado tras refrescar |
+| Los recibos no conceden duplicados por error | Verificado: recibo repetido no concede |
+| El estado sobrevive a Rebirth y reconexión | Verificado |
+| La tienda nunca muestra `Owned` como estado final | Hecho: muestra `BOUGHT` |
+| `Equip Best` cuenta duplicados y es de servidor | Hecho |
+| Botón `Chances` con probabilidad por rareza | Hecho, con los pesos reales del sorteo |
+| Refresco de pago con precio visible antes del prompt | Hecho |
+| Las cinco categorías de bonus conectadas | Hecho: Stickiness, Wins, Collection, AFK, Rebirth |
+| Orden de aplicación centralizado | Hecho, en `GameConfig` y `ProgressionService` |
+| Analytics | 59 de 100 eventos |
+| Localización | 33 entradas + 20 nombres, 15 idiomas |
+
+### Pendiente, marcado a propósito
+
+- ~~Los 21 ids reales de Developer Product.~~ **Hecho el 2026-09-09**: los 20 de los Charms
+  están integrados y verificados contra el documento. Queda solo el del refresco de tienda,
+  que el documento todavía no da; `PurchaseService` avisa de ese y de ningún otro.
+- **Confirmar dos precios de Collection Range.** Tiny Magnet cuesta R$29 y Seeker Compass R$79,
+  cuando su rareza pide R$11 y R$49. El código sigue al producto real; falta saber si es
+  intencionado o si la tabla del documento se quedó con el precio viejo.
+- **`Lock` y `Delete`**: el propio documento los marca como no recomendados para esta versión.
+- **Arte propio.** Cada Charm lleva un emoji de respaldo; algunos apenas se ven al tamaño de la
+  tarjeta. Se rellena `IconId` en el catálogo y el glifo se apaga solo.
+- **Precios dinámicos desde Roblox** cuando existan los productos; hoy se pinta el de la rareza.
+- **Balance**: los costos en Wins son los del documento (5K a 100B) y no se han contrastado
+  contra la curva real de Wins del juego.
+- **El clic sobre el tile de `NavGrid` y el hover de la ficha** siguen sin probarse: la entrada
+  de ratón sintética de esta sesión de Studio no llega a la GUI, ni siquiera sobre botones que ya
+  funcionaban. Queda para una prueba a mano.
+
+## Registro — 2026-09-10, FTUX sin caja y fila de utilidades (invitar y música)
+
+Cuatro encargos: quitarle el rectángulo al cartel del FTUX, crear el botón de invitar amigos,
+crear el de apagar la música y dejar los tres visualmente estandarizados. Detalle técnico y
+decisiones en `PROJECT_MEMORY.md`.
+
+### Entregado
+
+| Criterio | Estado |
+| --- | --- |
+| El cartel del FTUX pierde el rectángulo | Hecho: fondo, `UIStroke`, `Fill`, `Pattern` y `Rim` apagados |
+| Queda solo texto con bordes negros | Hecho: `Kicker`, `Task` y el contador `0/10` |
+| El contador de progreso sobrevive | Hecho; la tarea se centra con reserva simétrica |
+| El paso completado se sigue celebrando | Hecho: la línea se tiñe de verde en vez del fondo |
+| Botón de invitar amigos | Hecho: `UtilityRow.InviteSlot`, `SocialService:PromptGameInvite` |
+| El botón se esconde si el jugador no puede invitar | Verificado: `CanSendGameInviteAsync` |
+| Botón de apagar la música | Hecho: `UtilityRow.SoundSlot`, cuarto factor en `MusicController` |
+| Apagar la música no apaga los efectos | Verificado: el grupo `SFX` se queda en 1 |
+| El silencio entra con fundido, no de golpe | Verificado: `MuteFadeSeconds = 0.35` |
+| Estandarización visual de los tres slots | Hecho: misma anatomía, rampa de valor compartida, tokens del `DesignSystem` |
+| Objetivo táctil mínimo | Verificado: 48 px medidos en compacto |
+| Sin solapes con el resto del HUD | Verificado por medición, en las tres variantes de layout |
+| Localización | 2 entradas nuevas (`Utility.Sound`, `Utility.Invite`), 15 idiomas |
+
+### Probado en Studio
+
+- **Silenciar y volver:** el volumen del grupo `Music` recorre 0.320 → 0.197 (a mitad del
+  fundido) → 0.000 y vuelve por el mismo camino. El grupo `SFX` no se mueve de 1.
+- **Un duck en pleno silencio no resucita la música:** con `mute = 0`, `Duck()` deja el volumen
+  en 0.000. Los cuatro factores se multiplican, que es justo lo que evita los casos especiales.
+- **Tres ciclos apagar/encender seguidos** con reinicio del controlador entre medias: el botón
+  vuelve a cyan y al icono de altavoz las tres veces. Esta prueba es la que destapó el fallo del
+  acento (ver `PROJECT_MEMORY.md`); antes del arreglo el botón se quedaba gris para siempre.
+- **`Destroy` deja el botón como lo dejó el editor**, no en gris.
+- **Geometría:** medida sobre el HUD real, cero solapes contra cualquier bloque visible, iconos
+  desbordados de los gamepasses incluidos.
+
+### Pendiente, marcado a propósito
+
+- **El toque sobre los dos botones nuevos no se ha probado a mano.** Es la misma limitación ya
+  anotada en el registro de Charms: la entrada de ratón sintética de esta sesión de Studio no
+  llega a la GUI, y se comprobó que tampoco llega a `NavGrid.InventoryOpenButton`, que ya
+  funcionaba. Lo que sí está verificado es que `UtilityController.Init` llega a su última línea
+  (esconde el botón de invitar desde el `task.spawn` final), así que los dos `Activated:Connect`
+  que van antes se ejecutaron; y que `paintSound()` pinta bien los dos estados. Falta un toque
+  real que confirme la entrega del evento.
+- **En Studio el botón de invitar no se ve.** `CanSendGameInviteAsync` devuelve `false` sin
+  sesión real, y esconderlo es el patrón que pide Roblox. Se imprime un aviso en Studio para que
+  no parezca roto. Hay que verlo en un cliente publicado.
+- **Arte del icono de invitar.** Hoy usa el glifo `👥` de respaldo, el mismo patrón que los
+  `NavTile` sin arte. Poner la ilustración es escribir su id en `InviteSlot.Icon.Image` y apagar
+  `Glyph`.
+- **La preferencia de música dura lo que la sesión.** No se guarda en `DataService`: no hay
+  campo de ajustes y añadirlo toca datos persistidos. Cuando exista pantalla de ajustes, ese es
+  el sitio del que leer el valor inicial.
+- **`SettingsSlot` sigue siendo placeholder**, ya normalizado y apagado, esperando pantalla.
+
+## Registro — 2026-09-10 (2), tarjeta de revivir: botones sobre la barra
+
+La pantalla que sale al morir (`RunFailureOverlay.ReviveCard`) tapaba con sus dos botones la
+barra del temporizador. Reportado desde PC; medido y corregido para las dos pantallas.
+
+### Entregado
+
+| Criterio | Estado |
+| --- | --- |
+| Los botones dejan de solapar la barra | Verificado a 190, 235 y 280 px de alto de tarjeta |
+| Arreglado en PC | Verificado: era el caso roto (34 px de solape, barra invisible) |
+| Arreglado en móvil | Verificado: pasa de 5 px de holgura a 9 |
+| El botón de compra cumple el mínimo táctil | Verificado: 56 px exactos en la tarjeta más pequeña |
+| Separación entre los dos botones | 41 px medidos; antes ~10 menos los contornos |
+| Aspa y corazón del mismo tamaño | Verificado: 49 / 61 / 73 px, idénticos en los tres altos |
+
+### Probado en Studio
+
+Forzando la tarjeta a los tres altos que permite su `SizeLimits` —190 (móvil), 235 y 280 (PC)—
+y midiendo las cajas reales de `TopBand`, `Title`, `Subtitle`, `TimerTrack`, los dos botones y
+`Status`: **cero solapes en los tres**. Huecos barra→botones de 9,0 / 15,4 / 18,2 px y
+botones→estado de 8,2 / 14,2 / 16,9 px. Confirmado además con captura en los dos extremos.
+
+### Pendiente
+
+- **El toque sobre `R$ 7` y `NO` sigue sin probarse a mano**, por la misma limitación de entrada
+  sintética ya anotada. El cambio es solo de geometría authored: `DeathFlowController` no
+  escribe posición ni tamaño de esos botones, solo su texto y el `Size` del relleno de la barra.
+
+## Registro — 2026-09-11, "Don't Leave Yet!": la oferta del menú de Roblox
+
+Sistema nuevo, descrito en `Don't Leave Yet! system.md`. Cuando el jugador abre el menú nativo
+de Roblox aparece detrás una tarjeta con un premio; si vuelve al juego en vez de salir, puede
+cobrarlo. Una vez por día UTC.
+
+Piezas: `GameConfig.DontLeave`, `ServerScriptService.Server.DontLeaveService`,
+`StarterPlayer.StarterPlayerScripts.Client.DontLeaveController`,
+`StarterGui.StickyHUD.DontLeaveScreen` (authored), dos `RemoteEvent` en `Shared.Remotes`,
+dos campos nuevos de perfil y cinco eventos de analítica.
+
+### Entregado
+
+| Criterio | Estado |
+| --- | --- |
+| La tarjeta aparece con `GuiService.MenuOpened` | Verificado |
+| Visible pero **no interactiva** mientras el menú está abierto | Verificado: `CLAIM!` apagado, aviso "cierra el menú" visible, el toque no hace nada |
+| Se vuelve interactiva con `GuiService.MenuClosed` | Verificado |
+| El botón de Leave nativo no se toca ni se tapa | Verificado por construcción: nada del sistema escribe en el CoreGui |
+| `+10 de velocidad durante 30 minutos` | Verificado: WalkSpeed 22,4 → 32,4 y el `Humanoid` con él |
+| El bonus de velocidad caduca solo | Verificado con caducidad forzada a 3 s: vuelve a 22,4 y el perfil queda a 0 |
+| `+4 niveles al instante` | Verificado: nivel 1 → 5 y nivel 3 → 7, por la curva real de `LevelThresholds` |
+| Una sola vez por día UTC | Verificado: el segundo intento responde `AlreadyClaimed` |
+| No se ofrece si ya se cobró | Verificado: `DontLeaveCanClaim` pasa a falso y la tarjeta no reaparece |
+| Todo se valida y concede en servidor | Verificado: el remote solo lleva una acción, sin cantidades |
+| Se persiste el día cobrado y la caducidad del bonus | Verificado leyendo el perfil tras el claim |
+| Cerrar sin cobrar no gasta la oferta | Verificado: reaparece al volver a abrir el menú |
+| Cinco eventos de analítica registrados | Verificado: los cinco pasan `IsKnownEvent`; 64 de los 100 nombres usados |
+| Texto localizado en los 15 idiomas de la tabla | Verificado en `es-es`, `ja-jp`, `pt-br` y `tr-tr`, con captura en japonés |
+
+### Probado en Studio
+
+Con los dos puentes de pruebas (`DontLeaveServiceTestBridge` en servidor,
+`DontLeaveControllerTestBridge` en cliente, ambos solo-Studio):
+
+1. **Regla pura del día**, sin tocar ningún perfil: nunca cobrado → sí; cobrado hoy → no;
+   cobrado ayer → sí; sin FTUE → no; día guardado en el futuro → no.
+2. **Recorrido completo de cliente**, en este orden y en una sola pasada: menú abierto (visible
+   y bloqueada) → intento de cobro bloqueado → menú cerrado (interactiva) → cerrar (se esconde)
+   → menú abierto otra vez (reaparece) → menú cerrado → cobrar (concede) → menú abierto tras
+   cobrar (ya no aparece, el botón dice `CLAIMED!`).
+3. **Techo de Rebirth**: con el jugador en el nivel 11 (el tope de R0) el premio concede
+   `levels = 0` —honesto: el nivel no se mueve— y en su lugar entrega **125 de Stickiness**, que
+   es exactamente lo que esos cuatro niveles habrían costado (`T[15] - T[11]`).
+4. **Caducidad**: forzada a 3 s, el hilo despierta solo, pone el bonus a 0, `PerkService`
+   recalcula y no queda ningún hilo pendiente (`ScheduledExpiries = 0`).
+
+### Un fallo encontrado y arreglado durante las pruebas
+
+El debounce del remote era **uno solo para todas las acciones**. La señal `Resumed` que se envía
+al cerrar el menú se comía el `Claim` que el jugador pulsaba medio segundo después: el premio no
+se concedía y la tarjeta se quedaba mirando. Ahora el debounce es solo del claim; las señales de
+analítica tienen su propio freno, que es la cuota por minuto.
+
+### Pendiente, marcado a propósito
+
+- **El disparador real no se puede probar desde Studio.** Ningún script puede abrir el menú de
+  Roblox: la tecla está reservada al CoreGui y `SetMenuIsOpen` es de CoreScript. La entrada
+  sintética lo rechaza explícitamente (*"key is permanently bound to a CoreGUI core action"*).
+  Todo lo que hay detrás de `MenuOpened`/`MenuClosed` está probado llamando a **los mismos
+  manejadores** por el puente; lo que falta es confirmar a mano, en un cliente publicado, que
+  Roblox dispara esas dos señales cuando se espera y que la tarjeta se ve por detrás del menú en
+  móvil, donde el menú ocupa más pantalla.
+- **El toque real sobre `CLAIM!` y el aspa** sigue sin probarse a mano, por la limitación de
+  entrada sintética ya anotada en los registros de Charms y de la tarjeta de revivir. Lo que sí
+  está verificado es que el manejador al que llama `Activated` hace su trabajo completo.
+- **Arte del icono.** Hoy usa el glifo `🥺`, el mismo patrón de respaldo que los `NavTile` sin
+  arte. Poner la ilustración es cambiar `Icon` por un `ImageLabel` con su id.
+
+### Añadido — los dos banners de las franjas libres
+
+Reportado al probarlo con el menú real: **con varios jugadores en el lobby la tarjeta no se ve**.
+La lista de jugadores del menú nativo crece con la gente que haya y a partir de cierto número
+tapa el centro de la pantalla, que es justo donde está el cuadro.
+
+Arreglo: dos `TextLabel` authored colgando de `DontLeaveScreen`, en las dos franjas que el menú
+nativo **nunca** ocupa.
+
+| | Texto | Banda a 1080p | Holgura contra el menú |
+| --- | --- | --- | --- |
+| `BannerTop` | `PLEASEEE DON'T LEAVE YET` | 59–148 px | 19 px hasta el panel (~167) |
+| `BannerBottom` | `STAY AND CLAIM YOUR GIFT` | 951–1040 px | 80 px desde la fila Leave/Resume (~871) |
+
+Los dos con `TextScaled` entre 22 y 96 px, contorno grueso —se leen sobre el velo del menú,
+sobre el cielo y sobre el HUD, y los tres tienen luminosidad distinta— y visibles **solo**
+mientras el menú está abierto y la tarjeta en pantalla. El de abajo lleva el contorno verde del
+botón de cobrar: arriba se suplica, abajo se dice que hay premio, y el color los separa de un
+vistazo.
+
+Dos fallos de authoring encontrados al montarlos, los dos del mismo tipo —una propiedad que
+apaga otra en silencio—:
+
+- **`TextScaled` se apagó solo.** Escribir `TextWrapped = false` *después* de `TextScaled = true`
+  desactiva el segundo: Roblox los acopla. El banner salía a su `TextSize` de 8. `TextScaled` va
+  siempre al final.
+- **La posición en fracción metía el banner debajo de la barra de Roblox.** `StickyHUD` lleva
+  `IgnoreGuiInset = true`, así que `Y = 0` es el borde físico de la pantalla y no el inicio del
+  área jugable. El offset de 60 px es en píxeles a propósito; el de abajo va anclado al borde
+  inferior por el mismo motivo.
+
+### Confirmado con el menú real
+
+`GuiService.MenuOpened` **sí se dispara en Studio** y la tarjeta aparece detrás del menú nativo,
+con el botón de Leave intacto. Queda por confirmar a mano que los dos banners caen en la franja
+correcta con el menú real y con el lobby lleno; las bandas de arriba están medidas, pero el alto
+del panel de jugadores depende de cuánta gente haya.
+
+### Confirmado a mano con el menú real (2026-09-11)
+
+Pulsando Escape en Studio, con la sonda midiendo:
+
+```
+[PROBE] MenuOpened -> tarjeta = true
+[PROBE]   BannerTop 59..148 px (visible=true)
+[PROBE]   BannerBottom 951..1040 px (visible=true)
+```
+
+La tarjeta aparece detrás del menú nativo, los dos banners caen en las franjas libres y el botón
+de Leave sigue intacto. Con esto, el único tramo del sistema que seguía sin prueba pasa a estar
+verificado.
+
+`RequiresTutorial` vuelve a `true`, que es su valor de producción.
+
+## Registro — 2026-09-11 (2), el daily se abre solo
+
+Dos peticiones que resultaron ser **una sola regla**:
+
+1. que la ventana del daily se abra al terminar el FTUE;
+2. que se abra en cada entrada al juego, detrás de la de Offline Gains.
+
+Se implementan como *se abre una vez por sesión, en cuanto el daily está desbloqueado, su estado
+ha llegado y Offline Gains ya no está en pantalla*. Esa única condición cubre los dos casos: el
+jugador que vuelve la ve tras cerrar Offline Gains, y el nuevo la ve en el instante en que el
+FTUE termina y `DailyUnlocked` pasa a cierto. Tratarlos como dos reglas habría hecho que quien
+termina el FTUE y vuelve a entrar el mismo día la viera dos veces.
+
+Nada de esto toca el servidor: es client-local en `DailyRewardsController`, con los números en
+`GameConfig.DailyRewards.AutoOpen`.
+
+### Entregado
+
+| Criterio | Estado |
+| --- | --- |
+| Se abre al terminar el FTUE | Verificado: `DailyUnlocked` pasa a cierto y la ventana aparece |
+| No se abre durante el FTUE | Verificado: perfil nuevo, `DailyUnlocked = false`, ventana cerrada |
+| No se abre **encima** de Offline Gains | Verificado: con su tarjeta en pantalla sigue cerrada 4 s después |
+| Se abre al cerrar Offline Gains | Verificado |
+| Una sola vez por sesión | Verificado: cerrada a mano, no vuelve ni moviendo los atributos que disparan la comprobación |
+| Abrirla a mano cuenta como vista | Verificado por construcción: `maybeAutoOpen` marca la bandera y se retira |
+| Si Offline Gains no contesta nunca, se abre igual | Verificado: `OfflineGainReady` forzado a falso desde el servidor toda la sesión y la ventana acaba abriéndose |
+
+### Probado en Studio
+
+Una sesión por caso, con la secuencia forzada desde el servidor:
+
+1. **FTUE**: perfil nuevo → ventana cerrada; se completa el tutorial → se abre sola.
+2. **Orden contra Offline Gains**: se fuerza una recompensa offline con su puente de pruebas,
+   se termina el FTUE **con la tarjeta en pantalla** → el daily no se cuela (comprobado a los 3
+   y a los 7 segundos); se cierra la tarjeta → el daily aparece.
+3. **Una vez por sesión**: cerrada a mano, no reaparece en 5 s ni al mover `DailyOwnsTreadmill`.
+4. **Red de seguridad**: con `OfflineGainReady` forzado a falso durante toda la sesión, la
+   ventana termina abriéndose igual.
+
+### Pendiente, marcado a propósito
+
+- **El valor exacto del tope (12 s) no está medido**, solo su efecto. La sonda se inyecta unos
+  segundos después de que el controlador arranque, así que su reloj y el del tope no comparten
+  origen: lo que la prueba demuestra es que la ventana se abre sin que Offline Gains conteste
+  nunca, que es la propiedad que importa; el número concreto es un valor de `GameConfig`.
+- **El mock de Studio no conserva el perfil entre sesiones de Play**, así que el caso más común
+  en producción —entrar con el FTUE ya hecho de una sesión anterior— no se puede reproducir tal
+  cual. Se prueba su equivalente: el instante en que `DailyUnlocked` pasa a cierto, que es la
+  misma señal que el cliente ve al entrar con el tutorial ya completado.
+
+## Registro — 2026-09-11 (3), "Don't Leave Yet!" sin FTUE y texto nuevo
+
+### Entregado
+
+| Criterio | Estado |
+| --- | --- |
+| La oferta aparece sin haber terminado el FTUE | Verificado: perfil nuevo, `TutorialCompleted = false`, `DontLeaveCanClaim = true` |
+| El cobro funciona sin FTUE | Verificado: bonus 10, WalkSpeed 22,69 → 32,69, `CanClaim` a falso |
+| Texto de abajo nuevo | `CLAIM YOUR GIFT AND COME BACK TOMORROW!`, en los 15 idiomas |
+| El texto largo sigue cabiendo | Verificado con captura; `TextScaled` lo ajusta al ancho y el suelo de 22 px lo protege |
+
+`GameConfig.DontLeave.RequiresTutorial` pasa a `false` **por decisión de diseño**, no como
+interruptor de pruebas: se retiró también el aviso de arranque que lo trataba como temporal. La
+guarda del servidor se queda, porque la decisión es de configuración y el claim no puede confiar
+en que la publicación haya aplicado la misma regla.
+
+### El precio, escrito para quien depure el FTUE más adelante
+
+El premio son cuatro niveles y **dos pasos del tutorial se miden contra `Level`**:
+
+| Paso | Texto | Qué le pasa |
+| --- | --- | --- |
+| 5 | `USE THE FIRST TREADMILL TO LEVEL UP` | Pide +1 nivel relativo: el premio lo completa entero y el jugador nunca pisa la caminadora |
+| 6 | `REACH LEVEL 20` | Se salta 4 de sus 20 niveles |
+
+Si algún día aparece un reporte de "el FTUE se salta pasos solo", este es el primer sitio donde
+mirar. Volver a poner `RequiresTutorial = true` recupera los dos pasos.
+
+### Offline Gains no tenía ninguna puerta del FTUE
+
+Se auditó el código antes de tocar nada: `OfflineGainsService`, `OfflineGainsController` y
+`ProgressionService` **no mencionan el tutorial ni una sola vez**. Lo que hace que un jugador
+nuevo no vea la tarjeta es otra cosa, y es correcta: su perfil tiene `LastSeenAt = 0`, así que no
+ha estado ausente ningún tiempo y no hay nada que conceder. La tarjeta aparece a partir de la
+segunda sesión, con el FTUE hecho o sin hacer.
+
+Verificado en Studio con el tutorial **sin terminar**: se concede por el camino real
+(`calculate` + `publish`) y la tarjeta sale con `+360 STICKINESS`.
+
+En Studio nunca sale sola porque el mock no conserva `LastSeenAt` entre sesiones de Play; hay que
+forzarla con `OfflineGainsServiceTestBridge`.
+
+### Sigue exigiendo FTUE, y no se ha tocado
+
+La **pantalla del daily** (`DailyUnlocked`), que es una regla anterior de `DailyRewardService`.
+Por tanto la apertura automática añadida hoy tampoco ocurre durante el tutorial.
+
+## Registro — 2026-09-14, Admin Abuse: evento global automático de 24 h
+
+Implementa `Admin Abuse- Diseño de Evento Global Automático de Recolección y Mutaciones.md`.
+Cambios en el DataModel abierto, **no guardados ni publicados**.
+
+### Construido
+
+- `GameConfig.AdminAbuse`: calendario UTC, `Version`, `EmergencyStop`, Admin Boost, fases
+  (datos, con assert que impide multiplicador de progreso/spawn por fase), mutaciones,
+  director, jackpot/pity, participación, hitos del Index, presentación. Todo `[POR VALIDAR]`.
+- `Shared.AdminAbuse`: lector puro. La fase **se deriva del reloj** (`PhaseAt`), no se replica;
+  `Resolve` implementa la tabla de la sección 12 (radio reemplaza, pesos multiplican, jackpot
+  solo Chaos). Instancia authored `Shared.AdminAbuseState`.
+- Servidor: `AdminAbuseService` (scheduler con `task.delay` al borde exacto de fase, servidor
+  nuevo a mitad de ventana, participación por ciclo, cierre en orden de la sección 29,
+  Emergency Stop por config o atributo `EmergencyStopRequest`), `RareSpawnDirector`
+  (presupuesto por jugador, sequía con garantía, peso "None" para que Frenzy aumente presencia,
+  techos por jugador/servidor/Admin, degradación por FPS de servidor, ciclo de vida
+  Reserved→Warning→Active→Claimed|Expired, reembolso, jackpot/pity de Chaos), y
+  `MutationIndexService` (Index persistente, hitos y premios de participación con marca antes de
+  conceder).
+- Integración mínima: `RoomItemService` (ganchos `Decorate`/`SessionClosed`, `ConvertItem`,
+  campos `M/A/E` en payload, respawn con Admin Boost), `PickupService` (rechaza warning,
+  expirado y run caducado; payload con mutación), `ProgressionService` (Admin Boost en el cap
+  aditivo), `PerkService` (radio Overdrive = max con evento de mundo), `WorldEventService` (no
+  rota eventos durante Admin Abuse), `DataService` (campo `AdminAbuse` normalizado y acotado),
+  `AnalyticsSchema` (9 eventos).
+- Cliente: `MutationVisuals` (un Heartbeat throttled, reversible, apaga partículas con FPS bajo),
+  `AdminAbuseController` (panel de dos temporizadores, feed con techo de filas, anillo de
+  Overdrive, pantalla Index, look temporal del objeto pegado). Cambios pequeños en
+  `CollectibleRenderer`, `AttachmentRenderer` (Model en `LocalPickupSettled`), `ClientMain`,
+  `ModalBlurController`.
+- Authored: `StickyHUD.AdminAbusePanel`, `AdminAbuseFeed/_FeedRow`,
+  `AdminAbuseIndexScreen/Window/Templates/_IndexCard`, `Assets.AdminAbuse.Mutations.{Gold,
+  Neon,Rainbow,Admin}`, `Assets.AdminAbuse.MagnetRing`, remotes `AdminAbuseFeedback/Request`,
+  24 claves `AdminAbuse.*` en 15 idiomas.
+
+### Probado en Studio (Play, 1 jugador)
+
+- Arranque sin errores; `StudioPreview` publica ventana; Overdrive sube radio (5.05→8.84, x1.75).
+- Forzar Gold/Neon/Rainbow: material, FX y marcador correctos; 4º raro rechazado por cap 3.
+- Recogida real de los 3: Index con 3 entradas, `FirstMutation` y `FirstRainbow` concedidos.
+- Expiración de Gold a 60 s: `Expired=1`, reembolso de presupuesto, objeto fuera en cliente.
+- Chaos Combo con pity acumulado (8 reinicios del mismo RunId): Admin por intervalo, pity a 0.
+- Aviso Admin: transparencia 0.6 durante 5 s y rechazo de recogida; recogido después
+  (`FirstAdmin` concedido).
+- Conversión natural por presupuesto en Frenzy: 3 raros en 50 s recogiendo objetos normales.
+- Participación: cruce de ciclo acredita `AdminAbuseCycles=1` y premio de 100 objetos.
+- Emergency Stop: RunId vacío, radio restaurado, raros eliminados, panel y anillo ocultos,
+  Index intacto.
+- Localización: `es-es`, `ja-jp`, `zh-cn` formateadas por Translator.
+- UI: captura en viewport compacto; panel movido bajo el banner FTUE para no taparlo.
+
+### Pendiente explícito
+
+- Prueba con 2+ jugadores (anuncios Zone/Server, techo de servidor) y en Android de gama baja.
+- Simulación económica de la sección 25 (casual, grinder, solo-Chaos) antes de fijar números.
+- El look del objeto pegado solo lo ve el dueño: extender el protocolo compacto de
+  `AttachmentVisual` para que lo vean los demás.
+- Nombres de objetos del Index derivados de la plantilla (sin claves `AdminAbuse.Object.*`).
+- El botón INDEX solo existe mientras hay ventana; acceso fuera del evento por decidir.
+- `StudioPreview.Enabled = true` afecta a toda prueba en Studio: apagarlo al terminar de revisar.
+- Fecha real de la primera ventana (`Schedule`) por confirmar.
+
+## Registro — 2026-09-14 (2), Admin Abuse con el lenguaje visual del HUD
+
+La primera UI (negro/rojo con degradado magenta) no pertenecía al juego. Rehecha sobre el
+DesignSystem y clonando piezas reales de `CharmsScreen`, así que cualquier cambio futuro de
+estilo se copia desde ahí.
+
+### Cambios
+
+- **Panel HUD:** ventana morada con el `UIGradient` y el `Pattern` de puntos de Charms, contorno
+  `Ink`, título con el degradado blanco→dorado del título de Charms, chip de boost dorado con
+  icono de Stickiness, botón INDEX en Cyan con el lenguaje de `ShopButton` (patrón, contorno
+  `#0C0E28`, etiqueta en tinta) e icono de inventario, fila de fase hundida `#30144F`.
+- **Iconografía de fase:** `IconImage` en config con iconos del HUD: Reach (Magnet Overdrive),
+  Stickiness (Mutation Frenzy), Rebirth (Chaos Combo).
+- **Paleta:** fases y mutaciones movidas a tokens (`Cyan`, `Magic` aclarado, `Coral`, `Gold`).
+- **Feed:** filas en tinta con patrón, contorno de acento y slot lila para el glifo.
+- **Index:** ventana, título `~MUTATION INDEX~`, botón X y grid clonados de Charms; chips de tier
+  con el color de la mutación; tarjetas lila con el `Rim` de `_CharmCell`; slot desbloqueado
+  relleno con el color de la mutación, bloqueado lila apagado con "?"; tarjeta completa en crema.
+- **Legibilidad:** etiquetas de una línea con `TextWrapped=false` + `TextScaled` reafirmado
+  (regla conocida del proyecto); panel ampliado a 104 px (compacto 96 px).
+- **Controlador:** enlaza por ruta explícita (`TopRow/BoostChip/Label`), porque ahora hay varios
+  hijos `Label`/`Icon`/`Fill`; nombres de objeto conservan la variante (`MUSHROOM 3`).
+- Clave nueva `AdminAbuse.Index.TitleDecorated` en 15 idiomas.
+
+### Probado en Studio
+
+- Capturas en viewport compacto: panel legible bajo el banner FTUE, sin solapes.
+- Index con 3 descubrimientos: slots coloreados, contadores de tier `1/100`, orden descubiertos
+  primero, 1% de progreso.
+- Consola sin errores.
+
+### Pendiente
+
+- Verificar `MUSHROOM 2/3` en pantalla (cambio de texto sin captura nueva).
+- Revisión en Android real del tamaño de texto del feed.
+
+## Registro — 2026-09-14 (3), Admin Abuse en móvil: tira de una línea
+
+Feedback con captura de teléfono: el panel tapaba ~25% del alto. En layout compacto ahora es una
+**tira de 38 px** (icono + fase + timer de fase + x1.5 + Index solo icono) con un **rótulo** encima
+(`ADMIN ABUSE 23:59:45`), así siguen visibles los dos temporizadores de la sección 27. Feed a
+filas de 24 px. PC sin cambios (valores base).
+
+- Todo por atributos authored `Compact*` (sin código de layout).
+- `GameConfig.UI.CompactAttributes` gana `Visible` y `TextXAlignment`; `ResponsiveLayout` gana
+  decoder de `TextXAlignment`. Reutilizable por cualquier bloque del HUD.
+- Probado en Studio con viewport 749×380 (compacto real aplicado por ResponsiveLayout): tira bajo el
+  banner FTUE, sin solapar botones de perfil/sonido ni Store; rótulo alineado.
+- Pendiente: probar en teléfono real y portrait.
