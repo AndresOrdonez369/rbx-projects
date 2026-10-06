@@ -1,0 +1,40 @@
+{
+  "name": "Thaw A Creature",
+  "tree": {
+    "$className": "DataModel",
+
+    "Workspace": {
+      "$className": "Workspace",
+      "$path": "Src/Workspace",
+      "$ignoreUnknownInstances": true
+    },
+
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "$path": "Src/ReplicatedStorage",
+      "$ignoreUnknownInstances": true
+    },
+
+    "ServerStorage": {
+      "$className": "ServerStorage",
+      "$path": "Src/ServerStorage",
+      "$ignoreUnknownInstances": true
+    },
+
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "$path": "Src/ServerScriptService",
+      "$ignoreUnknownInstances": true
+    },
+
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "$path": "Src/StarterPlayerScripts",
+        "$ignoreUnknownInstances": true
+      }
+    }
+  }
+}

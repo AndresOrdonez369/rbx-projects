@@ -1,0 +1,10 @@
+{
+  "className": "Folder",
+  "children": [
+    { "name": "Spawn01", "className": "Part", "properties": { "Anchored": true, "CanCollide": false, "CanQuery": false, "CanTouch": false, "Position": [-25, 0.25, 610], "Size": [2, 0.5, 2], "Transparency": 1 } },
+    { "name": "Spawn02", "className": "Part", "properties": { "Anchored": true, "CanCollide": false, "CanQuery": false, "CanTouch": false, "Position": [24, 0.25, 630], "Size": [2, 0.5, 2], "Transparency": 1 } },
+    { "name": "Spawn03", "className": "Part", "properties": { "Anchored": true, "CanCollide": false, "CanQuery": false, "CanTouch": false, "Position": [-12, 0.25, 670], "Size": [2, 0.5, 2], "Transparency": 1 } },
+    { "name": "Spawn04", "className": "Part", "properties": { "Anchored": true, "CanCollide": false, "CanQuery": false, "CanTouch": false, "Position": [28, 0.25, 705], "Size": [2, 0.5, 2], "Transparency": 1 } },
+    { "name": "Spawn05", "className": "Part", "properties": { "Anchored": true, "CanCollide": false, "CanQuery": false, "CanTouch": false, "Position": [-27, 0.25, 735], "Size": [2, 0.5, 2], "Transparency": 1 } }
+  ]
+}

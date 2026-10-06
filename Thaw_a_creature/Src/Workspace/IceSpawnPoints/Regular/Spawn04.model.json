@@ -1,0 +1,35 @@
+{
+  "className": "Part",
+  "properties": {
+    "Anchored": true,
+    "CanCollide": false,
+    "CanQuery": false,
+    "CanTouch": false,
+    "Color": [0.35, 0.9, 1],
+    "Material": "Neon",
+    "Position": [11, 0.25, 87],
+    "Size": [2, 0.5, 2],
+    "Transparency": 0.35
+  },
+  "children": [
+    {
+      "name": "GuardianMarkers",
+      "className": "Folder",
+      "children": [
+        {
+          "name": "Guardian01",
+          "className": "Part",
+          "properties": {
+            "Anchored": true,
+            "CanCollide": false,
+            "CanQuery": false,
+            "CanTouch": false,
+            "Position": [19, 3.5, 87],
+            "Size": [1, 1, 1],
+            "Transparency": 1
+          }
+        }
+      ]
+    }
+  ]
+}

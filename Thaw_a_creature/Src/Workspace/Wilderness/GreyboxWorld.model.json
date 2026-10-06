@@ -1,0 +1,34 @@
+{
+  "name": "GreyboxWorld",
+  "className": "Model",
+  "children": [
+    {
+      "name": "LeftSnowShelf",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Color": [0.48, 0.54, 0.58],
+        "Material": "Snow",
+        "Position": [-135, -3, 560],
+        "Size": [140, 4, 1070]
+      }
+    },
+    {
+      "name": "RightSnowShelf",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Color": [0.48, 0.54, 0.58],
+        "Material": "Snow",
+        "Position": [135, -3, 560],
+        "Size": [140, 4, 1070]
+      }
+    }
+  ]
+}

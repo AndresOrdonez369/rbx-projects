@@ -1,0 +1,12 @@
+{
+  "name": "Baseplate",
+  "className": "Part",
+  "properties": {
+    "Anchored": true,
+    "CanCollide": true,
+    "Color": [0.39, 0.39, 0.39],
+    "Locked": true,
+    "Position": [0, -20, 0],
+    "Size": [512, 20, 512]
+  }
+}

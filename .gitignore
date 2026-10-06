@@ -1,0 +1,22 @@
+# Roblox generated files
+*.rbxl
+*.rbxlx
+*.rbxm
+*.rbxmx
+!Src/ServerStorage/CreatureModels/*.rbxmx
+
+# Rojo build output
+build/
+dist/
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# Editor files
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*.log

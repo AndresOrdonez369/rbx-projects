@@ -1,0 +1,14 @@
+{
+  "className": "Part",
+  "properties": {
+    "Anchored": true,
+    "CanCollide": false,
+    "CanQuery": false,
+    "CanTouch": false,
+    "Color": [0.2, 0.45, 1],
+    "Material": "Neon",
+    "Position": [13, 0.25, 210],
+    "Size": [2, 0.5, 2],
+    "Transparency": 0.35
+  }
+}

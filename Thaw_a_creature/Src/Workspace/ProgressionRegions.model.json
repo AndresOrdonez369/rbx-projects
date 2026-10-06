@@ -1,0 +1,462 @@
+{
+  "className": "Folder",
+  "children": [
+    {
+      "name": "Snowfield",
+      "className": "Folder",
+      "children": [
+        {
+          "name": "RegionBounds",
+          "className": "Part",
+          "properties": {
+            "Anchored": true,
+            "CanCollide": false,
+            "CanQuery": false,
+            "CanTouch": false,
+            "Position": [0, 20, 115],
+            "Size": [100, 40, 120],
+            "Transparency": 1
+          }
+        },
+        {
+          "name": "RecommendedWarmthSign",
+          "className": "Part",
+          "properties": {
+            "Anchored": true,
+            "CanCollide": false,
+            "CanQuery": false,
+            "CanTouch": false,
+            "Color": [0.047, 0.086, 0.125],
+            "Material": "SmoothPlastic",
+            "Orientation": [0, 0, 0],
+            "Position": [-31, 6.5, 58],
+            "Size": [28, 11, 0.6]
+          }
+        },
+        {
+          "name": "RegionGeometry",
+          "className": "Model",
+          "children": [
+            {
+              "name": "BaseApproach",
+              "className": "Part",
+              "properties": {
+                "Anchored": true,
+                "CanCollide": true,
+                "Color": [0.72, 0.78, 0.8],
+                "Material": "Snow",
+                "Position": [0, -1, 40],
+                "Size": [80, 2, 30]
+              }
+            },
+            {
+              "name": "SnowfieldFloor",
+              "className": "Part",
+              "properties": {
+                "Anchored": true,
+                "CanCollide": true,
+                "Color": [0.72, 0.84, 0.88],
+                "Material": "Snow",
+                "Position": [0, -1, 85],
+                "Size": [100, 2, 60]
+              }
+            },
+            {
+              "name": "RouteToFrozenPass",
+              "className": "Part",
+              "properties": {
+                "Anchored": true,
+                "CanCollide": true,
+                "Color": [0.64, 0.76, 0.82],
+                "Material": "Snow",
+                "Position": [0, -1, 145],
+                "Size": [80, 2, 60]
+              }
+            },
+            {
+              "name": "EntrancePillarLeft",
+              "className": "Part",
+              "properties": {
+                "Anchored": true,
+                "CanCollide": true,
+                "Color": [0.56, 0.66, 0.7],
+                "Material": "Slate",
+                "Position": [-46, 7, 58],
+                "Size": [6, 16, 6]
+              }
+            },
+            {
+              "name": "EntrancePillarRight",
+              "className": "Part",
+              "properties": {
+                "Anchored": true,
+                "CanCollide": true,
+                "Color": [0.56, 0.66, 0.7],
+                "Material": "Slate",
+                "Position": [46, 7, 58],
+                "Size": [6, 16, 6]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "FrozenPass",
+      "className": "Folder",
+      "children": [
+        {
+          "name": "RegionBounds",
+          "className": "Part",
+          "properties": {
+            "Anchored": true,
+            "CanCollide": false,
+            "CanQuery": false,
+            "CanTouch": false,
+            "Position": [0, 20, 255],
+            "Size": [100, 40, 160],
+            "Transparency": 1
+          }
+        },
+        {
+          "name": "RecommendedWarmthSign",
+          "className": "Part",
+          "properties": {
+            "Anchored": true,
+            "CanCollide": false,
+            "CanQuery": false,
+            "CanTouch": false,
+            "Color": [0.047, 0.086, 0.125],
+            "Material": "SmoothPlastic",
+            "Orientation": [0, 0, 0],
+            "Position": [-28, 6.5, 178],
+            "Size": [28, 11, 0.6]
+          }
+        },
+        {
+          "name": "RegionGeometry",
+          "className": "Model",
+          "children": [
+            {
+              "name": "FrozenPassFloor",
+              "className": "Part",
+              "properties": {
+                "Anchored": true,
+                "CanCollide": true,
+                "Color": [0.34, 0.5, 0.62],
+                "Material": "Ice",
+                "Position": [0, -1, 205],
+                "Size": [90, 2, 60]
+              }
+            },
+            {
+              "name": "RouteToAncientExpanse",
+              "className": "Part",
+              "properties": {
+                "Anchored": true,
+                "CanCollide": true,
+                "Color": [0.4, 0.54, 0.64],
+                "Material": "Snow",
+                "Position": [0, -1, 285],
+                "Size": [80, 2, 100]
+              }
+            },
+            {
+              "name": "PassWallLeft",
+              "className": "Part",
+              "properties": {
+                "Anchored": true,
+                "CanCollide": true,
+                "Color": [0.22, 0.3, 0.38],
+                "Material": "Slate",
+                "Position": [-52, 10, 205],
+                "Size": [12, 22, 78]
+              }
+            },
+            {
+              "name": "PassWallRight",
+              "className": "Part",
+              "properties": {
+                "Anchored": true,
+                "CanCollide": true,
+                "Color": [0.22, 0.3, 0.38],
+                "Material": "Slate",
+                "Position": [52, 10, 205],
+                "Size": [12, 22, 78]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AncientExpanse",
+      "className": "Folder",
+      "children": [
+        {
+          "name": "RegionBounds",
+          "className": "Part",
+          "properties": {
+            "Anchored": true,
+            "CanCollide": false,
+            "CanQuery": false,
+            "CanTouch": false,
+            "Position": [0, 20, 455],
+            "Size": [130, 40, 240],
+            "Transparency": 1
+          }
+        },
+        {
+          "name": "RecommendedWarmthSign",
+          "className": "Part",
+          "properties": {
+            "Anchored": true,
+            "CanCollide": false,
+            "CanQuery": false,
+            "CanTouch": false,
+            "Color": [0.047, 0.086, 0.125],
+            "Material": "SmoothPlastic",
+            "Orientation": [0, 0, 0],
+            "Position": [-33, 6.5, 338],
+            "Size": [28, 11, 0.6]
+          }
+        },
+        {
+          "name": "RegionGeometry",
+          "className": "Model",
+          "children": [
+            {
+              "name": "AncientExpanseFloor",
+              "className": "Part",
+              "properties": {
+                "Anchored": true,
+                "CanCollide": true,
+                "Color": [0.46, 0.58, 0.66],
+                "Material": "Glacier",
+                "Position": [0, -1, 395],
+                "Size": [120, 2, 120]
+              }
+            },
+            {
+              "name": "RouteToBlackIceHollow",
+              "className": "Part",
+              "properties": {
+                "Anchored": true,
+                "CanCollide": true,
+                "Color": [0.34, 0.44, 0.5],
+                "Material": "Glacier",
+                "Position": [0, -1, 515],
+                "Size": [90, 2, 120]
+              }
+            },
+            {
+              "name": "AncientMonolithLeft",
+              "className": "Part",
+              "properties": {
+                "Anchored": true,
+                "CanCollide": true,
+                "Color": [0.28, 0.38, 0.42],
+                "Material": "Slate",
+                "Orientation": [0, 0, -8],
+                "Position": [-58, 15, 410],
+                "Size": [10, 32, 12]
+              }
+            },
+            {
+              "name": "AncientMonolithRight",
+              "className": "Part",
+              "properties": {
+                "Anchored": true,
+                "CanCollide": true,
+                "Color": [0.28, 0.38, 0.42],
+                "Material": "Slate",
+                "Orientation": [0, 0, 8],
+                "Position": [58, 15, 410],
+                "Size": [10, 32, 12]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "BlackIceHollow",
+      "className": "Folder",
+      "children": [
+        {
+          "name": "RegionBounds",
+          "className": "Part",
+          "properties": {
+            "Anchored": true,
+            "CanCollide": false,
+            "CanQuery": false,
+            "CanTouch": false,
+            "Position": [0, 20, 735],
+            "Size": [120, 40, 320],
+            "Transparency": 1
+          }
+        },
+        {
+          "name": "RecommendedWarmthSign",
+          "className": "Part",
+          "properties": {
+            "Anchored": true,
+            "CanCollide": false,
+            "CanQuery": false,
+            "CanTouch": false,
+            "Color": [0.047, 0.086, 0.125],
+            "Material": "SmoothPlastic",
+            "Orientation": [0, 0, 0],
+            "Position": [-33, 6.5, 578],
+            "Size": [28, 11, 0.6]
+          }
+        },
+        {
+          "name": "RegionGeometry",
+          "className": "Model",
+          "children": [
+            {
+              "name": "BlackIceHollowFloor",
+              "className": "Part",
+              "properties": {
+                "Anchored": true,
+                "CanCollide": true,
+                "Color": [0.12, 0.16, 0.22],
+                "Material": "Ice",
+                "Position": [0, -1, 665],
+                "Size": [110, 2, 180]
+              }
+            },
+            {
+              "name": "RouteToMeteorReach",
+              "className": "Part",
+              "properties": {
+                "Anchored": true,
+                "CanCollide": true,
+                "Color": [0.18, 0.22, 0.28],
+                "Material": "Slate",
+                "Position": [0, -1, 825],
+                "Size": [90, 2, 140]
+              }
+            },
+            {
+              "name": "HollowRidgeLeft",
+              "className": "Part",
+              "properties": {
+                "Anchored": true,
+                "CanCollide": true,
+                "Color": [0.08, 0.1, 0.14],
+                "Material": "Slate",
+                "Position": [-62, 12, 680],
+                "Size": [14, 26, 210]
+              }
+            },
+            {
+              "name": "HollowRidgeRight",
+              "className": "Part",
+              "properties": {
+                "Anchored": true,
+                "CanCollide": true,
+                "Color": [0.08, 0.1, 0.14],
+                "Material": "Slate",
+                "Position": [62, 12, 680],
+                "Size": [14, 26, 210]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "MeteorReach",
+      "className": "Folder",
+      "children": [
+        {
+          "name": "RegionBounds",
+          "className": "Part",
+          "properties": {
+            "Anchored": true,
+            "CanCollide": false,
+            "CanQuery": false,
+            "CanTouch": false,
+            "Position": [0, 20, 1000],
+            "Size": [160, 40, 210],
+            "Transparency": 1
+          }
+        },
+        {
+          "name": "RecommendedWarmthSign",
+          "className": "Part",
+          "properties": {
+            "Anchored": true,
+            "CanCollide": false,
+            "CanQuery": false,
+            "CanTouch": false,
+            "Color": [0.047, 0.086, 0.125],
+            "Material": "SmoothPlastic",
+            "Orientation": [0, 0, 0],
+            "Position": [-40, 6.5, 898],
+            "Size": [28, 11, 0.6]
+          }
+        },
+        {
+          "name": "RegionGeometry",
+          "className": "Model",
+          "children": [
+            {
+              "name": "MeteorReachFloor",
+              "className": "Part",
+              "properties": {
+                "Anchored": true,
+                "CanCollide": true,
+                "Color": [0.24, 0.16, 0.28],
+                "Material": "Slate",
+                "Position": [0, -1, 995],
+                "Size": [150, 2, 200]
+              }
+            },
+            {
+              "name": "MeteorSpireLeft",
+              "className": "Part",
+              "properties": {
+                "Anchored": true,
+                "CanCollide": true,
+                "Color": [0.36, 0.14, 0.14],
+                "Material": "Basalt",
+                "Orientation": [0, 0, -10],
+                "Position": [-68, 24, 965],
+                "Size": [14, 50, 18]
+              }
+            },
+            {
+              "name": "MeteorSpireRight",
+              "className": "Part",
+              "properties": {
+                "Anchored": true,
+                "CanCollide": true,
+                "Color": [0.36, 0.14, 0.14],
+                "Material": "Basalt",
+                "Orientation": [0, 0, 10],
+                "Position": [68, 24, 965],
+                "Size": [14, 50, 18]
+              }
+            },
+            {
+              "name": "DistantMeteorNeedle",
+              "className": "Part",
+              "properties": {
+                "Anchored": true,
+                "CanCollide": true,
+                "Color": [0.5, 0.2, 0.12],
+                "Material": "Basalt",
+                "Orientation": [0, 0, 6],
+                "Position": [0, 38, 1075],
+                "Size": [18, 78, 18]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
