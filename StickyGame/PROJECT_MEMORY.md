@@ -1788,3 +1788,793 @@ que la tarjeta de Offline Gains no sale nunca sola.
 - **Para portarlo:** copiar `Shared.AdminAbuse`, los tres servicios, `MutationVisuals`,
   `AdminAbuseController`, `Assets.AdminAbuse`, las tres UIs authored y la sección de GameConfig;
   proveer los ganchos de spawn/pickup y un `ProgressionService` con `AddStickiness/GrantLevels`.
+
+---
+
+## 2026-09-17 · Rework de World 1: áreas aspiradoras — Fases 0 y 1
+
+**Dónde se trabaja:** place **laboratorio `123113535376730`**, sobre `World 1 V2`. Producción
+(`95828455414780`) congelada y sin tocar hasta el port-back. Los dos places comparten el universo
+`10604653036`, y de ahí salen los dos aislamientos de la Fase 0.
+
+### Decisiones que hay que recordar
+
+1. **`GameConfig.Data.StoreScope = "VacuumDev"` es el campo que NO se porta.** Un DataStore
+   pertenece al universo, no al place: sin scope, probar el drenaje borra la Stickiness real de
+   cuentas reales. Y portarlo con el scope puesto deja a todo el mundo entrando con el perfil
+   vacío. Es el primer punto del port-back y el último del checklist.
+2. **La analítica se apaga en `TelemetryService.isEnabled()`**, no en `GameAnalyticsService`: es la
+   única puerta a `AnalyticsService`, así que un solo `if` cubre las cuatro entradas y ningún
+   servicio futuro se cuela por un lado.
+3. **Dos números, no uno.** `Total` = vida máxima, vive en el perfil, lo mueven solo el lobby y el
+   Rebirth. `Actual` = lo que queda dentro de un área, vive en memoria en `VacuumZoneService` y se
+   replica en el atributo `Stickiness` mediante
+   `ProgressionService.SetStickinessDisplay`. **Curar es `Actual = Total`**, así que perder la
+   Actual (desconexión, caída, bug) no cuesta nada.
+4. **El `SpeedCap` va como última etapa de `PerkService.computePerk`**, leyendo el atributo
+   `VacuumSpeedCap`. Escribir `Humanoid.WalkSpeed` a mano es la trampa: el siguiente recálculo de
+   perks lo pisa y no da error — da un jugador que sobrevive una zona que no debería. Probado
+   explícitamente subiendo de nivel dentro del área.
+5. **`CompletedZone_<ZoneId>` lo pone ahora `VacuumZoneService`**, al salir vivo por el lado
+   **lejano**, y lo borra al morir. `WinPedestalService` no se tocó. Sin este cable ningún pedestal
+   pagaría nunca, y es literalmente el mecanismo de «pierdes las Wins no bancadas».
+6. **El lado lejano se deriva del `StartSpawn` de la zona, no se authorea.** Un atributo más es un
+   atributo más que puede quedarse al revés de la geometría.
+7. **El drenaje se deriva de `area.Size.Z`, nunca de un 168 hardcodeado.** Se authorea un solo
+   número (`RecommendedStickiness`) para que las dos cifras no puedan divergir —la misma deriva
+   `GameConfig` ↔ Workspace que arrastran los blockers de World 1. Redimensionar el área en el
+   Explorer recalcula el balance solo.
+8. **Dos hooks nuevos, y son registros y no `require`, para no crear ciclos:**
+   `FinishService.RegisterRunResetHandler` (el único chokepoint de «limpia la vuelta») y
+   `DeathFlowService.RegisterRunSnapshotProvider` (el revive es de pago y tiene que devolver las
+   zonas cruzadas).
+9. **La muerte no espera a que la física encuentre el agujero:** succiona al `VacuumProp` más
+   cercano y después llama a `DeathFlowService.TryStartDeath` con el `FailVolume` **authored de la
+   zona**, que ya existía con su `FailVolumeId`. La analítica de muerte sale con su id real.
+
+### Limitación de herramientas descubierta
+
+**El MCP de Roblox Studio no puede crear ni reparentar instancias de script** desde `execute_luau`
+(todos los contenedores tienen `Capabilities` con `LoadUnownedAsset`), ni **invocar
+`BindableFunction`**. Consecuencias prácticas:
+
+- Los backups a `ServerStorage` hay que hacerlos **a mano** en Studio.
+- Para crear o editar scripts se usa `multi_edit` (acepta `className` para crear).
+- Para ejercitar los debug bridges hay que crear un **Script de servidor temporal** y leer
+  `get_console_output`; así se verificó esta fase (`VacuumZoneTestHarness`, 23/23, borrar antes de
+  publicar).
+
+### Estado
+
+Fases 0 y 1 cerradas y probadas (detalle y tabla de pruebas en `PLAN_MVP.md`). Pendiente: el backup
+manual, y las fases 2 a 7 (lectura visual y VFX, lobby como mina, las 10 zonas con sus letreros,
+powerups y bolsas seguras, instrumentación, port-back).
+
+**Próximo paso inmediato:** Fase 2 (§6.4) — recorte visual de assets **sin destruir records**
+(`AttachmentRenderer.SetVisibleRatio` sobre el pool; destruirlos cuesta 10,6 ms en escritorio y
+50–100 ms en móvil en cada entrada y cada salida) y las piezas recortadas volando hacia el
+`VacuumProp`, que es lo que devuelve la sensación de aspiradora sin un solo Newton de física.
+
+---
+
+## 2026-09-17 (cont.) · Áreas aspiradoras — Fases 2, 4, 5 y 6
+
+Fases 0, 1, 2, 4, 5 y 6 cerradas y probadas en el laboratorio. **Falta la Fase 3 (el lobby como
+mina), y está bloqueada por diseño de nivel, no por código.** Detalle completo en `PLAN_MVP.md`.
+
+### Decisiones nuevas que hay que recordar
+
+1. **El recorte visual se mide contra la pila REAL, no contra el presupuesto de 110.** La
+   especificación escribe `floor(ownBudget * ratio)`; con eso un jugador con 12 objetos y la barra
+   al 50 % no vería irse nada hasta el 11 %, que es justo lo contrario de lo que el recorte existe
+   para contar. Se usa `floor(#Order * ratio)`.
+2. **`AttachmentRenderer` nunca destruye un record.** `hideVisual` quita el visual y deja el record;
+   `removeMetadata` sigue siendo la única puerta que borra. Curar es redibujar desde el pool, sin un
+   solo byte por la red.
+3. **Las piezas recortadas vuelan al prop en `Workspace.StickyDiscards`**, desligadas del
+   contenedor del jugador para que el vuelo sobreviva a un respawn o a un cambio de LOD. Techo de
+   12 vuelos simultáneos; lo que pase de ahí se recicla sin animación. Ese techo es lo que protege
+   al móvil.
+4. **Los blockers se retiran EN RUNTIME, no en el editor.** Hacerlo a mano dejaría el flag maestro a
+   medias: apagarlo devolvería el drenaje al reposo pero no las puertas. Con la retirada en
+   `VacuumZoneService.Init`, arrancar con `Enabled = false` deja World 1 exactamente como está hoy.
+   Y no basta con quitar el tag: las 10 puertas son 4 partes sólidas cada una.
+5. **`GameConfig` manda sobre el atributo authored también en las áreas** (`syncFromZoneConfig`),
+   igual que `BlockerService.syncRequiredStickiness`. La escalera vive en un solo sitio y un
+   rebalanceo futuro arrastra las diez áreas solo.
+6. **§4.5 resuelta con dos ejes que no se componen:** trail → `Resistance` (tiempo, techo 0.40
+   PLACEHOLDER), aura → `Recovery` (recuperación, techo 0.50 PLACEHOLDER). La pendiente se calcula
+   (`index / count`), no se elige. La resistencia entra en el DENOMINADOR de la supervivencia: 0,40
+   da ×1,67 y 0,90 daría ×10, o sea la zona 10 gratis.
+7. **Los `BindableEvent` de Roblox entregan en diferido**, y eso rompía el dato de push-your-luck:
+   cuando el pedestal avisa, `FinishService` ya reinició la vuelta. `clearCompleted` guarda la foto
+   de la profundidad antes de borrar. **Cualquier analítica que cuelgue de un evento de un servicio
+   que reinicia estado tiene este problema.**
+8. **`GameAnalyticsService` consume BindableEvents para los eventos de zona**, su única excepción a
+   "solo observo atributos": entrar, cruzar y morir son hechos, no estados, y un observador de
+   atributos no podría distinguir cruzar de morir.
+9. **El eje de la analítica es el ratio, no el Rebirth.** Los tres eventos de zona llevan
+   `CustomField02 = Ratio_*`. Con el ratio como dimensión la curva de supervivencia es una consulta;
+   con el ratio en el `value` sería un promedio, y un promedio no es una curva.
+
+### Cosas del entorno descubiertas en esta sesión
+
+- **`StreamingEnabled` está activo.** Estando en el lobby, el cliente solo tiene replicados 3 de los
+  10 letreros. Cualquier prueba de cliente que cuente instancias del mundo tiene que contar contra
+  lo replicado. Los controladores que registran por tag lo resuelven solos con
+  `GetInstanceAddedSignal`.
+- **Teletransportar al personaje no recoge objetos.** `PickupService` borra el rastro de la recogida
+  barrida ante un salto mayor que `MaxDistanceStuds`, a propósito. Para que un arnés recoja hay que
+  **caminar** (`Humanoid:MoveTo`): con teletransportes salían 1 objeto, caminando 11.
+- **El lobby no tiene suelo usable por el sistema de colocación:** 185 piezas y ninguna con huella
+  mayor de 2.000 st², porque es arte modular dentro de `Art/`. `ItemPlacementService` lanza rayos
+  contra `Geometry`, así que la mina necesita un suelo ahí.
+
+### Consecuencias de §9 que la especificación no menciona
+
+- **`FinishService.completeRun` ya no se dispara en World 1** (colgaba de
+  `BlockerService.ConnectAbsorbed`): `RunCompleted`, `LastRunStickiness` y el ReplayPad quedan
+  inertes. El bucle real del modo nuevo es el pedestal, así que no se ha sustituido, pero hay que
+  decidirlo antes del port-back.
+- **Los trofeos de blocker ya no se pegan a la bola** en World 1, por el mismo motivo.
+
+---
+
+## 2026-09-17 (cierre) · Áreas aspiradoras — Fase 3 y estado final
+
+**Fases 0 a 6 cerradas y probadas.** Solo queda la Fase 7 (port-back a producción), que es
+decisión humana. Detalle y tablas de prueba en `PLAN_MVP.md`.
+
+### Decisiones de la Fase 3 que hay que recordar
+
+1. **La mina vive en `GameConfig.Mines`, no en `GameConfig.Zones`.** Una mina no es un cruce: no
+   tiene blocker, ni Win pedestal, ni zona siguiente. Meterla en `Zones` reventó el bucle de escala
+   de economía (`zone.WinReward * escala` con `nil`) y habría hecho que `GetWorldZones("World1")`
+   devolviera once, desplazando la pantalla de mundos y los pasos del embudo `WorldRun`.
+   `GetZone` consulta las dos listas.
+2. **`CurrentZoneId` se queda en `"Lobby"` incluso cruzando un área.** `RoomItemService` abre y
+   cierra una sesión por cada cambio de zona: si la zona lógica siguiera al área, **una corrida
+   completa abriría y cerraría once sesiones** para que diez de ellas no tengan un objeto que dar.
+   Anclada al lobby, la mina se planifica una vez y sigue ahí al volver. Se reafirma en cada tick
+   de fuera del área porque `ResetRun` la devuelve al `StartZoneId` por cinco caminos distintos.
+   Solo actúa si el mundo declara `LobbyZoneId` — únicamente World 1.
+3. **El suelo de la mina es una losa invisible en `Lobby/Geometry`.** `ItemPlacementService` lanza
+   rayos contra `Geometry`, y el suelo real del lobby es arte modular en `Art/`. Una losa que el
+   rayo ve y el jugador no cuesta cero y no toca el arte.
+4. **El origen del gradiente es un `StartSpawn` authored, sin respaldo geométrico.** La primera
+   versión caía al borde `+Z` del área si faltaba, y el lobby se entra por el lado contrario: el
+   gradiente salió invertido y los objetos de 150.000 aterrizaban donde cae el jugador nuevo. Por
+   qué lado se entra es una decisión de nivel; o hay `StartSpawn` o no hay gradiente (con aviso).
+5. **Las diez zonas dejan de dar objetos sin borrar nada:** sin cambio de `CurrentZoneId` no se abre
+   sesión, así que sus `PlacementArea` quedan inertes. Borrarlas va al port-back.
+
+### Trampa general aprendida
+
+**Una zona sin blocker rompe todo lo que asume que las zonas son cruces.** Aparecieron dos sitios
+de cliente leyendo `zone.BlockerRequiredStickiness` a pelo (`HUDController`, `FeedbackController`).
+Al añadir cualquier zona nueva que no sea un cruce, buscar ese campo primero.
+
+El HUD ahora cambia de pregunta en la mina: en vez de "cuánto me falta para este blocker" dice
+**cuál es el primer cruce que todavía no aguantas** (`GameConfig.GetNextZoneRequirement`), y
+`ALL ZONES OPEN` cuando aguanta los diez.
+
+### Estado del flag maestro
+
+`VacuumZones.Enabled = false` devuelve World 1 a su comportamiento actual **sin revertir
+geometría**: las puertas se retiran y se restauran en runtime (`VacuumZoneService.retireBlockers` /
+`restoreBlockers`), así que el rollback sigue siendo un booleano. Lo único que no revierte son las
+instancias authored añadidas (áreas, props, letreros, powerups, bolsas, la mina), que quedan
+inertes.
+
+## 2026-09-19 · Máquina aspiradora y blobs de recompensa — Fases B0 y B1
+
+**Documentos:** `VacummFeature/PLAN_IMPLEMENTACION.md` (el plan), más los dos de diseño de la feature.
+**Lugar:** producción `95828455414780`, modo Edit. **No guardado ni publicado.**
+
+### Decisiones cerradas
+
+- **Pesos del sorteo: `18 / 11 / 6` por item** (§4.4 del doc de la máquina). El `60/30/10` de §4.8 era residuo de la versión de 15 items y queda corregido en el documento fuente. Importa porque §4.8 es la línea que dice qué probabilidades habría que publicar si algún día entra Robux.
+- **Localización como fase `L`, la última del plan.** Cada fase entrega sus claves al cerrarse; `L` audita, completa y juega la feature en un idioma no-origen.
+- **Instancias authored sin excepciones.** Pad, máquina, cartel, ancla de revelado, `_BlobRow`, `_GroupHeader` y las piezas del épico se crean a mano en el DataModel. El código localiza, clona y escribe texto/color/visibilidad; nada más.
+- **`OwnedCosmeticIds` guarda un contador por item, no un booleano.** Formato `id:cuenta` separado por comas. Las variantes (Dorado/Arcoíris/Cósmico) no entran en v1 pero leerán ese mismo contador **sin migrar perfiles**.
+
+### B0 — cerrada
+
+`ServerStorage.BlobElementsBackup_20260919` con las 24 plantillas, `GameConfig_BeforeElements`, y `TestBench` con `Lvl01_b_bench` / `Lvl04_b_bench` / `Lvl08_b_bench`.
+
+**Hallazgo: el rig de blob NO es uniforme.** Verificado en las 24 plantillas de los tres mundos:
+
+| Tier | Huesos | Emisores |
+|---|---|---|
+| Lvl01–Lvl03 | **5**: `root`, `spine_01..04` | **1**: `PrestigeAura` |
+| Lvl04–Lvl08 | **8**: + `spine_05`, `Left`, `Right` | **3**: + `PrestigeMist`, `PrestigeBurst` |
+
+Los dos documentos generalizan desde `Lvl08_b` (8 huesos / 3 emisores) y eso no vale para los tres primeros peldaños. Un perfil de `BoneMotion` que escriba a `spine_05`/`Left`/`Right`, o un elemento que nombre `PrestigeMist`, **no hace nada en tiers 1–3 y no da error**. Todo elemento declara su degradación con 1 emisor y con 3.
+
+### B1 — la vía A funciona, y es exacta
+
+| Comprobación | Resultado |
+|---|---|
+| Atlas W1 por `CreateEditableImageAsync` | 512×512, rejilla 4×6, 24 celdas **byte a byte** como se documentó |
+| Recoloreo a naranja (tono 27°, sat ×1,15, curva `1-(1-v)^1.9`) **contra el atlas W2 de producción** | **Delta máximo por canal: 0** |
+| Filas 4–5 (la cara) tras recolorear | **0 píxeles alterados** en barrido completo |
+| `Content.fromObject` → `MeshPart.TextureContent` | OK en las tres plantillas |
+| Paleta a 512² | **1,00 MB** cada una; 12 vivas = 12,1 MB, estrictamente lineal |
+| `EditableImage:Destroy()` | libera los 12 MB enteros |
+| Paleta a **128²** | **delta 0 en las 24 celdas**, **64 KB** cada una (1/16) |
+
+**Conclusiones:** la vía A reproduce el asset subido píxel a píxel, así que los 12 comunes de los tres mundos cuestan **0 assets y 0 moderación**. La paleta va a **128²**, no a 512². Se cachea **por elemento, nunca por jugador**: 7 elementos de W1 a 128² son **448 KB**, contra 12 MB de cachear 12 jugadores a 512².
+
+**Pendiente de B1:** Android real (el hueco de verificación de siempre) y el juicio visual. Los cuatro blobs de muestra están en `workspace._B1_PaletteTest`. ⚠️ **Carpeta transitoria: borrar antes de guardar y publicar.**
+
+### Hallazgos del carril de economía (sin escribir nada)
+
+- **`Collection.RequireStickinessForPickup` vale `nil`.** El documento lo trata como un interruptor existente; no existe. M1 incluye crearlo y enganchar el corte: el rollback del que depende el plan no existe hasta que se escriba.
+- **`CollectibleRequirementWeights = { 4, 3, 2, 1 }`**, no cuartiles iguales. El escalón siempre-elegible es el **40 %** de los objetos, no el 25 % que asume §2.4. El Δ de duración de World 1 será menor que el −10/−25 % estimado.
+- ⚠️ **El audio de recogida cuelga de `CollectibleRequirements`**: `PickupSizePitchFloor = 0.85`, `PickupSizeVolumeCeiling = 1.3`, cuatro escalones. Al retirar el requisito quedan dos nociones de «grande» que pueden discrepar (el sonido por escalón de requisito, la etiqueta por tamaño del prop). **Salida: apuntar el audio a `ResidueValue`**, y entonces el tamaño del prop decide lo que ves, lo que oyes y lo que suma. Entra en M2.
+- **Son 9 `CollectibleTypes`**, los 9 ya con `GainMultiplier` (carril de datos vivo y sin consumidor) y ninguno con `ResidueValue`.
+
+### Próximo paso
+
+Decidir dónde se construye (solo está abierto producción; existe el laboratorio `123113535376730`) antes de que B3 y G escriban sobre las 24 plantillas reales.
+
+### B2 — parte estática pasa (2026-09-19)
+
+Decidido además: **se construye en producción con backup**, y el **épico entra en v1 pero es lo primero que se recorta**.
+
+`Ember` (tono 8°, sat ×1,18, curva 1,9, paleta 128², material `CrackedLava`, emisores multiplicados sobre lo authored, luz ×1,25) aplicado a `Lvl01`/`Lvl04`/`Lvl08` y comparado contra los mismos sin elemento.
+
+- **Se lee como el mismo elemento en los tres tiers**, y **el tier se sigue distinguiendo**: tier 1 es una bola, tier 8 una figura alta con brazos. El elemento no pisa la silueta. Es la apuesta central del documento y se sostiene.
+- **1 sola `EditableImage` para los 3 blobs.** Caché por elemento validada en uso real.
+- **Degradación limpia en tier 1**: el perfil pide 3 emisores, `Lvl01` solo tiene `PrestigeAura`. Se aplicó el existente y se reportaron los ausentes sin error.
+
+Pendiente de B2: la parte **en movimiento**, que necesita modo Play y el `BlobMotionController` de B4. Pregunta abierta: si un perfil de `BoneMotion` se lee igual con 5 huesos que con 8.
+
+⚠️ `workspace._B2_Ember` es transitorio — borrar antes de guardar y publicar. `_B1_PaletteTest` ya borrado.
+
+### ⚠️ B2 en vivo — bloqueado por una opción del place (2026-09-19)
+
+Al aplicar la paleta al blob real del personaje **en modo Play (Client)**:
+
+```
+EditableImage is not accessible. Go to the Security Tab in Experience Settings to enable this API.
+```
+
+**En Edit mode funciona; en runtime no.** `EditableImage` / `EditableMesh` están detrás del opt-in de experiencia **Game Settings → Security → Allow Mesh & Image APIs**, que hoy está **apagado** en `95828455414780`.
+
+Esto **no invalida los números de B1** —el recoloreo es exacto y la memoria es la medida— pero **sí cambia el veredicto**: la vía A no es gratis, cuesta activar una opción de la experiencia. Hasta que esté activada, la vía A es imposible en producción y la vía B (PNG subidos) es el único camino.
+
+Estado del blob vivo, verificado de paso: `Workspace.<char>._WrapBlob`, MeshPart con 5 huesos en tier 1, `TextureID = rbxassetid://95095740632696`. Atributos del jugador: `StickyWrapId` y `BlobSkinWrapId` = `BasicGlue`; `BlobElementId` y `Residue` son `nil` (aún no existen).
+
+### ✅ B2 cerrada — `Allow Mesh & Image APIs` activado (2026-09-19)
+
+Activada la opción en Game Settings → Security, se repitió todo en **modo Play**. Funciona.
+
+**Desglose de coste, medido en runtime:**
+
+| Paso | Coste |
+|---|---|
+| `CreateEditableImageAsync` del atlas base, en frío | **264 ms** (cede, no congela frame; se paga UNA vez para los 7 elementos) |
+| El mismo atlas en caliente | 17 ms |
+| `ReadPixelsBuffer` 512² | 0,3 ms |
+| Bucle de recoloreo a 128² | **2,0 ms** |
+| `CreateEditableImage` + `WritePixelsBuffer` 128² | 0,0 ms |
+| Caché hit / asignar a un blob | 0,001 / 0,003 ms |
+| Reaplicar tras respawn | 0,031 ms |
+| Volver a `ORIGINAL` | 0,005 ms |
+| 20 ciclos equipar/quitar | 0,066 ms totales |
+
+**Arquitectura que sale de ahí:** buscar el atlas base **una sola vez al arrancar el cliente** y guardar su buffer. Cada paleta cuesta ~2 ms síncronos; los 7 de World 1 son ~14 ms repartibles. Equipar es gratis.
+
+**Ciclo de vida en vivo:**
+- ⚠️ **Morir pierde el elemento.** El blob se reconstruye desde plantilla (`TextureContent` vuelve a Uri, `Material` a SmoothPlastic). **B3 reaplica en `CharacterAdded`** — 0,031 ms con la caché caliente.
+- **La caché sobrevive al respawn** (vive fuera del personaje).
+- **La fila `ORIGINAL` funciona**: `Content.fromUri(atlas)` devuelve el aspecto de fábrica.
+- **Caminar y recoger con el elemento puesto no rompe la animación.**
+- Filas 4–5 leídas en runtime desde la paleta de 128²: idénticas al original.
+- ⚠️ Asignar `TextureContent` **vacía `TextureID`**. Quitarse el elemento = volver a poner `TextureContent = Content.fromUri(...)`, no restaurar `TextureID`.
+
+⚠️ **Riesgo operativo nuevo:** si alguien apaga `Allow Mesh & Image APIs`, los blobs vuelven al color de fábrica **en silencio**, sin error. Va al runbook de despliegue.
+
+### Fase P — catálogo de World 1 (2026-09-19)
+
+Documento: `VacummFeature/CATALOGO_BLOBS_W1.md`. Siete fichas: 4 comunes validados a ojo, 2 raros y 1 épico especificados sin producir.
+
+**La prueba de pintar los 4 comunes juntos falló 3 de 4 en la primera ronda.** Es exactamente para lo que existe la fase.
+
+- ⚠️ **La curva de valor va en dos sentidos y los documentos solo cuentan uno.** `v' = 1-(1-v)^c`: con `c > 1` **aclara** (es lo que hace el 1,9 de W2/W3), con `c < 1` **oscurece**. Se pusieron curvas 1,35 y 1,10 a Musgo y Corteza esperando tonos apagados y salieron **más claros que la base**. Media paleta de bosque necesita oscurecer.
+- ⭐ **Dos colores se separan por saturación y valor, no solo por tono.** `CORTEZA` está a 22° y el naranja de W2 a 27° —cinco grados— y no se parecen en nada, porque van a `sat 0,60 / curva 0,50` contra `sat 1,15 / curva 1,90`.
+- ⚠️ **Restricción nueva: un común de un mundo no puede invadir la paleta de otro.** Si un común del Bosque se lee terracota, se destruye el flex de «llevarte tu blob de Lava al Bosque» para los 21 items a la vez. Los comunes se pintan **con las referencias de los otros dos mundos en el mismo cuadro**.
+- **`Savia` se cayó**: indistinguible de `Miel` (9° de diferencia, los dos amarillos). Sustituida por **`Verdín`** (hue 168, banda fría), que es lo que hace que los cuatro se lean de un vistazo.
+
+**Los 4 comunes finales:** MUSGO (100°/0,65/0,60) · MIEL (40°/1,25/2,00) · CORTEZA (22°/0,60/0,50) · VERDÍN (168°/0,90/1,60).
+
+**Conflicto del épico, resuelto.** El documento pide `Micelio` con «hongos brotando de los huesos» y a la vez exige que las piezas del épico vivan a 7–9 studs para verse sobre la bola. No pueden ser las dos cosas. Salida: **épico de dos capas** — anillo de esporas por `Beam` a ~8 studs (identidad permanente, cero física, se produce primero) + hongos soldados a `spine_01..04` (se ven en el revelado, con la bola recién vaciada, que §8 ya identifica como el mejor escaparate y está pagado). Si G4 se queda sin tiempo, se cae la capa cerca y el épico sigue siendo un épico.
+
+**La prueba de la bola llena se engancha a M0**, no a M7. `AttachmentService` no expone vía para conceder piezas a mano (API pública: `Init`, `Destroy`, `GetStats`, `ClearPlayerVisuals`, `_FlushPending`), así que llenar la bola exige jugar — y M0 ya es una corrida por las 10 salas. Dejarlo para M7 sería descubrir el problema con todo construido encima.
+
+**Verificado de paso:** `AttachmentService.Init` usa `PickupService.ConnectCollected(onCollected)`, la misma puerta que el documento manda para `ResidueService`. El patrón existe y está en uso.
+
+### B3 (mitad servidor) — un elemento de blob es un COSMÉTICO MÁS, no un servicio nuevo (2026-09-19)
+
+**El hallazgo que cambia el diseño.** `ProgressionService` ya tiene un sistema genérico de cosméticos por `kind`:
+
+```
+COSMETIC_KINDS = { Trail = {...}, Aura = {...} }        -- ahora + BlobElement
+GameConfig.GetCosmetic(kind, id) / GetCosmeticCatalog(kind)
+ProgressionService.RequestCosmetic(player, kind, id)    -- el cliente pide, el servidor decide
+ProgressionService.GrantCosmetic(player, kind, id)      -- concesión tras un cobro real
+```
+
+Los documentos proponen construir un `BlobSkinService` nuevo con su propia propiedad, equipado, persistencia y contrato de red. **Todo eso ya existe.** Entrar como cuarto `kind` lo hereda gratis — y de paso resuelve el riesgo 11b (*no hay camino de vuelta al aspecto original*) sin escribir nada: `Cosmetics.AllowUnequip = true` hace que pulsar el equipado lo quite, que es exactamente la fila `ORIGINAL`.
+
+**Dos excepciones por tipo, que sí hubo que añadir:**
+
+- `Cosmetics.PurchasableWithWins.BlobElement = false` — el pool de la máquina es exclusivo. Sin este corte, `RequestCosmetic` intentaría cobrar un elemento con Wins, y como una entrada de `BlobElements` no declara `WinCost`, `state.Wins < nil` revienta o lo regala. El corte va **antes** de mirar Rebirth y saldo, para que el motivo que recibe el cliente sea `NotForSale` y no «te faltan Wins» sobre algo que no está a la venta.
+- `Cosmetics.EquipOnGrant.BlobElement = false` — el revelado de la máquina ofrece `EQUIPAR` o `SEGUIR`. Equiparlo solo le cambiaría el aspecto sin preguntar y dejaría ese botón sin nada que hacer.
+
+**Escrito (producción, no guardado):** `GameConfig` (catálogo `BlobElements` de 7, `GetBlobElement`, `GetBlobElementsForWorld`, `BlobElementFillBudget = 60`, las dos excepciones y sus dos lectores), `DataService` (campos, normalización, snapshot, update, y el atributo de evidencia), `ProgressionService` (tipo, `COSMETIC_KINDS`, carga, estado, snapshot, persist, atributos replicados `BlobElementId` y `OwnedBlobElementIds`, los dos guardas, y el bloque de Rebirth). Backup previo en `ServerStorage.BlobElementsBackup_20260919.Scripts_BeforeB3`.
+
+**Probado en Play, por el puente de depuración (acciones nuevas `GrantBlobElement`, `RequestBlobElement`, `InspectBlobElements`):**
+
+| Caso | Resultado |
+|---|---|
+| Conceder | poseído y **no** equipado |
+| Equipar | `Equipped`, atributo `BlobElementId` publicado |
+| ⭐ Pulsar el equipado | **`Unequipped`** y atributo vacío — la fila `ORIGINAL` funciona |
+| Pedir uno no poseído | **`NotForSale`**, Wins intactas |
+| Id inventado | `UnknownCosmetic` |
+| Morir y respawnear | estado conservado |
+| Rebirth | Rebirths 0→1, elemento y cosméticos conservados, Stickiness reiniciada |
+| Regresión Trails/Auras | siguen comprándose y equipándose con el tercer kind dentro |
+| Evidencia de guardado | `DataLastSavedEquipped = BasicGlue||||DewW1` (quinto campo nuevo) |
+
+⚠️ **`GetSnapshot` devuelve los `Owned*` como SET, no como lista** — igual que Trails y Auras. Leerlo con `table.concat` da vacío y parece un bug que no existe. La lista se obtiene con `ownedCosmeticList(state, kind)`.
+
+⚠️ **`require` desde `execute_luau` devuelve otra instancia del módulo, con su propio `states`.** Llamar a la API del servicio desde ahí da `ProfileNotReady` aunque el servicio real esté funcionando. Para probar servicios hay que ir por su remote o por su puente de depuración.
+
+**Pendiente de B3:** la mitad de cliente (repintar el blob en `CharacterAdded` y al cambiar el atributo), viajar entre mundos, y reconectar.
+
+### B3 (mitad cliente) — `BlobElementController` (2026-09-19)
+
+Nuevo `StarterPlayer.StarterPlayerScripts.Client.BlobElementController`, registrado en `ClientMain` **detrás de `CosmeticVfxController`**: necesita el blob ya montado, y el elemento no escala el cuerpo, así que no puede alterar la caja que el aura ya midió.
+
+**Por qué vive en el cliente:** `EditableImage` es una instancia de cliente; el servidor no puede pintarla ni replicarla. El servidor decide qué elemento lleva cada jugador y lo publica en el atributo `BlobElementId`; **cada cliente pinta lo que ve, incluidos los blobs ajenos**. El controlador vigila a todos los jugadores (`PlayerAdded` + `CharacterAdded` + `GetAttributeChangedSignal`), no solo al local — al contrario que `BlobAnimationController`, que solo mira al suyo.
+
+**Config nueva:** `GameConfig.BlobElementPalette` con `SourceTextureId`, `Size = 128`, rejilla, `AttributeName` y `RemoteMaximumDistance`.
+
+⚠️ **Un único atlas de origen para los tres mundos**, no el de la plantilla puesta. Las tres texturas de mundo se generaron recoloreando solo las filas 0–3 de la de W1, así que las filas 4–5 son idénticas en las tres. Partir siempre de la misma hace literal la regla de que los 21 items comparten cara.
+
+**Probado en Play:**
+
+| Caso | Resultado |
+|---|---|
+| Equipar `BarkW1` | el blob se pinta marrón en el juego vivo |
+| Cambiar a `VerdigrisW1` | repinta sin pasos intermedios |
+| Quitar (fila `ORIGINAL`) | restaura **todo**: textura a `Uri`, `Material` a `SmoothPlastic`, `Transparency` y `Reflectance` a 0, y la `Acceleration` del emisor a lo authored |
+| `DewW1` (raro) | `Material = Glass`, `Transparency 0.32`, `Reflectance 0.28`, y se lee como agua |
+| Degradación en tier 1 | el blob tiene 1 emisor, así que usa `EmittersLowTier` y aplica `AccelerationY = -18` sobre `PrestigeAura` |
+| Morir con elemento puesto | **se reaplica solo**, sin intervención |
+
+⚠️ **El servidor NO ve la pintura.** `TextureContent` con un `EditableImage` es client-local: leer el blob desde el datamodel Server muestra siempre la `Uri` de fábrica. Una comprobación hecha desde el lado equivocado parece un fallo y no lo es. Lo mismo pasa con `require` desde `execute_luau`: devuelve otra instancia del módulo, así que `GetStats()` da ceros aunque el controlador real esté trabajando.
+
+**Pendiente de B3:** viajar entre mundos, reconectar, y **el test de 2 jugadores** — que la paleta se aplique a los blobs remotos. El código lo hace (vigila a todos los jugadores), pero no se puede probar con un solo cliente en Studio, y es el pendiente que la piel de blob dejó abierto en septiembre.
+
+⚠️ **Nada guardado ni publicado.** Backup completo en `ServerStorage.BlobElementsBackup_20260919` (24 plantillas, banco de 3, y los 4 scripts previos a B3). Workspace limpio de carpetas de prueba.
+
+### ¿Se ven los blobs entre jugadores? — estado real (2026-09-19)
+
+Pregunta de Camilo, y el sistema entero depende de ella. Separado lo probado de lo inferido:
+
+**Probado:**
+- `CosmeticVfxController` **ya hace esto en producción** para las auras: recorre `Players:GetPlayers()`, busca el contenedor de cada personaje y marca cuál es el local. Los jugadores ya se ven las auras entre sí por esa vía. `BlobElementController` usa el mismo patrón.
+- El blob remoto **existe en el cliente de cada uno**: `WrapBlobService` clona la plantilla en el servidor y la mete en el personaje, así que replica a todos.
+
+**No probado, y es concreto:** barridos los 45 controladores de cliente, **todos** los `player:GetAttributeChangedSignal` del proyecto son sobre el jugador **local** (son HUD y UI). `BlobElementController` es **el primer sitio del proyecto que lee el atributo de un jugador ajeno**. Que los atributos de instancia replican a todos los clientes es estándar de Roblox, pero este código nunca ha dependido de ello.
+
+**Decidido:** se cierra con una prueba de 2 jugadores (Test → Clients and Servers → 2 Players), no cambiando el diseño. Basta con alcanzar **un** cliente: desde él se lee el `_WrapBlob` del **otro** jugador y se comprueba que su `TextureContent` es un `EditableImage`.
+
+Alternativa descartada por ahora, por si hiciera falta: que el servidor estampe el id del elemento como atributo en la instancia `_WrapBlob` en vez de en el jugador — el atributo viaja con la instancia, igual que el contenedor de auras, y elimina la dependencia no probada. Son ~3 líneas.
+
+**Arreglado de paso:** `BlobElementPalette.RemoteMaximumDistance` estaba declarado y nunca se usaba. Quitado en vez de implementado: pintar un blob no es trabajo por frame (una asignación de 0,003 ms cuando cambia el atributo, con la imagen cacheada y compartida), así que un recorte por distancia solo habría creado blobs remotos con el color equivocado hasta acercarse. El LOD por distancia sí tiene sentido para el movimiento de B4, que es por frame. También quitada la variable `localPlayer`, que estaba declarada sin uso y sugería lo contrario de lo que el controlador hace.
+
+### ✅ CERRADO: los jugadores SÍ se ven los blobs entre sí — prueba de 2 jugadores (2026-09-19)
+
+Era el pendiente que la piel de blob dejó abierto en septiembre. Probado con `Test → Clients and Servers → 2 Players`.
+
+| Escenario | Resultado |
+|---|---|
+| **Elementos distintos** (P1 Verdigris, P2 Bark) | Cada cliente ve **los dos blobs pintados**, el propio y el ajeno. `paletas=2` |
+| **El mismo elemento** (los dos Bark) | Siguen siendo **2 paletas, no 3**. La segunda instancia reusó la de Bark |
+| **Un elemento nuevo** (P2 estrena Mycelium) | **3 paletas**. Crece solo cuando aparece un elemento que nadie tenía |
+| Material en el blob remoto | `Mycelium` se ve con `Material = Slate` desde el otro cliente: no solo la textura, también el material |
+
+**Lo que esto cierra:** el atributo de jugador escrito en el servidor **replica a los demás clientes** (era la única dependencia no probada del diseño: `BlobElementController` es el primer sitio del proyecto que lee el atributo de un jugador ajeno), y la regla de **cachear por elemento y no por jugador** funciona con más de un jugador — que es justo donde nunca se había ejecutado.
+
+⚠️ **Cómo se probó, porque el camino obvio no funciona:** el MCP **no alcanza el datamodel `Client`** en una prueba de 2 jugadores (`Target is not reachable`), y `get_console_output` solo trae la consola del **servidor**. Enfocar una ventana de cliente no lo arregla. La vía que sí funciona: instrumentación temporal de tres piezas — un `RemoteEvent`, un `Script` de servidor que imprime, y un `LocalScript` que contesta lo que ve cada cliente. El servidor pregunta con `FireAllClients()` y las respuestas salen por la consola del servidor, que sí se lee. **Las tres piezas se borraron al terminar.**
+
+### B4 — `BlobMotionController` (2026-09-19)
+
+Nuevo `StarterPlayer.StarterPlayerScripts.Client.BlobMotionController`, registrado en `ClientMain` detrás de `BlobElementController`. Config en `GameConfig.BlobBoneMotion` con tres perfiles (`breathe`, `wobble`, `pulse`), los huesos permitidos y el LOD.
+
+#### ⚠️ La trampa que costó una tarde: `PreRender` NO sirve
+
+El primer intento usó `RunService.PreRender`. **No escribía nada**: los huesos salían a cero frame tras frame, **sin un solo error en consola**, con la config correcta y el módulo cargado. El fallo es de orden de frame: **la animación del personaje se aplica durante el paso de render, en la prioridad `Character`, o sea DESPUÉS de los callbacks de `PreRender`**. Cada offset escrito lo borraba la animación antes de dibujar, y el resultado neto era exactamente nada.
+
+**La solución:** `RunService:BindToRenderStep(nombre, Enum.RenderPriority.Character.Value + 1, step)`. La animación ya dejó su pose en `Bone.Transform`, nosotros componemos encima, y se dibuja con las dos cosas. Es también lo que hace que no acumule: el frame siguiente la animación reescribe la pose entera desde cero.
+
+⚠️ **Y el mismo orden envenena las mediciones.** Leer `Bone.Transform` desde `task.wait` o Heartbeat devuelve **la pose de la animación, no la compuesta**: da cero y parece que nada funciona. Cualquier comprobación de huesos tiene que hacerse dentro de un `BindToRenderStep` con prioridad mayor que `Character`. Me pasó dos veces en la misma sesión.
+
+#### Cómo se evita acumular
+
+`Bone.Transform` se compone **por la izquierda sobre la pose base**, nunca sobre el resultado propio. La base se averigua así: si `Transform` ya no es lo que dejamos el frame pasado, la animación lo reescribió y esa es la base buena; si es exactamente lo que dejamos, la animación no corrió (blob parado o pista detenida) y la base es la que guardamos. Sin la segunda rama, un blob quieto acumularía hasta desmontarse.
+
+#### Medido en Play
+
+| Caso | Resultado |
+|---|---|
+| Sin elemento | pico 0,0000 — el soltado devuelve los huesos a su pose |
+| `DewW1` (wobble, eje X, amplitud 0,16) | pico **0,1600**, rango simétrico −0,16 a +0,16 |
+| **No acumula** | 7 ventanas de 50 frames en 6 s: todas 0,1600 |
+| Desfase (`PhasePerBone 1.05`) | `spine_01` ≠ `spine_04` en el 99,7 % de 361 muestras — la onda sube por la espina |
+| `MyceliumW1` (pulse, eje Y, amplitud 0,07, sin desfase) | pico **0,0700** y `spine_01` == `spine_04` en **120 de 120** |
+| `BarkW1` (común, sin `BoneMotion`) | pico 0,0000 — los comunes no se mueven |
+| Coste por frame | 16,66 ms con elemento contra 16,67 ms sin él. Dentro del ruido |
+
+**Decisiones de LOD:** el corte es 110 studs (55 en móvil) — el mismo que el giro de órbitas de `CosmeticVfxController`, no la distancia larga del LOD de cosméticos (240/140), porque escribir huesos **sí** es trabajo por frame. Techo de 12 blobs animados (6 en móvil), ordenados por cercanía, y **el blob local nunca se recorta**.
+
+⚠️ **Solo se usan `spine_01..04`**, que existen en los 8 peldaños. Nombrar `spine_05`, `Left` o `Right` haría que el elemento se moviera distinto en los tiers 1–3 sin dar ningún error.
+
+**Pendiente:** los 12 blobs a la vez. Medido con uno (sin coste apreciable); por blob son 4 multiplicaciones de `CFrame` y 4 escrituras, pero la cifra con doce no está tomada y no se puede tomar en solitario.
+
+### M0 — censo de World 1 (2026-09-19)
+
+Documento: `VacummFeature/M0_CENSO_WORLD1.md`. Censo hecho y verificado contra el place; **la corrida cronometrada sigue pendiente**.
+
+Empezar por el censo en vez de por el cronómetro destapó cuatro cosas:
+
+**1. ⚠️ `GameConfig` miente sobre cuatro salas.** `RoomSettingsReader` da precedencia al Workspace (`Zones.<Zone>.RoomSettings`) sobre `GameConfig`. En las salas 7–10 el Workspace dice **20 / 20 / 20 / 10** objetos donde `GameConfig` dice 32, con separaciones de 9,25 a 16 studs en vez de 8. Coincide con lo que el documento cuenta, pero `GameConfig` nunca se actualizó. Quien calcule la duración de World 1 leyendo `GameConfig` se equivoca en las cuatro salas más largas. **No se tocó** — cambiarlo no afecta al juego y no es parte de esta feature; queda como deuda con nombre.
+
+**2. ⚠️ Corrijo una generalización mía anterior.** El «25 % elegible al entrar» es correcto para las salas 4–10 y **falso para las tres primeras**, que sí declaran pesos `4/3/2/1` y tienen el **40 %** elegible. `ItemPlanner.requirementWeights` solo usa los pesos si `#configured == requirementCount`; las salas 4–10 no declaran ninguno y caen al reparto equitativo. Las bandas de `ZoneCollectibleRequirementBands` solo reescriben W2 y W3. **Confirmado con datos vivos**: en ToyRoom el reparto medido es 40/29/20/11 %.
+
+**3. ⚠️ El proyecto tiene dos duraciones de World 1 y difieren 2,5–3,7×.** La suma de `ExpectedSeconds` de las 10 zonas da **580–855 s (9,7–14,2 min)**; el documento de la máquina trabaja con **~35,7 min**, y sobre esa cifra está construido el encaje de la máquina (precio 850, pool completado al ~108 % del mundo). Si la buena fuera la de 10–14 min, el precio hay que rehacerlo. **La corrida cronometrada ya no sirve solo para medir el Δ de M1: decide el precio de la máquina.**
+
+**4. ⭐ `ResidueValue` ya tiene dónde vivir — y hay DOS cosas llamadas `SizeTier`.**
+
+| | Qué es | Origen | Consumidor |
+|---|---|---|---|
+| `GameConfig.GetCollectibleSizeTier(zoneId, requiredStickiness)` | número 1–4 | **derivado del requisito** | `PickupService` → tono y volumen de la recogida |
+| atributo `SizeTier` de la plantilla | cadena `Small`/`Medium`/`Big` | **authored en el prop** | nadie todavía |
+
+Mismo nombre, cosas distintas. Inventario del authored: **41 Small, 28 Medium, 22 Big** en plantillas. **Propuesta revisada para M2:** derivar `ResidueValue` del `SizeTier` authored y repuntar el audio a lo mismo, para que el tamaño del prop decida lo que ves, lo que oyes y lo que suma. Falta decidir el mapeo: el atributo tiene 3 valores y el documento propone 5 brackets.
+
+⚠️ **La corrida cronometrada no se pudo automatizar limpiamente.** Las salas 7–10 piden 30k–330k de Stickiness, que solo se alcanza subiendo la escalera de wraps: son decenas de minutos reales. Y el intento en ToyRoom salió contaminado porque el perfil ya traía 8,5 de Stickiness de las pruebas de B3/B4. Una medición limpia necesita perfil nuevo o Rebirth previo. Propuesta en el documento: cronometrar **solo ToyRoom**, dos veces (flag on/off), que es barato y es donde el embudo pierde el 39,6 % — y es un **suelo** del Δ, porque es una de las tres salas donde ya hay 40 % elegible.
+
+### M1 — el flag de Residuo, construido y verificado (2026-09-19)
+
+**`GameConfig.Collection.RequireStickinessForPickup = true`** (el comportamiento histórico). Con `false`, el requisito deja de existir para el jugador.
+
+⚠️ **No bastaba con apagar la puerta del servidor.** Hay **cuatro** consumidores de la comparación, y uno decide si el cliente llega a pedir la recogida:
+
+| Dónde | Qué hacía | Estado |
+|---|---|---|
+| `PickupService:311` | la puerta autoritativa | ahora condicionada al flag |
+| `CollectibleController:238` | **decide si el cliente manda la petición** | usa el helper |
+| `ObjectLabelController:138` | atenuado del objeto | usa el helper |
+| `ObjectLabelController:225` | color del foco | usa el helper |
+
+Sin tocar `CollectibleController`, apagar el servidor no habría cambiado **nada**: el cliente no pide lo que cree inelegible. Se centralizó en `GameConfig.IsCollectibleEligible(stickiness, required)`, un solo sitio.
+
+Verificado con el flag encendido (5 casos) y apagado (3 casos). Lo demás que valida `PickupService` —sesión, distancia contra la posición del servidor, personaje vivo, rate limit— sigue corriendo: no es un modo permisivo, es retirar un requisito de diseño.
+
+#### 🔴 Hallazgo: el goteo pasivo está ENCENDIDO en todas partes, no solo en Rest Zones
+
+Medido con el personaje **anclado a 305 studs de cualquier coleccionable y sin Rest Zone**: la Stickiness subía **0,23 por segundo**.
+
+```
+GameConfig.PassiveStickiness = {
+    Enabled = true,  TickSeconds = 0.5,  FractionPerInstance = 0.075,
+    InstancesPerTick = 1,  RequiresTutorial = false,
+}
+```
+
+Y `PassiveStickinessService` lo concede por `ProgressionService.AddStickinessFromCurrentWrap` — su propio comentario dice *«la MISMA puerta que usa el pickup»*.
+
+> **Esto agrava el riesgo bloqueante nº 1 del documento.** §3.4 lo plantea como un problema de **Rest Zones y Offline Gains**; en realidad es un **goteo global, siempre activo, en cualquier sala**. Si `ResidueService` se enganchara ahí, todo el mundo fabricaría Residuo **quieto, en cualquier parte, todo el rato** — no solo durmiendo en una Rest Zone. La regla de engancharse solo a `PickupService.ConnectCollected` pasa de importante a innegociable.
+
+#### ⚠️ La corrida cronometrada NO se consiguió, y ahora se sabe por qué
+
+Cuatro intentos, todos inválidos:
+
+1. La Stickiness sube sola 0,23/s, así que **cronometrar por Stickiness mide sobre todo el goteo pasivo**. La «corrida A» dio 0,226 Stickiness/s — prácticamente la tasa pasiva, o sea que el caminar aportó casi nada.
+2. Normalizar a 0 y medir no funciona: entre la llamada que la fija y la que mide, el goteo ya la ha subido.
+3. Anclar al personaje lejos para que no recoja deja el punto de salida a 305 studs, y entonces la distancia domina el tiempo.
+4. **Y lo decisivo: conducir con `Humanoid:MoveTo` a las posiciones de los coleccionables produjo CERO recogidas reales en 32 s** (contadas por el remote `PickupFeedback`, que el goteo pasivo no dispara). El bucle de recolección del juego no se reproduce moviendo el personaje punto a punto.
+
+**Conclusión metodológica:** el Δ de duración de World 1 **no se puede medir automatizando el movimiento**, y tampoco debe medirse en Stickiness. La métrica válida es **recogidas reales por segundo** (el remote `PickupFeedback`), y hace falta **una persona jugando**. El contador queda escrito y listo para engancharse a una sesión real.
+
+Añadida al puente de depuración la acción Studio-only `SetStickiness`, que normaliza el punto de partida (y pone `TotalCollectedThisRebirth` a 0).
+
+### M2 — el Residuo existe (economía; la UI queda pendiente) — 2026-09-19
+
+**Escrito (producción, sin guardar):**
+
+- `GameConfig.Residue` — `Enabled`, atributo `Residue`, `ValueBySizeTier`, `DefaultValue`, `WorldMultipliers` (1/1/1 en v1, dial propio separado del de Stickiness), y los diales de la máquina (`DuplicateRefund 0.40`, `PityStreak 5`, `FirstPullPrice 250`).
+- `GameConfig.GetResidueValueForSizeTier(sizeTier)` → `(valor, resuelto)`.
+- `DataService`: campo `Residue` en el perfil, normalización al cargar (perfil viejo → 0), en el snapshot, en el update, y el atributo de evidencia `DataLastSavedResidue`.
+- `ProgressionService`: `Residue` en el estado y en el snapshot, publicado como atributo replicado, y la API autoritativa `GetResidue` / `AddResidue` / `TrySpendResidue`.
+- `ResidueService` nuevo, registrado en `Main` **detrás de `PickupService`**.
+
+**⭐ El valor sale del `SizeTier` authored de la plantilla, no de una tabla paralela.** Verificado: **91 plantillas indexadas**, reparto **41 → 1 ♻, 28 → 3 ♻, 22 → 8 ♻**, que coincide exactamente con el censo de `SizeTier`. Una plantilla sin `SizeTier` cae a 1 **con un warn explícito y una sola vez por plantilla**.
+
+**🔴 Prueba bloqueante SUPERADA.** Con el personaje anclado a 305 studs del coleccionable más cercano, 30 s quieto:
+
+```
+Stickiness:  11,601 -> 18,388   (+6,787)   <- el goteo pasivo SÍ corre
+Residue   :       0 ->       0   (+0)      <- correcto
+```
+
+Es la demostración directa de que el Residuo **no** entra por la puerta compartida de `AddStickinessFromCurrentWrap`. La cabecera de `ResidueService` deja escrito por qué, con los cinco consumidores de esa puerta (goteo pasivo global, Rest Zones ×20, Offline Gains, el gamepass x3 de R$249, y los eventos de mundo).
+
+⚠️ **Decisión de Rebirth:** el saldo de Residuo **no se borra nunca**, ni siquiera con `Cosmetics.ResetOnRebirth` encendido. Ese flag existe para revertir Trails y Auras, que se recompran con Wins; el Residuo es tiempo de juego ya gastado y no hay forma de devolverlo.
+
+⚠️ **NO verificado: el camino positivo (recoger → sumar Residuo).** No he conseguido que el personaje conducido recoja **nada** en ninguno de los ~6 intentos de hoy: `TotalCollectedThisRebirth` se queda en 0 y el remote `PickupFeedback` no dispara `Collected`, mientras la Stickiness sube solo por el goteo pasivo. Probado con `Humanoid:MoveTo`, con `character_navigation` y con vueltas de radio corto. **Es una limitación del banco de pruebas, no evidencia de un fallo en la concesión** — pero no se puede dar por bueno sin verlo. Basta con que una persona camine diez segundos por una sala y se lea el atributo `Residue`.
+
+**Pendiente de M2 (la mitad de presentación):** la etiqueta del objeto reutilizando `_RequirementBillboard`, el contador del HUD, el popup doble de recogida, y repuntar el audio a `ResidueValue`. Todo eso es trabajo de instancias authored (regla 5.1) y no se ha empezado.
+
+### M2 (UI) — la etiqueta del objeto (2026-09-19)
+
+**⚠️ `Collection.RequireStickinessForPickup` queda en `false`** — el modo nuevo encendido. Es el estado que la feature persigue, pero es un **cambio de comportamiento en vivo** en cuanto alguien publique. Volver atrás es esa línea.
+
+**La etiqueta ya pinta Residuo.** `_RequirementBillboard` se reutiliza entera; el modo lo decide el mismo flag que abre la puerta de la recogida, así que el rollback sigue siendo un booleano. El texto y el color se escriben ahora en **un solo sitio** (`paintLabel`), donde antes había dos funciones haciéndolo por su cuenta — con dos modos eso habrían sido cuatro caminos que mantener de acuerdo.
+
+⭐ **La tarjeta NO se ensancha.** El documento avisa de que añadir un icono la ensancha y de que el peor caso ya medía 3 parejas solapadas. En vez de ensanchar, se reparte el ancho que ya hay: cabe porque **el número nuevo es de una cifra donde el requisito llegaba a siete**.
+
+#### 🔴 El glifo ♻ NO se dibuja — pendiente de arte
+
+Primer intento: `ResidueIcon` como `TextLabel` con `♻`. **No se pinta.** `TextBounds` daba 68×100 —o sea que Roblox le reservaba sitio— pero en pantalla salía el hueco vacío; y metiendo el carácter dentro de otra etiqueta se perdía al leerlo de vuelta. Es exactamente la lección que el proyecto ya tenía escrita con 🫧 y FredokaOne: **un icono que falta no da error ni warning**.
+
+Convertido a `ImageLabel` con `Residue.IconImage`, hoy vacío. **Hace falta UN asset**, y el mismo sirve para los tres sitios de la moneda (etiqueta, contador del HUD, cartel de la máquina) — que es justo lo que hace que el jugador conecte las tres cosas sin leer.
+
+Mientras esté vacío, el controlador **esconde el icono y la cifra ocupa la tarjeta entera**: una tarjeta limpia sin icono es un fallo suave; una con un hueco en blanco parece rota. Verificado en captura: el `1` sale centrado y en verde de Residuo.
+
+⚠️ **Y un fallo propio que merece quedar escrito:** la primera versión curaba `TextBounds` solo en la cifra y no en el icono, así que el glifo salía en blanco en las tarjetas cercanas y bien en las lejanas. Un `TextLabel` que se hace visible **después** de que su billboard ya tuviera tamaño se mide una vez y se queda a cero. Al pasar a `ImageLabel` el problema desaparece, pero la regla queda: **todo elemento de texto que se encienda tarde necesita su propio heal**.
+
+**Refactor de paso:** el índice plantilla → `SizeTier` se movió de `ResidueService` a `GameConfig` (`GetResidueValueForTemplate`), porque lo necesitan los dos lados — el servidor para conceder y el cliente para pintar sin preguntar por la red. Dos índices separados serían dos copias del mismo dato que pueden divergir, y el síntoma sería un objeto que dice `3` y suma `1`.
+
+**Pendiente de M2:** el contador del HUD, el popup doble de recogida, repuntar el audio a `ResidueValue`, y **el asset del icono**.
+
+### M2 (UI) — contador del HUD, y el caso cerrado del icono (2026-09-19)
+
+**`StickyHUD.CounterStack.ResidueCounter`**, authored clonando el patrón de `WinsCounter` (así hereda `UICorner`, `UIStroke`, `UIAspectRatioConstraint` y los límites de tamaño de texto sin reinventarlos). `LayoutOrder = 3`, y el bloque interior de Speed/Reach baja a 4.
+
+`HUDController` lo alimenta del atributo `Residue`, abreviando igual que Wins y Rebirths —verificado: `7 → "7"`, `412 → "412"`, `1234 → "1.23K"`, `25600 → "25.6K"`— y con un `UIShake` cuando sube, como el de Rebirths. El primer valor no sacude, que sería sacudir al entrar. Si el contador falta, avisa y el HUD sigue: es información, no un botón.
+
+#### 🔴 Caso cerrado: el glifo ♻ no existe en las fuentes del juego
+
+Tres rondas de pruebas, y la conclusión es firme:
+
+| Prueba | Resultado |
+|---|---|
+| `♻` en **GothamSSm** (fuente del billboard) | **no dibuja**. `TextBounds` 68×100 — reserva sitio — y en pantalla el hueco vacío |
+| `♻` en **FredokaOne** (fuente del HUD) | **tampoco dibuja** |
+| `🏆` en FredokaOne, **misma tarjeta, mismo código** | **sí dibuja** |
+
+O sea: **la tubería está bien y el problema es el glifo concreto**. La lección del proyecto con 🫧 se afina — no es que una fuente falle, es que **cada glifo existe o no en cada fuente**, y solo una captura lo dice.
+
+⚠️ **Dos trampas que me costaron vueltas y conviene no repetir:**
+1. Escribir `icon.Text` desde `execute_luau` no sirve para probar: `paintLabel` lo reescribe cada frame desde la config.
+2. Mutar `GameConfig` desde `execute_luau` tampoco: es **otra instancia del módulo**, no la que usa el controlador. Para un A/B de config hay que editar el Source y reiniciar Play.
+
+**Estado actual:** `Residue.IconGlyph = ""`. Sin glifo, el controlador esconde el icono y la cifra ocupa la tarjeta entera — una tarjeta limpia con el `1` en verde es un fallo suave; una con un hueco en blanco parece rota. En el HUD, el `Symbol` se esconde igual.
+
+⚠️ **Lo que se pierde mientras tanto:** la regla de que *el número nunca va solo*. Y esa regla importa — es lo que conecta la etiqueta del objeto, el contador del HUD y el cartel de la máquina sin que el jugador lea una palabra.
+
+⚠️ **Y la insignia del HUD es el trofeo de Wins teñido de verde**, heredado al clonar el patrón. Sirve para ver la fila colocada, **no para publicar**. Cambia con la misma decisión de arte.
+
+**Las dos salidas, las dos baratas:** (a) un asset de arte y `ResidueIcon` pasa a `ImageLabel` —una instancia, sin recablear—, o (b) otro glifo que sí dibuje, verificado en captura antes de darlo por bueno.
+
+**Pendiente de M2:** el popup doble de recogida, repuntar el audio a `ResidueValue`, y la decisión del icono.
+
+### M2 (UI) — popup doble y audio (2026-09-21)
+
+**Escrito, sin verificar en pantalla.**
+
+**El popup doble.** `Pending` gana un campo `Residue`, resuelto **en el cliente** desde el `TemplateName` que el servidor ya manda: el popup doble **no añade ni un campo a la red**. `completePickup` saca el segundo número debajo del primero, con el color fijo del Residuo — que es lo único que impide confundir dos magnitudes muy distintas saliendo del mismo objeto.
+
+**El audio repuntado.** En modo Residuo el escalón de sonido sale de `GetResidueSoundTier(residuo)` en vez de `payload.SizeTier` (que deriva de la tabla de requisitos). Así el tamaño del prop decide **las tres cosas a la vez**: lo que ves, lo que oyes y lo que suma. Verificado numéricamente: `Small(1) → escalón 1`, `Medium(3) → 2`, `Big(8) → 3`, y **el escalón 1 mantiene factor 1 en tono y volumen**, o sea que el objeto más común suena exactamente como hoy.
+
+#### Dos hallazgos sobre el sistema de popups
+
+1. ⚠️ **`spawnPopup` tiene dos rutas y solo una funciona.** La de billboard en el mundo depende de un pool que se llena desde `Feedback.PopupTemplateName` (`_ScorePopup`), y **esa plantilla no está authored en el HUD**: el pool queda vacío y ese camino no dibuja nada. Se descubrió sacando el popup por ahí y no viendo ni uno.
+2. ⚠️ **El desplazamiento vertical hay que aplicarlo a la posición del MUNDO**, antes de elegir ruta. La ruta de pantalla convierte una posición del mundo a coordenadas de pantalla, así que desplazar solo el `Origin` del billboard no movía nada: el segundo número salía encima del primero.
+3. ⚠️ **Los huecos de dispersión son un recurso acotado** y ahora hay dos números por recogida pidiendo hueco. Si se agotan, el que falla es el de Residuo y **falla en silencio**. Hay que mirarlo en una prueba de racha, no en una recogida suelta.
+
+#### 🔴 No verificado en pantalla, y es el mismo bloqueo de siempre
+
+No conseguí ver el popup. Intenté disparar `PickupFeedback` sintéticamente desde el servidor y los únicos popups que aparecen son los del **goteo pasivo** (`+0.1`), no los de mis payloads. El camino de cliente no se reproduce así.
+
+**Es la tercera cosa del día bloqueada por la misma causa: no consigo que ocurra una recogida real en el banco automatizado.** Siguen sin verificar, y las cuatro se cierran con lo mismo:
+
+| Pendiente | Fase |
+|---|---|
+| Que recoger sume Residuo | M2 |
+| Que salga el popup doble | M2 |
+| Que el objeto grande suene grave | M2 |
+| El Δ de duración de ToyRoom | M1 |
+
+**Diez segundos de partida real de una persona los cierran los cuatro a la vez.**
+
+⚠️ **Studio se reinició entre sesiones y el trabajo sobrevivió por suerte** — el place estaba guardado. Todo sigue sin publicar. Conviene guardar y publicar pronto.
+
+### ✅ M2 verificado con juego real (2026-09-21)
+
+Camilo jugó recogiendo y se cerraron de una vez los pendientes que el banco automatizado no podía tocar.
+
+| Comprobación | Resultado |
+|---|---|
+| **Recoger suma Residuo** | **45 objetos → 45 de Residuo** en 15 s. Media 1,00 por objeto, coherente con que ToyRoom sea 100 % props `Small` |
+| **El popup doble sale** | `Workspace.FeedbackEffects.Popup8._ScorePopup.Amount` con texto `+1` **en el color del Residuo**, junto al de Stickiness |
+| **El contador del HUD** | marca el saldo en vivo (97) y sigue al atributo |
+| **Las etiquetas del objeto** | pintan el valor de Residuo en su color |
+
+#### ⚠️ CORRECCIÓN de un hallazgo anterior mío, que era falso
+
+Escribí que *«la ruta de billboard de `spawnPopup` no funciona porque `_ScorePopup` no está authored en el HUD»*. **Es falso.** La plantilla está authored en **`Workspace.FeedbackEffects`**, no en el `ScreenGui` — yo la busqué en el sitio equivocado y saqué la conclusión contraria. La ruta de billboard **funciona**, y de hecho es por donde sale el popup de Residuo.
+
+Lo que sí sigue siendo cierto del mismo episodio: el desplazamiento vertical hay que aplicarlo a la **posición del mundo** antes de elegir ruta, y los huecos de dispersión son un recurso acotado con dos números por recogida pidiéndolos.
+
+#### 📏 Dato medido: el ritmo real de recogida
+
+**3,0 objetos/s** con un jugador recogiendo de verdad en ToyRoom (45 objetos en 15 s).
+
+⚠️ **El documento asume 1,43–1,64 obj/s**, y sobre esa cifra está construido el modelo de ingreso de la máquina (~270 ♻/min). El ritmo medido es **casi el doble**. No es concluyente —es una sola ventana, en la sala más densa, con el radio de recogida que tuviera el perfil— pero apunta en la misma dirección que el otro descuadre de duración de §5 del censo M0, y las dos cosas juntas dicen que **el precio de 850 hay que revisarlo con datos antes de fijarlo**.
+
+⚠️ **Lo que sigue sin ejercitarse:** ToyRoom es 100 % `Small`, así que los valores 3 y 8 de Residuo y los escalones 2 y 3 del sonido **no se han probado en juego**. Hace falta recoger en una sala con props `Medium`/`Big` para verlos.
+
+### M3 — la máquina aspiradora, primera mitad (2026-09-21)
+
+**Authored:** `Workspace.StuckToYou."World 1 V2".Lobby.Geometry.VacuumMachine_World1`, con `Machine`, `Pad`, `RevealAnchor` y el `PriceSign` (BillboardGui con `Balance`, `Bar/Fill` y `Prompt`). Greybox. Colocada **junto a la fila de placas de pegamento** (x≈12940, z=287), que es la ruta que el jugador ya camina — el riesgo 7 del documento es que la máquina no se vea, y un rincón la condena.
+
+Tag `VacuumMachine` y los tres atributos de balance: `WorldId`, `PoolId`, `Price = 850`. **Todo el balance vive ahí**, no en `GameConfig` ni en el modelo.
+
+**`GameConfig.VacuumMachine`** con nombres de piezas, tiempos del ciclo, `LockTimeoutSeconds = 8` y `ReleasePerFrame`. **`VacuumMachineService`** registrado en `Main` detrás de `ResidueService`. Remotes authored: `VacuumReveal` y `VacuumRequest`.
+
+#### ✅ Verificado en Play
+
+| Caso | Resultado |
+|---|---|
+| Con 100 de Residuo, encima del pad | **no cobra** |
+| Con 2000, al pisar | **cobra 850 → 1150** |
+| Seguir encima 1,5 s más | **no vuelve a cobrar** (se cobra al ENTRAR, no por tick) |
+| Ocupación | punto-en-caja contra la posición del **servidor**, tick de 0,25 s. **No `Touched`** |
+
+#### ⚠️ Dos cosas que el place enseñó
+
+1. **`IsWorldUnlocked("World1")` devuelve `false` para un jugador que está EN World1.** El mundo de arranque no figura en `UnlockedWorldIds` — es implícito. Gatear solo por ahí rechazaba **todas** las tiradas de la primera máquina, que es justo la que todo el mundo ve primero. Ahora se acepta si es su mundo actual **o** lo tiene desbloqueado.
+2. **`AttachmentService` no tiene `ReleaseOldest`.** El documento §4.3 da por hecho `AttachmentService.ReleaseOldest(n, ratePerFrame)` y **no existe**: su API pública es `Init`, `Destroy`, `GetStats`, `ClearPlayerVisuals` y `_FlushPending`. La única vía de mutación es `ClearPlayerVisuals`, que es exactamente el «❌ No» del documento (vaciar de golpe = 10,6 ms de Lua y 50–100 ms de frame en móvil, y lo sufre todo el que tenga esa pila). **La aspiración escalonada necesita una API nueva en `AttachmentService`.**
+
+#### 🔴 Lo que NO se puede probar en Studio en solitario
+
+La devolución de `PendingPull`. Está escrita —al cargar un perfil con marca viva, devuelve el precio entero y la limpia— pero **el mock de DataStore de Studio reinicia el perfil ENTERO en cada sesión de Play**: se comprobó que tras parar y volver a entrar, Stickiness, Wins, Rebirths, Residuo y los elementos de blob vuelven todos a cero. El proyecto ya tenía anotada esta limitación («el mock de DataStore de Studio muere al salir de Play... sin una prueba cloud»).
+
+**Necesita una prueba en servidor real.** Es la garantía de que un corte entre el cobro y la concesión no roba la tirada, así que no se publica sin verla.
+
+**Pendiente de M3:** el `VacuumMachineController` de cliente (cartel, blur, ruleta, revelado y **la limpieza del blur**, que el documento llama «el bug más caro de esta feature y es de una línea»), y la aspiración escalonada de la bola con la API nueva.
+
+### M3 — API de aspiración y controlador de cliente (2026-09-21)
+
+#### `AttachmentService.ReleaseOldest(player, count, includeProtected)` — API nueva
+
+El documento la daba por existente y **no existía**. Ahora sí, con su op de red propio `OP_VACUUM = 7`.
+
+- Saca las `count` piezas **más antiguas**, primero de la cola de normales y solo después de las protegidas — y **solo si quien llama lo pide**, que es el caso de la tirada que se lleva la bola entera. Los objetos de blocker son «la puerta que rompí»: una lectura de progreso, no decorado.
+- Manda **un solo mensaje** con todas las secuencias. El escalonado lo hace el cliente, que es quien sabe su propio frame time; un mensaje por pieza sería peor que el tirón que esto viene a evitar.
+- También `GetPileCounts(player)` → `(normales, protegidas)`, que la máquina necesita para calcular la fracción.
+
+⭐ **En el cliente no hizo falta maquinaria nueva.** `AttachmentRenderer` ya tenía `queueReleaseGroup` / `processReleases` para el descarte; `applyVacuum` solo las alimenta. Es literalmente lo que el documento anticipaba: *«la máquina de animar ya está construida, solo cambia el destino»*.
+
+#### La bola se reduce en proporción al Residuo gastado
+
+`fraction = precio / saldoAntes`. Si tiras con lo justo se la lleva entera; con el triple ahorrado, un tercio. El jugador aprende la relación en dos tiradas y sin una palabra. Verificado en el payload: con 3000 de saldo y precio 850, `VacuumFraction = 0,283`.
+
+#### `VacuumMachineController` — cartel y revelado
+
+Registrado en `ClientMain` detrás de `AttachmentRenderer`.
+
+**El cartel se pinta en el cliente**, porque el saldo es estado por jugador: uno escrito desde el servidor mostraría el saldo de otro (la lección de los `WrapSign`). Verificado en vivo: `1.15K / 850`, barra al 100 % y `PISALO PARA TIRAR` solo cuando ya llegas.
+
+**El blur, verificado con un observador de `Lighting`:**
+
+```
++VacuumRevealBlur (BlurEffect)
+-VacuumRevealBlur        1,33 s después
+```
+
+1,33 s = `BlurFadeSeconds 0,3` + `RouletteSeconds 1,0`. Sube y **se va solo**. Tiene cuatro salidas —`CharacterRemoving`, `PlayerRemoving`, cambio de mundo y `Destroy`— porque cualquiera de ellas puede ocurrir en mitad del revelado y un blur pegado deja al jugador sin poder jugar.
+
+#### ⚠️ Trampa de medición, la tercera parecida del proyecto
+
+Sondear el blur con un bucle `task.wait` dentro de `execute_luau` **no lo ve**: vive solo 1,3 s y el bucle se desfasa o se estrangula. Lo que sí funciona es **un observador de eventos guardado en `_G`**, que sobrevive entre llamadas — el mismo truco que hizo falta para ver los mensajes del remote. Regla: para observar algo efímero en cliente, engancha un evento persistente, no sondees.
+
+Y ojo: `task.spawn` lanzado desde `execute_luau` **muere cuando la llamada vuelve**, así que una corrutina con esperas largas nunca termina. Por eso requerir el controlador y llamar a su `Init()` desde ahí no reproduce su comportamiento real.
+
+#### Pendiente de M3
+
+La **aspiración escalonada no se ha visto con una bola llena**: en las sesiones de prueba la pila estaba a 0, así que `ReleaseOldest` no tenía qué soltar. Necesita recoger de verdad y luego tirar. Y sigue pendiente la prueba cloud de `PendingPull`.
+
+### ⚠️ Dos fallos reales encontrados al probar la máquina con un jugador (2026-09-21)
+
+**1. La máquina estaba enterrada nueve studs bajo el suelo.** Fallo mío al colocarla: leí las posiciones de los `WrapPad` y tomé `y = 1,48`, pero **el lobby de World 1 tiene dos niveles** y el suelo por el que se camina está a **y = 10,78** (medido por raycast: `1_NewLobby_Level_01.Collisions.Part`). Las placas a 1,48 están en un nivel inferior. Corregido: el modelo entero subido 9,30 studs, `Pad` a y = 10,98.
+
+> **Regla:** colocar algo en el mundo leyendo la Y de otra instancia cercana no basta — hay que **raycastear el suelo** en ese punto. Un lobby de dos niveles hace que la coordenada de al lado mienta.
+
+**2. 🔴 El precio de 850 es inalcanzable en la primera sala, y no es un problema de la máquina.**
+
+Camilo recogió **67 objetos** en ToyRoom y acabó con **66 de Residuo**. A 1 ♻ por objeto `Small` —y ToyRoom es 100 % `Small`— llegar a 850 son **850 objetos**.
+
+Esto **confirma con datos** la sospecha que ya venía de dos sitios:
+- La suma de `ExpectedSeconds` da World 1 en 9,7–14,2 min, no los ~35,7 del documento (§5 del censo M0).
+- El ritmo real medido es 3,0 obj/s, no los 1,43–1,64 que asume el modelo.
+
+El modelo de ~270 ♻/min del documento supone una **mezcla de tamaños de prop a lo largo de todo el mundo**. La realidad de la primera sala es 1 ♻ por objeto. **El precio de 850 y el ritmo de ingreso hay que rehacerlos con datos medidos**, y la primera tirada a 250 tampoco se alcanza — serían 250 objetos, cuando el documento la justifica como «≈1,1 min» de onboarding.
+
+Posibles salidas, por decidir: subir `ValueBySizeTier.Small`, meter props `Medium`/`Big` antes en World 1, o bajar el precio. La decisión necesita una corrida real por varias salas, no una estimación.
+
+### M4 — el pool de World 1: sorteo real (2026-09-22)
+
+**El sorteo existe.** Los 7 elementos de `GameConfig.BlobElements`, con duplicados, reembolso 40 %, piedad 5, primera tirada a 250 y estado `COMPLETA`. Construido en producción (`95828455414780`), **sin guardar ni publicar**. Backup previo en `ServerStorage.VacuumM4Backup_20260922` (los 5 scripts tocados y el `PriceSign` original).
+
+#### Contratos nuevos
+
+| Dónde | Qué |
+|---|---|
+| `ServerScriptService.Server.VacuumDraw` (nuevo) | El sorteo como función **pura**: `Roll(pool, copias, racha, piedad, rng)` → `(elegido, esDuplicado, piedadAplicada)`, `IsComplete`, `CountOwned`. Aparte del servicio para que la simulación corra contra el código real y no contra una copia |
+| Perfil (`DataService`) | `BlobElementCopies` (mapa id→copias, atado a `OwnedBlobElementIds`), `VacuumDupStreak` (0..`PityStreak`), `VacuumPullCount` (solo sube). Perfiles viejos entran con 1 copia por poseído, racha 0 y 0 tiradas |
+| `PendingPull` | Formato nuevo `pool|precio pagado`. La marca de M3 (solo pool) se sigue aceptando y devuelve el precio de la máquina |
+| `ProgressionService` | `GetVacuumState`, `CommitVacuumPull(player, id, reembolso)` — aplica copia, propiedad, racha, reembolso y contador **en el mismo frame, sin ceder**. Atributos replicados `VacuumDupStreak` y `VacuumPullCount` |
+| `GameConfig` | `GetBlobElementPool(poolId)`, `GetBlobElementNameKey(id)`, `GetVacuumPullPrice(precio, tiradas)`, `GetVacuumRefund(pagado)`, `assert` de `DuplicateRefund ∈ [0,1)`. En `VacuumMachine`: `RouletteSecondsDuplicate`, `RevealHoldSeconds = 6`, `LockTimeoutSeconds` 8 → **12**, nombres de atributos, `MaximumCopiesPerItem` |
+| Authored | `PriceSign` crece a 7×4 studs con fila `Pity` (`Label` + `Pips/Pip1..5`). `StickyHUD.VacuumRevealPanel` (rareza, nombre, estado, reembolso, pips, `EQUIP` / `CONTINUE`) |
+| Localización | 14 claves en 15 idiomas: `Vacuum.Sign.*`, `Vacuum.Reveal.*`, `Blobs.Item.<Id>.Name`. Se reutilizan `Common.Equip` y `Charms.Rarity.*` |
+| Puentes Studio-only | `ProgressionServiceDebugBridge`: `SetVacuumState`, `InspectVacuum`. `VacuumMachineServiceDebugBridge` (nuevo): `Stats`, `ResolvePendingPull`, `ReleaseLock` |
+
+#### Decisiones de código
+
+1. **La bola se aspira en el segundo 0, el premio se cuenta después de guardar.** La aspiración es espectáculo y no dice nada del resultado; el payload con el id solo sale cuando el resultado ya es durable.
+2. **El lock no se suelta a mitad de una tirada.** El tramo cobro→resultado cede dos veces al guardar; durante ese tramo (`pulling`) ni el timeout ni un `VacuumRequest` del cliente abren el lock. Si no, una segunda tirada pisaría la marca `PendingPull` de la primera.
+3. **Si el jugador se va mientras se guarda la marca, no se sortea.** Su salida ya guardó cobro + marca, y la tirada se devuelve al volver.
+4. **`EQUIP` solo en premio nuevo.** En un duplicado, pulsar sobre lo que llevas puesto lo quitaría (`AllowUnequip`).
+5. **Rareza con el vocabulario de los Charms** (color y clave traducida). Una sola escala de rareza en el juego.
+6. **Un revelado nuevo con otro abierto gana el nuevo**, en vez de ignorarse: ignorarlo dejaría una tirada cobrada sin enseñar su premio.
+
+#### 🔴 Fallo real encontrado de paso (anterior a M4): el Residuo de recoger no se guardaba
+
+`ProgressionService.AddResidue` solo escribe el atributo y marca el perfil sucio, pero `DataService.synchronizeHotFields` copiaba Stickiness y no Residuo. El Residuo de las recogidas —**y la devolución de `PendingPull` de M3**, que usa la misma función— solo llegaba al DataStore si otra cosa llamaba a `persist` (comprar un wrap, tirar…). Un jugador que recogía y se iba lo perdía. **Arreglado** copiando el atributo `Residue` en `synchronizeHotFields`, igual que Stickiness (sin `max`: el saldo baja al tirar). Verificado: tras `ResolvePendingPull`, el mock del DataStore tiene el saldo devuelto.
+
+#### Probado en Studio (Play)
+
+| Caso | Resultado |
+|---|---|
+| Simulación, 2 × 12.000 corridas contra `VacuumDraw` real | **mediana 16, P90 21**, P99 24–25, racha máx. **5**, 56,4 % duplicados, épico en tirada 11 (P90 19). Sin piedad: P90 41 — los números del documento |
+| Primera tirada | 249 no cobra; 250 cobra 250 (no 850) |
+| Segunda tirada | 849 no cobra; 850 sí |
+| 12 tiradas seguidas | nuevo = −850, duplicado = −850+340, racha +1 / reset. Memoria y DataStore idénticos (13.370) |
+| Pool completo | 3 pisadas más, **ningún cobro** y contador sin tocar. Cartel `COMPLETE` · `7 / 7` |
+| Piedad, 6 de 7 con el épico faltando | racha 5 → épico **6/6**. Control con racha 4 → duplicado 5/6 |
+| `PendingPull` | `World1|250` devuelve 250; marca M3 `World1` devuelve 850; el DataStore guarda el saldo devuelto |
+| Revelado nuevo (captura) | `RARE` / `Dew` / `NEW!` / `EQUIP` · `CONTINUE`, blur detrás |
+| Revelado duplicado (captura) | `YOU ALREADY HAVE IT` + `+340 REFUNDED` + pips 3/5 + solo `CONTINUE`, HUD ya en 2.49K — mismo frame |
+| Cartel en juego | `2.49K / 850`, `STEP ON IT TO PULL`, `NEXT NEW` con 4/5 pips |
+| Muerte con el panel abierto | panel oculto, blur fuera; lock del servidor suelto por timeout |
+| Idiomas | `es-es`, `ja-jp`, `pt-br` por `Translator:FormatByKey`, con parámetro `{amount}` |
+| Consola | sin errores ni warnings, salvo los 3 avisos esperados de devolución |
+
+#### Pendiente de M4
+
+- 🔴 **Reconectar a mitad de racha, de verdad.** Probado que la racha llega al DataStore (`InspectVacuum.Stored`, `DataLastSavedVacuum`) y que la carga la lee, pero el mock de Studio no sobrevive a salir de Play. Necesita **Team Test / servidor real**: forzar 2–3 duplicados, salir, volver, y ver los pips iguales.
+- 🔴 **Cortar el servidor entre cobro y concesión** (heredado de M3): sigue necesitando servidor real.
+- El botón `EQUIP` no se pulsó con ratón; su ruta es el remote `CosmeticRequest` ya probado en B3.
+- **No entran en M4** y quedan anotados: tirada dorada (3 %, lo primero que se cae por §8), aplicar el elemento en vivo sobre el blob durante el revelado, sonido propio del duplicado, bloquear el Rebirth durante el lock (inofensivo: el Rebirth no toca Residuo ni elementos).
+- Deuda de localización que M4 cerró de paso: el `PISALO PARA TIRAR` escrito a mano en M3 ahora es clave.
+
+⚠️ **Nada guardado ni publicado.**

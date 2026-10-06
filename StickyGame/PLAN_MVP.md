@@ -2503,3 +2503,847 @@ filas de 24 px. PC sin cambios (valores base).
 - Probado en Studio con viewport 749×380 (compacto real aplicado por ResponsiveLayout): tira bajo el
   banner FTUE, sin solapar botones de perfil/sonido ni Store; rótulo alineado.
 - Pendiente: probar en teléfono real y portrait.
+
+## Registro — 2026-09-14 (4), Admin Abuse apagado para el update
+
+`GameConfig.AdminAbuse.Enabled = false` y `StudioPreview.Enabled = false`. El código y la UI se
+quedan en el lugar, inertes.
+
+Verificado en Play: ningún servicio arranca (sin bridge, sin `RunId`, el comando de debug no
+responde), radio sin multiplicador, sin atributos `AdminAbuse*` en el jugador, panel/feed/Index
+ocultos, sin anillo, consola limpia.
+
+Efecto residual aceptado: los perfiles guardan un campo `AdminAbuse` vacío (normalizado).
+
+Para lanzarlo: `Enabled = true` y fecha real en `Schedule`.
+
+## Registro — 2026-09-15, Admin Abuse reactivado + pill desplegable en móvil
+
+`GameConfig.AdminAbuse.Enabled = true` y `StudioPreview.Enabled = true` (recordar apagar el
+preview antes de publicar si no se quiere el evento en cada Play de Studio).
+
+### Móvil: pill ↔ panel completo
+
+- **Colapsado:** `StickyHUD.AdminAbuseToggle` (TextButton authored, 132×42): icono de la fase,
+  timer de fase, chevron `▼` y barra fina de progreso de fase. Mismo lenguaje morado del HUD.
+- **Desplegado:** el panel completo de PC (título, reloj 24 h, x1.5, INDEX, fase, ciclos) a 48% de
+  ancho, con pestaña `▲` (`CollapseTab`) debajo. Tocar el panel (`CollapseButton`, 70% izquierdo
+  para no chocar con chip/INDEX) o la pestaña lo recoge. INDEX no recoge.
+- Transición firma del DesignSystem (`SignatureTransition`, respeta ReducedMotion) al abrir y al
+  volver al pill; el pill da un pequeño salto al cambiar de fase en vez de abrirse solo.
+- Auto-recogida a `Presentation.MobileAutoCollapseSeconds = 10`. El feed se oculta mientras está
+  desplegado.
+- PC sin cambios: `usesPill()` = pill authored presente + `ResponsiveLayout.IsCompact()`.
+  Se reevalúa al cambiar `AbsoluteSize` (rotación/redimensionado).
+- Se retiraron los overrides de la tira compacta anterior; los decoders `Visible` y
+  `TextXAlignment` de ResponsiveLayout se quedan como capacidad genérica.
+
+### Probado en Studio (viewport compacto 831×418)
+
+- Pill visible con timer e icono de fase; panel oculto.
+- Pill → panel desplegado, feed oculto, sin rozar el botón de perfil.
+- Pestaña `▲` recoge; auto-recogida observada a ~10 s.
+- INDEX desde el panel desplegado abre el Index y el panel sigue abierto; cerrar Index; tocar el
+  panel recoge → pill, feed de vuelta.
+- Consola limpia.
+- Nota de pruebas: `user_mouse_input` con `instance_path` calcula mal la posición de botones
+  anidados en este viewport; se validó con `GuiService.SelectedObject` + Return y el orden de
+  toque con `GetGuiObjectsAtPosition`.
+
+### Pendiente
+
+- Probar en teléfono real (toque, rotación, portrait).
+
+## Registro — 2026-09-15 (2), Admin Abuse en móvil = solo icono del Index
+
+Decisión de producto: el pill desplegable tampoco convenció. **En móvil (layout compacto) el
+evento no pinta interfaz**: ni panel, ni feed de avisos, ni anillo de Overdrive. Solo
+`StickyHUD.AdminAbuseMobileButton`, un tile clonado de `NavGrid.CharmsOpenButton` en morado
+Magic con glifo 📖 y etiqueta INDEX, a la derecha bajo la columna Store/x2 y encima del botón de
+salto. Abre el Index; su `ReadyBadge` (pulso de BadgePulseController) se enciende con una entrada
+nueva sin ver y se apaga al abrir. Los objetos mutados del mundo se siguen viendo (gameplay).
+PC sin cambios.
+
+- Eliminados: `AdminAbuseToggle`, `CollapseButton`, `CollapseTab`, `PopScale` y todos los
+  atributos `Compact*`/`Portrait*` del panel y el feed. Config: `ToggleName` y
+  `MobileAutoCollapseSeconds` sustituidos por `MobileButtonName`.
+- Pasar de PC a móvil (rotar/redimensionar) limpia avisos del feed y el anillo.
+
+### Sobre "el cartel de eventos a media pantalla"
+
+`WorldEventBanner` no lo mueve ningún script y en viewport móvil queda arriba (y=66 compacto,
+medido: y=8 px absolutos). Mientras Admin Abuse está activo los eventos de mundo automáticos
+están pausados, así que lo más probable es que lo visto a media pantalla fueran los avisos del
+feed de Admin Abuse (`PHASE STARTED`, cada 5 min, y=134 en móvil). Con este cambio ya no salen en
+móvil. **Pendiente confirmar en teléfono**; si sigue pasando con un evento de mundo, pedir captura.
+
+### Probado en Studio
+
+- Viewport compacto 831×418: solo el icono; panel/feed/anillo ocultos; tras recoger un Gold la
+  insignia se enciende; el icono abre el Index (SelectedObject + Return); sin solapar x2 Wins ni
+  el botón de salto.
+- Layout ancho forzado (umbrales bajados temporalmente y revertidos): panel completo, sin icono.
+- Evento de mundo manual en compacto: cartel arriba.
+- Consola limpia.
+
+## Registro — 2026-09-15, goteo pasivo de Stickiness desde el inicio
+
+Reportado: "los gains automáticos no funcionan". No era un fallo del servicio: estaba bloqueado
+a propósito por `GameConfig.PassiveStickiness.RequiresTutorial = true`, así que ningún jugador
+recibía goteo hasta terminar el FTUE.
+
+`RequiresTutorial` pasa a `false` **por decisión de diseño**: el goteo corre desde el primer
+segundo de la primera sesión. La puerta se conserva en el servicio por si se quiere volver atrás.
+
+### Probado en Studio
+
+Perfil nuevo, `FTUEDone = false`: la Stickiness pasa de 9,09 a 11,37 en 5 segundos sin recoger
+ningún objeto (~0,46/s, que es 3 × 0,1 × la ganancia por objeto del Basic Glue con su
+multiplicador).
+
+### El precio, escrito para quien depure el FTUE
+
+El paso 1, `COLLECT 10 STICKINESS`, se mide contra el atributo `Stickiness`. Con el goteo activo
+**se completa solo en unos segundos** aunque el jugador no toque un objeto: en la prueba ya iba
+por 9 al empezar a medir. Volver a encender `RequiresTutorial` lo recupera.
+
+Con esto, tres sistemas quedan activos sin FTUE —goteo pasivo, Offline Gains (que nunca tuvo
+puerta) y "Don't Leave Yet!"— y uno sigue exigiéndolo: la pantalla del daily.
+
+### Añadido — feedback visual del goteo pasivo
+
+Reportado: el goteo funcionaba pero **no se veía**. `PassiveStickinessService` concedía en
+silencio; ningún remote avisaba al cliente, así que el jugador solo lo notaba si miraba el
+contador.
+
+- **Servidor**: acumula lo concedido por jugador y avisa cada
+  `PassiveStickiness.FeedbackIntervalSeconds` (2 s) con la suma, por el remote authored nuevo
+  `Shared.Remotes.PassiveFeedback`. El aviso va en el mismo bucle y reloj del tick, sin
+  temporizador por jugador. `0` apaga el feedback sin tocar el goteo.
+- **Cliente**: `FeedbackController.onPassiveFeedback` lo pinta con el mismo `spawnPopup` y el
+  mismo color de ganancia que una recogida. Sin sonido ni partículas: es un pulso de fondo
+  permanente, mismo criterio que el tick de la Rest Zone.
+
+Por qué cada 2 s y no en cada tick: un popup por segundo es ruido permanente encima de los de
+recogida y Rest Zone, y un remote por jugador por segundo es lo que paga un servidor lleno.
+
+**Probado en Studio** con `FTUEDone = false`: tres avisos en 7 s, a +2,0 / +4,0 / +6,0 s, con
+~0,91 de ganancia cada uno; el popup `+0.9 STICKINESS` aparece sobre el jugador (confirmado con
+captura) y el contador sube en paralelo.
+
+## Registro — 2026-09-15 (2), sistema de notificaciones
+
+Banner de uso general arriba en el centro: baja desde fuera de la pantalla, espera y sale hacia
+arriba. Primera notificación: el recordatorio de Offline Gains a los 4 minutos de sesión.
+
+### Piezas
+
+| Pieza | Dónde |
+| --- | --- |
+| Catálogo y tiempos | `GameConfig.Notifications` |
+| Envío y disparadores por tiempo | `ServerScriptService.Server.NotificationService` |
+| Cola, textos y animación | `StarterPlayerScripts.Client.NotificationController` |
+| Plantilla authored | `StarterGui.StickyHUD.NotificationBanner` |
+| Remote | `Shared.Remotes.Notification` (solo servidor → cliente) |
+| Textos | `Notification.*` en `Shared.Localization`, 15 idiomas |
+
+### Cómo añadir una notificación nueva
+
+1. **Una entrada en `GameConfig.Notifications.Catalog`** con `TitleKey`, `BodyKey`, `Icon`,
+   `Accent` y, si hace falta, `DurationSeconds`, `Args` (siempre texto), `Condition`.
+2. **Sus dos claves en `Shared.Localization`.**
+3. **El disparador**, uno de tres:
+   - por tiempo de sesión → `AfterSessionSeconds` en la entrada. No hay que tocar código.
+   - por un evento del servidor → el servicio dueño del evento llama a
+     `NotificationService.Notify(player, "MiId", { cantidad = "25" })`.
+   - por algo que solo pasa en la pantalla del jugador → un controlador de cliente llama a
+     `NotificationController.Show("MiId", args)`.
+4. Si necesita una condición nueva, es una línea en `CONDITIONS` de `NotificationService`.
+
+El aspecto se cambia en el editor: la **posición authored del banner es donde aterriza**, y el
+controlador anima desde encima de la pantalla hasta ahí. El color del título y del borde sale del
+`Accent` de cada entrada, así que cada tipo de aviso se distingue de un vistazo.
+
+### Reglas del banner
+
+- **Uno a la vez**, en cola. Dos en la misma franja se pisan y no se lee ninguno.
+- **Sin duplicados**: si el mismo aviso ya está en pantalla o esperando, se ignora el repetido.
+- **Cola con techo** (`MaximumQueued = 4`): una ráfaga que lo supere descarta los más nuevos.
+- **Bajada** con `Back Out` en 0,38 s (aterriza con un rebote corto), **subida** con `Quad In`
+  en 0,28 s (acelera al irse), 0,25 s de hueco entre banners.
+- **Movimiento reducido** (`DesignSystem.IsReducedMotion`): no se quita el aviso, se quita el
+  rebote.
+- Lenguaje visual del HUD: FredokaOne, fondo `Ink`, textura de patrón, rim, trazo negro en texto.
+
+### El mensaje de Offline Gains, y por qué
+
+> **YOU EARN STICKINESS OFFLINE!**
+> UP TO 8 HOURS WHILE YOU'RE AWAY. COME BACK TO CLAIM IT!
+
+- A los **4 minutos**: el jugador ya entiende el bucle de recoger y todavía no ha decidido irse.
+  Saber que la partida sigue sumando sin él convierte "me voy" en "me voy y vuelvo".
+- El título dice **qué gana** con la moneda que ya conoce; el cuerpo dice **cuánto dura** y **qué
+  tiene que hacer**. Las 8 horas salen de `OfflineGains.MaximumAwaySeconds`, así que si cambia el
+  techo el texto cambia solo.
+- Solo se envía si `OfflineGains.Enabled`: con el sistema apagado sería una promesa falsa.
+
+### Probado en Studio
+
+- **El disparador real, sin atajos**: se esperaron los 4 minutos en una sesión con
+  `FTUEDone = false`. El banner apareció a los **239 s** de sesión (se cuenta desde que el
+  jugador tiene progresión, no desde la pantalla de carga).
+- **La bajada**, muestreada cada 0,06 s: `y = -162 → -54 → 3 → 22 → 19 → 9 → 6` px. Entra desde
+  fuera, se pasa unos píxeles y se asienta.
+- **La salida**: a los 261 s el banner estaba de nuevo oculto en `y = -162`, que es su posición
+  fuera de pantalla, con la subida ya terminada.
+- **El aspecto**, con captura: para poder fotografiarlo se bajó temporalmente el disparador a
+  10 s y la duración a 30 s. **Restaurado a 4 min / 7 s** y verificado leyendo `GameConfig`.
+
+### Pendiente, marcado a propósito
+
+- **La cola, los duplicados y `Show` desde cliente no se han ejercitado en Studio.** Esta sesión
+  de Studio no deja invocar `BindableFunction` desde la herramienta (restricción de
+  capabilities), así que el puente `NotificationControllerTestBridge` existe pero no se pudo
+  usar. Lo verificado es el camino completo servidor → remote → cola → animación con una
+  notificación; dos seguidas todavía no.
+- **Icono propio**: hoy usa el icono de Stickiness. Un icono de luna o reloj diría "offline" sin
+  leer; cambiarlo es el `Icon` de la entrada.
+
+## Registro — 2026-09-15 (3), textos de notificaciones ENG-0 / ENG-1
+
+Fuente: `Textos de las notificaciones — ENG-0 - ENG-1.md`. Los documentos que cita
+(`claude/eng-sprint-d1-2026-09-15.md`, ENG-2) **no están en el repo**, así que `Hero`, `Card` y
+`Toast` se interpretaron con lo que dice este texto. Los ids del catálogo son los del documento,
+tal cual, para poder cruzarlos.
+
+### §1 — Las seis entradas
+
+| Id | Estilo · Prioridad | Momento | Dónde se dispara |
+| --- | --- | --- | --- |
+| `rebirth_celebration` | Hero · 90 | Rebirth gratuito y Skip Rebirth | `FinishService` |
+| `world_unlocked` | Hero · 85 | Mundo desbloqueado | `WorldService` (evento de `ProgressionService`) |
+| `offline_claim` | Card · 70 | Al volver con premio | **La tarjeta de Offline Gains que ya existía** |
+| `offline_promise` | Card · 60 · Once | 4 min de sesión | Disparador por tiempo (sustituye al recordatorio anterior) |
+| `favorite_prompt` | Card · 40 · Once | **10 min** de sesión (el doc no lo fija) | Disparador por tiempo |
+| `charm_unlocked` | Toast · 30 | Primera copia de un charm | `CharmService` (compra con Wins y recibo de Robux) |
+
+Decisiones:
+
+- **`offline_claim` no es un banner nuevo.** "Al volver, cuando hay algo esperando" es exactamente la
+  tarjeta de Offline Gains, con su botón y la oferta del pase x3. Se le aplicaron título, mensaje y
+  botón del documento; un banner aparte habría enseñado dos avisos del mismo premio.
+- **`favorite_prompt` a los 10 min.** Lejos de la promesa de los 4 (no se pisan) y en un punto en que
+  quien sigue jugando es porque le gusta.
+- **`charm_unlocked` solo con la primera copia.** Las repetidas no son un desbloqueo.
+- **La promesa y la entrega usan la misma fórmula** (`GameConfig.GetOfflineGainObjects`), con el pase
+  x3 y el bonus de AFK que el jugador tenga en ese momento: la regla 2 del §3 del documento, "no
+  prometer nada que el juego no entregue", queda garantizada por construcción.
+- **`Once` se guarda en el perfil** (`SeenNotificationIds`, con techo de 64). La marca se escribe antes
+  de enviar: si fallase el guardado, el peor caso es un aviso que no se repite.
+- **Los nombres de mundo viajan como clave** (`World.Name.Desert`) y los traduce el cliente; los de
+  charm van tal cual porque el juego no los traduce en ningún sitio.
+
+### Sistema ampliado
+
+- Tres plantillas authored: `NotificationHero` (nueva), `NotificationBanner` (Card) y
+  `NotificationToast` (nueva), todas con el lenguaje del HUD.
+- Cola **ordenada por prioridad**; con la cola llena se descarta la de menor prioridad. El aviso en
+  pantalla nunca se interrumpe.
+- `NotificationService.Notify(player, id, args, extras)`: `extras` admite `ArgKeys` (parámetros que son
+  claves de localización), `Icon` y `Glyph`. Resolutores de parámetros por jugador (`RESOLVERS`).
+- Utilidad nueva `GameConfig.FormatCount` ("2,880") para cantidades que se cuentan.
+
+### Probado en Studio, por el camino real
+
+Con dos scripts de prueba authored (borrados después) que compraron un charm y pidieron un Rebirth
+**por los mismos remotes que usa el jugador**:
+
+```
+t=  5.6 Toast  Golden Trophy unlocked!                                     (glifo 🏆)
+t=  9.5 Hero   1.5x STICKINESS! / NEXT BLOCKER: 10
+t= 14.4 Hero   DESERT UNLOCKED! / GO THROUGH THE PORTAL
+t= 19.3 Card   YOUR BLOB NEVER STOPS / ...up to 8 hours. Come back tomorrow for 2,880 objects!
+t= 27.3 Card   LIKE THE GAME? / Tap the Roblox logo and hit ⭐ Favorite so you can find us again!
+```
+
+- Orden por prioridad 90 → 85 → 60 → 40 y duraciones 3 / 4 / 4 / 7 / 7 s, como en la config.
+- `Once`: primer envío `true`, segundo `false`, y los dos ids guardados en el perfil.
+- **El ⭐ se pinta con FredokaOne** (captura), la verificación que el documento pedía antes de
+  publicar. Se queda la versión con emoji.
+- `offline_claim`: con 8 h fuera la tarjeta dice `You got 2,880 objects!` — exactamente la cifra que
+  promete `offline_promise`.
+- Idiomas: los 12 textos nuevos en `es-es` y `ja-jp`, con parámetros.
+
+Fallo encontrado en la primera pasada y arreglado: al reescribir el bloque de configuración se perdió
+`MaximumQueued` y la cola del cliente reventaba al comparar. El servidor, que no lo usa, funcionó.
+
+### No implementado, a propósito
+
+- **§2, la escalera del "Don't Leave Yet".** El documento propone quitar el regalo y poner botones
+  `KEEP PLAYING` / `LEAVE`. Choca con el sistema que se aprobó y ajustó a mano: un botón `LEAVE` propio
+  no puede sacar al jugador del juego (solo el `Leave` nativo, o un `Kick`, que no es aceptable), y
+  quitar el regalo deshace la mecánica aprobada. **Pendiente de decisión**; los textos de las tres
+  condiciones están listos para aplicarse cuando se decida cómo convive con el regalo.
+- **§3, la notificación de Roblox.** Vive fuera del juego: se configura en el Creator Dashboard y se
+  envía desde Open Cloud, no desde el place. Recuento verificado: `2,880 objects are waiting! Your blob
+  kept collecting while you were away.` = **73** caracteres (bajo el tope de 99).
+- **Dos mundos desbloqueados a la vez muestran un solo banner**: la cola ignora un id repetido. En
+  juego real no ocurre (piden 8 y 16 Rebirths); solo se vio porque la prueba los desbloqueó juntos.
+- **Los disparadores de 4 y 10 min se probaron llamando a `Notify`**, no esperando: el mecanismo de
+  tiempo ya se verificó esperando los 4 minutos reales en el registro anterior.
+
+## Registro — 2026-09-16, Admin Abuse apagado otra vez
+
+`GameConfig.AdminAbuse.Enabled = false` y `StudioPreview.Enabled = false`. Verificado en Play: sin
+`RunId`, panel e icono móvil ocultos, Index cerrado, radio sin multiplicador, sin atributos
+`AdminAbuse*`, consola sin errores del juego. Para lanzarlo: `Enabled = true` + fecha real en
+`Schedule`.
+
+## Registro — 2026-09-16, notificaciones de Roblox fuera del juego (ENG-1)
+
+Texto (§3 del documento de textos): `{objects} objects are waiting! Your blob kept collecting while
+you were away.` — 73 caracteres con `2,880`, tope de Roblox 99.
+
+### Cómo funciona
+
+1. **Aceptación (cliente).** `ExperienceNotificationController` enseña el aviso nativo de Roblox
+   (`ExperienceNotificationService:PromptOptIn`) un segundo después de que termine el banner
+   `offline_promise`, y como respaldo una vez por sesión a los 6 min. Roblox no lo enseña a menores
+   de 13, a quien ya aceptó ni a quien lo vio en 30 días.
+2. **Programación (servidor).** Al salir de una sesión de más de 2 min, `ExperienceNotificationService`
+   apunta al jugador en un `MemoryStoreSortedMap` compartido por todos los servidores, con hora de
+   envío a las 8 h (cuando Offline Gains está lleno). Al entrar, su entrada se borra.
+3. **Envío.** Cada servidor vivo barre la cola cada ~60 s, reclama las entradas vencidas de forma
+   atómica (`UpdateAsync`, para que dos servidores no envíen la misma) y envía con el paquete oficial
+   *Open Cloud*. La cifra se calcula con `GetOfflineGainObjects` y el pase x3/AFK del jugador al irse:
+   promete lo que la tarjeta de vuelta entregará. Fallos: 3 intentos separados 10 min.
+
+**En reposo** (avisa una vez al arrancar, el juego no depende de él) si falta `MessageId` o, fuera
+de Studio, el paquete. **En Studio no envía nunca** (Roblox no lo permite): registra lo que enviaría.
+
+### Probado en Studio
+
+Con `MessageId` de prueba temporal y un script de prueba (borrados después):
+
+| Caso | Resultado |
+| --- | --- |
+| Se fue hace 8 h, sin pase | Enviado (simulado) con `objects=2,880`; entrada borrada |
+| Se fue hace 8 h, con pase x3 | Enviado (simulado) con `objects=8,640`; entrada borrada |
+| Se acaba de ir | No enviado; en cola para dentro de 28.799 s |
+| Vuelve antes de su hora | Cancelado; entrada borrada |
+| Segundo barrido | 0 atendidos: no reenvía |
+| **Salida real** (sesión de 2 min 20 s, parar Play) | En cola para dentro de 8 h |
+| **Vuelta real** (nuevo Play) | Entrada borrada al entrar |
+| Config real (`MessageId` vacío) | En reposo, un aviso en consola, sin errores |
+
+### Pendiente, marcado a propósito
+
+- **El envío real y el aviso de aceptación no se pueden probar en Studio.** Hay que verlos en el
+  juego publicado con una cuenta de 13+.
+- **Dos servidores reclamando la misma entrada** no se ha ejercitado (Studio tiene uno). La
+  exclusión la garantiza `UpdateAsync`, que es atómico.
+- **Menores de 13 no reciben nada**: el juego se enseña a menores desde el 9 de septiembre, así que
+  este aviso solo alcanza a parte de la audiencia.
+- **Pasos del lado del equipo** (dashboard, paquete, `MessageId`): ver el resumen entregado al usuario.
+
+---
+
+## Rework de World 1: áreas aspiradoras — Fase 0 y Fase 1 (2026-09-17)
+
+Especificación: `Rework de World 1- Áreas aspiradoras · Especificación para programación.md`.
+**Todo esto se implementa en el place laboratorio `123113535376730`, sobre `World 1 V2`.
+Producción (`95828455414780`) no se toca hasta el port-back.**
+
+### Fase 0 — aislar el laboratorio (§0). Cerrada
+
+| Punto | Qué se hizo | Dónde |
+| --- | --- | --- |
+| **DataStore aislado** | `GameConfig.Data.StoreScope = "VacuumDev"`. `DataService` lo pasa por la sobrecarga de dos argumentos de `GetDataStore` y avisa por consola al arrancar. ⚠️ **Es el campo que NO se porta**: devolverlo a vacío es el primer punto del checklist del port-back. | `GameConfig`, `DataService` |
+| **Analítica apagada** | `Analytics.ProductionPlaceId` + `RestrictToProductionPlace`, comprobados en `TelemetryService.isEnabled()`, que es la única puerta a `AnalyticsService`: cubre `TrackCustom`, `TrackEconomy`, `TrackOnboardingStep` y `TrackFunnelStep` de una vez. `GetStats()` publica `ProductionPlace` y `PlaceId` para que un QA vea por qué está a cero. | `GameConfig`, `TelemetryService` |
+| **Flag maestro** | `GameConfig.VacuumZones.Enabled`. Apagarlo devuelve el comportamiento actual sin revertir geometría. | `GameConfig` |
+| **Backup a `ServerStorage`** | ⚠️ **PENDIENTE, A MANO.** El MCP no puede crear ni clonar instancias de script dentro de `ServerStorage` (capabilities del sandbox de Studio). Hay que copiar a mano `GameConfig`, `DataService`, `TelemetryService`, `ProgressionService`, `PerkService`, `PassiveStickinessService`, `FinishService`, `DeathFlowService` y `Main`. | Studio |
+| **Congelar producción** | Decisión de equipo, no de código (§0.3). | — |
+
+### Fase 1 — vertical slice de la zona 1 (§6). Cerrada y probada
+
+**`VacuumZoneService`** (nuevo, `ServerScriptService/Server`) es la autoridad: ocupación, drenaje,
+muerte y cura. Ocupación por **punto-en-caja con la posición del servidor**, sin consultas de
+física. Tick de 0,25 s con delta real y `MaximumTickDeltaSeconds`, igual que `PassiveStickinessService`.
+
+Lo que se integró en lo que ya existía, sin crear sistemas nuevos:
+
+| Módulo | Cambio | Por qué |
+| --- | --- | --- |
+| `ProgressionService` | `SetStickinessDisplay(player, value?)` + override leído por `synchronizePlayer` | El atributo `Stickiness` lleva la **Actual** dentro de un área, así que el HUD pinta el drenaje sin tocar una línea de HUD. Sin el override, subir de nivel a mitad del cruce devolvía la barra al Total. El perfil sigue guardando el Total. |
+| `PerkService` | El `SpeedCap` se aplica como **última etapa** de `computePerk`, leyendo `VacuumSpeedCap` | §6.2.1. Escribir `Humanoid.WalkSpeed` a mano se lo pisa el siguiente recálculo de perks, y eso no da error: da un jugador que sobrevive una zona que no debería. |
+| `PassiveStickinessService` | Guarda en `isEligible`: no paga dentro de un área | §6.7. El goteo subiría el Total mientras te hacen daño, y a R0 son el 13 % del drenaje de la zona 1. |
+| `FinishService` | `RegisterRunResetHandler(handler)` | `resetRunState` es el único chokepoint de «limpia la vuelta» (muerte, cobro, ReplayPad, Rebirth, viaje). Es donde se pierden las `CompletedZone_*`, o sea las Wins no bancadas. Registro y no `require` porque la flecha va al contrario. |
+| `FinishService` | El Rebirth se deniega dentro de un área, con razón `InVacuumZone` | §7. El Rebirth pone el Total a 0: renacer a mitad del cruce es una muerte instantánea por un botón que se pulsó para progresar. |
+| `RebirthController` | Mensaje para `InVacuumZone` | Que la denegación se lea. |
+| `DeathFlowService` | `RegisterRunSnapshotProvider({Name, Capture, Restore})` | El revive es **de pago**: si las zonas cruzadas no volvieran, el jugador paga y vuelve sin lo único que estaba en juego. |
+| `Main` | `VacuumZoneService` detrás de `DeathFlowService`/`FinishService` y delante de `WinPedestalService` | Primero se cruza, luego se cobra. Nadie de más arriba depende del servicio: `PerkService` y `PassiveStickinessService` leen atributos. |
+
+**El cable crítico (§2.3):** `WinPedestalService` **no se tocó**. Solo cambia quién pone
+`CompletedZone_<ZoneId>`: ahora lo pone `VacuumZoneService` al salir vivo **por el lado lejano**
+(retroceder no cuenta) y lo borra entero al morir. El lado lejano **no se authorea**: se deriva del
+`StartSpawn` de la zona, para que no pueda quedarse al revés de la geometría.
+
+**El balance se deriva de la geometría real**, nunca de un 168 hardcodeado
+(`GameConfig.GetVacuumDrainPerSecond(recommended, area.Size.Z, effectiveSpeed)`). Se authorea un
+solo número por área, `RecommendedStickiness`; `SafetyMargin = 1.2` es el dial de dificultad de
+todo el modo.
+
+**La muerte** reutiliza lo construido: succión al `VacuumProp` más cercano (la única vez que un prop
+ejecuta algo) y después `DeathFlowService.TryStartDeath` con el `FailVolume` **authored de la zona**,
+que ya existe con su `FailVolumeId`. No se construye la caída, y la analítica de muerte sale con su
+id real en vez de depender de que la física acierte el agujero.
+
+### Instancias authored creadas (zona 1)
+
+`Workspace.StuckToYou.World 1 V2.Zones.ToyRoom.Vacuum/`
+
+| Instancia | Medida | Tags y atributos |
+| --- | --- | --- |
+| `VacuumArea` | `96 × 38 × 168`, el CFrame del `PlacementArea` de la sala | tag `VacuumZone` · `ZoneId=ToyRoom` `WorldId=World1` `RecommendedStickiness=10` `SpeedCap=22.4` `Order=1` |
+| `VacuumProp_Left` / `_Right` | `11 × 38 × 160`, a los lados, sin colisión | tag `VacuumProp` · `ZoneId=ToyRoom` **y nada más** |
+
+La transparencia del área se dejó en 0,9 a propósito (greybox legible); ponerla a 1 es decisión del
+editor. El `PlacementArea` de la sala **sigue ahí**: retirarlo es §9 y va con la Fase 3, o el juego
+se queda sin ningún sitio donde farmear.
+
+### Probado en Studio (Play, arnés `ServerScriptService.VacuumZoneTestHarness`) — 23/23
+
+| Caso | Resultado |
+| --- | --- |
+| DataStore con scope propio | PASS `scope = VacuumDev` |
+| Analítica apagada fuera de producción | PASS `Enabled=false ProductionPlace=false` |
+| Escalera derivada contra la tabla de §4 | PASS `1,1 · 11,1 · 38,9 · 111 · 333 · 1.000 · 3.333 · 8.333 · 16.667 · 36.667` /s |
+| El margen es el de diseño | PASS aguanta/cruce = 1,200 (9,00 s sobre 7,50 s) |
+| Redimensionar el área conserva el requisito | PASS con 220 de fondo el margen sigue en 1,200 |
+| Área sin `RecommendedStickiness` o sin fondo | PASS drenaje 0, avisa y sigue |
+| Área registrada desde el tag | PASS `ToyRoom order=1 rec=10 depth=168 cap=22.4 drain=1.11 exit=-Z fail=yes props=2` |
+| Entrar publica zona, tope y razón visible | PASS |
+| El atributo replicado lleva la **Actual** | PASS `Stickiness=39.13` con `Total=40` |
+| El Total del perfil no se mueve dentro del área | PASS |
+| **Subir de nivel DENTRO del área conserva el tope** | PASS `22.4 → 22.4` (el fallo de §6.2.1) |
+| El goteo pasivo no tickea dentro del área | PASS `80 → 80` en 1,5 s |
+| Salir cura del todo | PASS `Actual = Total` |
+| Salir borra el tope y la zona; el perk vuelve a `22.6425` | PASS |
+| **Salir retrocediendo NO marca la zona** | PASS `CompletedZone_ToyRoom = false` |
+| **Cruzar por el lado lejano SÍ la marca** | PASS `CompletedZone_ToyRoom = true` |
+| Morir no cuesta Stickiness | PASS `80,23 → 81,46` (+1,23 = goteo del lobby durante el retorno) |
+| Morir devuelve al inicio del mundo | PASS a 6 studs del `StartSpawn` |
+| **Morir pierde las `CompletedZone` no bancadas** | PASS |
+| Morir deja curado, sin tope y sin zona | PASS |
+| No quedan jugadores marcados dentro | PASS |
+
+### Pendiente, marcado a propósito
+
+- **El backup a `ServerStorage`** (arriba). El MCP no puede hacerlo.
+- **`ServerScriptService.VacuumZoneTestHarness` es temporal y va al «montón C» del port-back.**
+  Está cerrado con `RunService:IsStudio()`, así que en producción no corre, pero es deuda.
+- **Con el lobby todavía sin ser la mina (Fase 3), un jugador nuevo entra a la zona 1 con Total 0 y
+  muere en el primer tick.** Es el comportamiento correcto del modo nuevo (§7) y lo arregla la
+  Fase 3, no un parche aquí.
+- **Áreas solapadas:** gana el drenaje **mayor** y el tope del área de mayor `Order`. La decisión no
+  está en la especificación; se eligió lo que no puede ser más suave que una sola aspiradora.
+- **Sin probar en móvil.** El recorte visual (Fase 2) es donde importa, y todavía no existe.
+- Fases 2 a 7 sin empezar: lectura visual, lobby como mina, las 10 zonas, powerups y bolsas
+  seguras, instrumentación (§8) y port-back.
+
+---
+
+## Rework de World 1: Fases 2, 4, 5 y 6 (2026-09-17)
+
+Continuación de la sesión anterior. Sigue todo en el place laboratorio `123113535376730`.
+**Producción no se ha tocado.**
+
+### Fase 2 — lectura visual (§6.4). Cerrada y probada
+
+El recorte de assets **nunca destruye un record lógico**. `AttachmentRenderer` gana un recorte por
+razón sobre el mismo pool y las mismas colas que ya tenía:
+
+| Pieza | Qué se hizo |
+| --- | --- |
+| `AttachmentRenderer.SetSuctionState(userId, ratio, target)` | Única entrada nueva. Guarda la razón por dueño y reconcilia en el acto. `OwnerState` gana `VisibleRatio` y `SuctionTarget`. |
+| `reconcileOwner` | Recorta por la **cola** de la pila (se van los más recientes, vuelven en el mismo orden). `hideVisual` quita el visual **sin tocar el record**, al contrario que `removeMetadata`. |
+| `startSuction` / `processSuctions` | Las piezas recortadas **vuelan al `VacuumProp`** en vez de desvanecerse. Reutiliza el `Heartbeat` compartido y los campos de vuelo que ya existían; techo de 12 vuelos simultáneos y lo que pase de ahí se recicla en el sitio, sin animación. |
+| `Workspace.StickyDiscards` | Carpeta técnica y transitoria donde viven las piezas mientras vuelan, aparte del contenedor del jugador para que el vuelo sobreviva a un respawn o a un cambio de LOD. |
+| `VacuumZoneController` (nuevo, cliente) | Traduce los atributos replicados en el recorte y en la viñeta. Recorre **todos** los jugadores: ver la bola de otro encogerse mientras cruza es la mejor enseñanza del modo y no cuesta un remote. |
+| `StarterGui.StickyHUD.VacuumOverlay` | Viñeta authored (CanvasGroup + 4 bordes con degradado). El código solo escribe `Visible` y `GroupTransparency`. |
+
+**Desviación consciente de la especificación.** §6.4 escribe `floor(ownBudget * ratio)`, que es
+correcto para una pila saturada pero se rompe donde importa: un jugador con 12 objetos y la barra
+al 50 % seguiría viendo sus 12 hasta que la barra bajara del 11 %, o sea **no vería nada irse
+mientras se muere**. Se recorta contra la pila real (`floor(#Order * ratio)`), así que la mitad de
+la barra es la mitad de los objetos para todo el mundo.
+
+### Fase 4 — las 10 zonas (§4, §6.6, §9). Cerrada y probada
+
+- **10 áreas + 20 aspiradoras + 10 letreros** authored, uno a uno, en `Zones/<zona>/Vacuum/`.
+  Las 10 áreas copian el `CFrame` y el `Size` del `PlacementArea` de su sala (los diez son
+  exactamente `96 × 38 × 168`). Las rotaciones de las zonas (0°, 90°, 180°) se resuelven en
+  **espacio local**, sin un caso especial por zona.
+- **`GameConfig` manda sobre el atributo authored**, igual que `BlockerService.syncRequiredStickiness`
+  y por la misma razón: `RecommendedStickiness` y `Order` se reescriben desde
+  `zone.BlockerRequiredStickiness` y `zone.Order` en cada arranque. La escalera de balance del
+  10-sep se reutiliza tal cual y un rebalanceo futuro arrastra las áreas solo. Si la cifra viviera
+  solo en el Workspace, se congelaría y **el letrero empezaría a mentir en silencio**.
+- **Letreros:** `ZoneSignController` (nuevo, cliente) los pinta por clave. Dos entradas nuevas en el
+  `LocalizationTable` authored (`VacuumSign.Zone`, `VacuumSign.Recommended`) **con sus 15 idiomas**.
+  Pasan por la cura del `TextBounds = 0`, que se expuso como `ObjectLabelController.HealLabel` en
+  vez de duplicar la cola y su `Heartbeat`.
+- **Blockers retirados (§9), pero en runtime y no en el editor.** Es la decisión que importa:
+  borrar el tag a mano dejaría el flag maestro a medias (apagarlo devolvería el drenaje al reposo
+  pero no las puertas, y el laboratorio quedaría sin ninguna de las dos). `VacuumZoneService`
+  retira el tag **y la colisión** de las puertas de las zonas que ya tienen área, y las devuelve en
+  `Destroy`. Arrancar con `VacuumZones.Enabled = false` deja World 1 exactamente como está hoy.
+  ⚠️ Retirar el tag no bastaba: las 10 puertas son 4 partes sólidas cada una y lo que las abre hoy
+  es presentación del cliente al absorber el blocker.
+- **§4.5, trails y auras:** implementada la palanca que el documento recomienda. **Dos ejes
+  distintos con techos distintos, y por eso no se componen:** el trail da `Resistance`
+  (`D_efectivo = D × (1 − R)`, techo **0.40 PLACEHOLDER**) y el aura da `Recovery`
+  (`heal × (1 + R)`, techo **0.50 PLACEHOLDER**). La pendiente **se calcula, no se elige**
+  (`index / count`), así que el tier 15 toca su techo exacto y el tier 1 ya da algo.
+  El letrero calcula con resistencia 0 a propósito: **miente hacia el lado seguro**.
+
+### Fase 5 — powerups y bolsas seguras (§5.3, §6.5). Cerrada y probada
+
+- **40 powerups + 10 bolsas seguras** authored. Los powerups van **hacia las paredes**, o sea hacia
+  las aspiradoras: la línea rápida es segura y pobre, el desvío es rico y caro. La bolsa va a medio
+  camino entre la ruta directa y los powerups del lado izquierdo (`DrainMultiplier = 0.25`);
+  ponerla en el centro habría hecho la ruta directa aún más segura y habría matado la decisión.
+- **`ZonePowerupService`** (nuevo): validación autoritativa con el contrato que ya existía
+  (`PlayerCharacterUtil` contra la posición del servidor, token bucket, personaje vivo). **No hay
+  remote de petición**: el cliente no puede pedir una recogida.
+- **Por jugador aunque la instancia sea compartida.** Un reloj por (jugador, powerup); apagar un
+  orbe para un jugador es una escritura **local** del cliente. Cero instancias por jugador.
+- **El bono se denomina en objetos equivalentes**, nunca en Stickiness absoluta
+  (`BonusObjects × GetStickinessPerObject`). Es el cuarto sitio donde este proyecto podía repetir
+  ese error y no lo hace.
+- **El clamp es la mecánica**, no una precaución: `Heal` recorta al Total, y de ahí sale gratis que
+  el aura valga más cuanto más profundo vas.
+
+### Fase 6 — instrumentación (§8). Cerrada y probada
+
+Cinco eventos nuevos en `AnalyticsSchema` y su cableado en `GameAnalyticsService`.
+
+**La decisión que hace que sirvan para algo:** los tres eventos de zona llevan
+`CustomField02 = Ratio_*` (el nuevo `StickinessRatioBucket`) **en vez del bucket de Rebirth**. Con
+el ratio como dimensión, la curva de supervivencia sale de dividir `VacuumZoneCleared` entre
+`VacuumZoneEntered` agrupando por ratio y zona. Con el ratio metido en el `value` no saldría: un
+promedio no es una curva. Los bordes se aprietan alrededor de 1,0 porque ahí está el criterio de
+lectura: **si al ratio 1,0 la supervivencia no está entre el 60 % y el 70 %, `SafetyMargin` está
+mal y es un solo número el que hay que mover.**
+
+| Evento | value | CustomField02 | CustomField03 |
+| --- | --- | --- | --- |
+| `VacuumZoneEntered` | 1 | `Ratio_*` | `Zone_*` |
+| `VacuumZoneCleared` | % de barra que sobró | `Ratio_*` (el de ENTRADA, reconstruido) | `Zone_*` |
+| `VacuumZoneDeath` | Wins no bancadas que pierde | `Ratio_*` | `Zone_*` |
+| `VacuumWinsBanked` | Wins cobradas | `Depth_NN` | `Zone_*` |
+| `VacuumPowerupCollected` | 1 | `Zone_*` | `Item_powerup.*` |
+
+Dos detalles que no son opcionales:
+- **La foto de profundidad.** Los `BindableEvent` de Roblox entregan **en diferido**, así que cuando
+  el pedestal avisa de un cobro, `FinishService` ya reinició la vuelta y el conjunto está vacío.
+  Sin la foto que `clearCompleted` guarda antes de borrar, la profundidad de cada cobro se
+  registraría como 0 y el dato de push-your-luck —el único que dice si el modo funciona— sería una
+  columna de ceros.
+- **`GameAnalyticsService` consume BindableEvents y no atributos**, que es su única excepción a
+  "solo observo atributos". Entrar, cruzar y morir son **hechos**, no estados: un cruce de 7,5 s
+  cabe entre dos lecturas de un observador a 0,25 s, y —lo que de verdad importa— un observador de
+  atributos **no podría distinguir cruzar de morir**, que es justo la división de la que sale la
+  curva.
+
+⚠️ **Cuando llegue el A/B** habrá que meter el bucket del experimento como CustomField. Los tres
+campos están ocupados, así que la decisión será sacrificar `CustomField01` (el mundo): mientras el
+modo solo exista en World 1 no aporta nada.
+
+### Probado en Studio — 8 secciones de servidor y 3 informes de cliente, todo verde
+
+Arneses temporales `ServerScriptService.VacuumZoneTestHarness` y
+`StarterPlayerScripts.VacuumVisualTestHarness` (los dos cerrados con `RunService:IsStudio()`).
+
+**Lo que de verdad demuestra la Fase 2** (163 muestras, 0 descuadres, los records intactos):
+
+| RAZÓN | DIBUJADOS | ESPERADOS | LÓGICOS | VOLANDO |
+| --- | --- | --- | --- | --- |
+| 0,962 | 10 | 10 | 11 | 0 |
+| 0,528 | 5 | 5 | 11 | 2 |
+| 0,203 | 2 | 2 | 11 | 1 |
+
+| Caso | Resultado |
+| --- | --- |
+| El recorte sigue a la razón publicada | PASS · 0 descuadres de 163 muestras |
+| **Los records lógicos NO se destruyen** | PASS · 11 antes y 11 después del cruce |
+| Al salir se dibuja la pila entera otra vez | PASS |
+| Piezas volando al prop, y el techo se respeta | PASS · máximo 5 simultáneas de 12 |
+| `StickyDiscards` se vacía solo tras el cruce | PASS |
+| La viñeta aparece bajo `WarnRatio` y se apaga al salir | PASS |
+| Las 10 áreas registradas con su drenaje derivado | PASS · `1,1 · 11,1 · 38,9 · 111 · 333 · 1.000 · 3.333 · 8.333 · 16.667 · 36.667` /s |
+| La escalera sale de `GameConfig`, no del atributo | PASS · las diez coinciden |
+| Ninguna puerta de World 1 tagueada, 10 arcos de decorado, 0 partes sólidas | PASS |
+| Resistencia y recuperación: neutro 0, tier 15 en su techo exacto, id desconocido al neutro | PASS |
+| 40 powerups y 10 bolsas registradas | PASS |
+| **La bolsa segura reduce el drenaje a su multiplicador** | PASS · 1,147/s en la línea rápida vs **0,289/s** dentro (teórico 1,111 y 0,278) |
+| Pisar un orbe lo cobra y CURA | PASS · 2.504,86 → 2.553,69 (bono 50 objetos × 1,0) |
+| Y nunca pasa del Total | PASS · curar 10.000 sobre 5.012,31 deja 5.012,31 |
+| El mismo orbe no se cobra dos veces en su respawn | PASS |
+| Curar fuera del área se rechaza | PASS |
+| Los 5 eventos declarados; el ratio 1,0 en su propio bucket | PASS |
+| Los 4 productores disparan con su carga (ratio, margen, wins no bancadas, clase) | PASS |
+| La profundidad sobrevive al reinicio de la vuelta | PASS · 1 → 1 |
+| Letreros: todo letrero replicado lleva su cifra, y se traduce | PASS · `ZONA 1` / `10 RECOMENDADO` en es-es |
+
+**Dato operativo:** con `StreamingEnabled`, el cliente solo tiene replicados **3 de los 10
+letreros** estando en el lobby. `ZoneSignController` los registra solos cuando llegan
+(`GetInstanceAddedSignal`), así que es correcto — pero cualquier prueba de cliente que cuente
+instancias del mundo tiene que contar contra lo replicado, no contra lo authored.
+
+### Pendiente, marcado a propósito
+
+- **Fase 3 (el lobby como mina) — BLOQUEADA POR DISEÑO DE NIVEL, no por código.** El lobby no
+  tiene un suelo que el sistema de colocación pueda usar: son **185 piezas y ninguna con huella
+  mayor de 2.000 st²**, porque el suelo es arte modular dentro de `Art/SM_Level_1_Lobby`, no una
+  parte en `Geometry`. `ItemPlacementService` lanza rayos **contra la carpeta `Geometry` de la
+  zona**, así que hasta que exista un suelo ahí el lobby produce 0 slots. Y decidir dónde va una
+  mina de 1,5–2× una zona, con su gradiente de requisito legible, es una decisión que hay que tomar
+  mirando el nivel. Lo que falta, en orden:
+  1. Un suelo en `Lobby/Geometry` que cubra la huella de la mina (greybox vale).
+  2. `Lobby/PlacementArea` y `Lobby/Blockers` (vacía), y el tag `StickyZone` con `ZoneId = "Lobby"`.
+  3. Una entrada `Lobby` en `GameConfig.Zones` (`TotalObjects` escalado en proporción al área;
+     con 2× serían 64, y `Collection.MaxRenderedPerRoom = 60` es el techo real).
+  4. `World1.StartZoneId = "Lobby"` para que todo retorno al inicio abra la sesión de la mina, más
+     dos líneas en `WorldRegistry` para que busque la zona de inicio también fuera de `Zones/`.
+  5. El gradiente **espacial** de requisito: hoy `RoomItemService` empareja planes con slots
+     barajados, así que "barato cerca del spawn, caro al fondo" necesita ordenar los slots por
+     distancia al `StartSpawn`. Es un cambio pequeño y localizado en `openSession`.
+  6. Retirar los `PlacementArea` de las 10 zonas (§9) — **y no antes**, o el juego se queda sin
+     ningún sitio donde farmear.
+- **Fase 7 (port-back).** No se toca: necesita el otro place abierto y es decisión humana.
+  El «montón C» de retiradas, hasta ahora: los `PlacementArea` de las 10 zonas, los dos arneses de
+  prueba, `GameConfig.Data.StoreScope` (a `""`) y `Analytics.RestrictToProductionPlace` (a `false`,
+  con el CustomField `variant` puesto).
+- **Los techos de `Resistance` y `Recovery` son PLACEHOLDER** (0.40 y 0.50) hasta cronometrar una
+  corrida completa. La resistencia entra en el denominador de la supervivencia, así que crece de
+  forma no lineal: 0,40 da ×1,67 de tiempo y 0,90 daría ×10, o sea la zona 10 gratis.
+- **La corrida completa cronometrada de §4.4 (~115 s) no se ha medido**, porque necesita la mina.
+  Con ella sale el grifo de Wins real y con él la revisión de precios de Desert y Lava.
+- **El backup manual a `ServerStorage`** sigue pendiente (el MCP no puede crear instancias de
+  script ahí).
+- **Publicar a mano**: el MCP no expone Save/Publish.
+- **Sin probar en móvil.** El recorte por pool y el techo de vuelos simultáneos existen justo para
+  eso, pero medirlo requiere un dispositivo.
+- **`FinishService.completeRun` ya no se dispara** en World 1: colgaba de `BlockerService.ConnectAbsorbed`
+  y las puertas están retiradas. Consecuencia: `RunCompleted`, `LastRunStickiness` y el ReplayPad de
+  la FinishZone quedan inertes en World 1. El bucle real del modo nuevo es el pedestal, no el
+  ReplayPad, así que no se ha sustituido — pero hay que decidirlo antes del port-back.
+- **Los trofeos de blocker ya no se pegan** a la bola en World 1 (`AttachmentService.onAbsorbed`
+  colgaba del mismo evento). Es una consecuencia directa de §9 que la especificación no menciona.
+
+### Decisiones del usuario (2026-09-17, cierre de sesión)
+
+- **§4.5 confirmada tal como está implementada:** trail → `Resistance` (techo **0,40**), aura →
+  `Recovery` (techo **0,50**), los dos como PLACEHOLDER hasta cronometrar una corrida completa.
+- **Fase 3: greybox, con el sitio que indique el usuario.** Medición del lobby actual para decidir:
+  suelo real en `x 12.950–13.050`, `z 200–360`, a `y ≈ 1` — unos **16.000 st², casi exactamente una
+  zona** (16.128), no las 1,5–2× que pide §5.5. A los lados (`x 12.900` y `13.100`) hay estructura
+  alta; en `z 400` hay una plataforma elevada a `y = 71` y en `z 450` no hay suelo. El
+  `StartSpawn` de ToyRoom está en `z = 247`, o sea **dentro** de esa huella, y el área de la zona 1
+  acaba en `z = 88`: el lobby y el inicio ya son continuos.
+
+---
+
+## Rework de World 1: Fase 3 — el lobby como mina (2026-09-17)
+
+Sitio elegido por el usuario: **el suelo del lobby que ya existe**, `x 12.950–13.050`, `z 200–360`.
+
+### Lo que se construyó
+
+| Instancia | Qué es | Por qué así |
+| --- | --- | --- |
+| `Lobby/Geometry/Mine_Floor` | Losa **invisible y sin colisión**, `100 × 2 × 160`, cara superior en `y = 1` | `ItemPlacementService` lanza rayos **contra la carpeta `Geometry` de la zona**, y el suelo del lobby es arte modular dentro de `Art/` (185 piezas, ninguna con huella > 2.000 st²). Una losa que el rayo ve y el jugador no cuesta cero y **no cambia el arte ni un píxel**. |
+| `Lobby/PlacementArea` | `100 × 38 × 160` — 16.000 st² | Se localiza **por nombre**, no por tag (`Placement.PlacementAreaName`). |
+| `Lobby/Blockers` | Carpeta vacía | `RoomService` la exige. La mina no tiene puertas, y eso es correcto, no un olvido. |
+| `Lobby/StartSpawn` | Part invisible en `(13000, 1, 247)` | **Es el origen del gradiente** y el radio de exclusión de objetos. Va donde el jugador aterriza de verdad: el `StartSpawn` de ToyRoom cae dentro de la huella del lobby. Es un `Part` y no un `SpawnLocation` a propósito: un segundo spawn neutral repartiría los respawns entre los dos. |
+| Tag `StickyZone` + `ZoneId = "Lobby"` | El contrato de zona | |
+
+### Las tres decisiones de código
+
+**1. La mina va en `GameConfig.Mines`, no en `GameConfig.Zones`.** Meterla en `Zones` la colaba en
+todo lo que recorre esa lista dando por hecho que son cruces: el bucle de escala de economía hace
+`zone.WinReward * escala` y reventaba con un `nil`, y `GetWorldZones("World1")` pasaba a devolver
+**once**, así que la pantalla de mundos habría anunciado once zonas y los pasos del embudo
+`WorldRun` se habrían desplazado uno. `GetZone` consulta las dos listas; nada más cambia.
+
+**2. `CurrentZoneId` se queda en `"Lobby"` también mientras cruzas.** Es lo contrario de lo que
+hacía el modo viejo, y la razón es la sesión de objetos: `RoomItemService` abre y cierra una por
+cada cambio de zona. Si la zona lógica siguiera al área, **una corrida completa abriría y cerraría
+once sesiones** —planificar 32 objetos, generar slots y reenviar el manifiesto once veces por
+vuelta— para que diez de esas once no tengan un solo objeto que dar. Manteniéndola en el lobby, la
+mina se planifica una vez y **sigue ahí cuando vuelves, con los objetos donde los dejaste**.
+Lo que necesitaba «en qué área estoy» no depende de esto: está `VacuumZoneId`.
+
+Se reafirma en cada tick de fuera del área porque `ProgressionService.ResetRun` la devuelve al
+`StartZoneId` en cada muerte, cobro, ReplayPad, Rebirth y viaje. En vez de perseguir esos cinco
+caminos, el valor correcto se restablece solo. **Solo actúa si el mundo declara `LobbyZoneId`**, que
+solo declara World 1: los mundos 2 y 3 siguen exactamente igual.
+
+**3. Las diez zonas dejan de dar objetos sin borrar nada.** Sin cambio de `CurrentZoneId` no se abre
+sesión, así que sus `PlacementArea` quedan **inertes** en el Workspace. §9 pide borrarlas; se dejan
+para el port-back (borrar geometría es irreversible y no se hace sin pedirlo).
+
+### Dos bugs reales encontrados y corregidos
+
+- **El HUD reventaba en la mina.** `HUDController` y `FeedbackController` leían
+  `zone.BlockerRequiredStickiness` sin comprobar que existiera, y una mina no tiene puerta. Ahora
+  el HUD cambia de pregunta: en la mina la línea dice **cuál es el primer cruce que todavía no
+  aguantas** (`ZONE 4  1.2K / 1K`), que es el número que decide cuándo dejas de farmear y te lanzas,
+  y `ALL ZONES OPEN` cuando aguanta las diez. Ayudante compartido: `GameConfig.GetNextZoneRequirement`.
+- **El gradiente salía invertido.** El respaldo geométrico (sin `StartSpawn`, medir desde el borde
+  `+Z` del área) eligió el lado contrario por el que se entra al lobby, así que los objetos de
+  150.000 aterrizaban justo donde cae el jugador nuevo — que se lee como «todo está bloqueado», el
+  mensaje contrario al que el gradiente existe para dar. **Se quitó el respaldo**: por qué lado se
+  entra es una decisión de nivel, así que hay `StartSpawn` authored o no hay gradiente (con aviso).
+
+### Probado en Studio — sección 9 del arnés
+
+| Caso | Resultado |
+| --- | --- |
+| El lobby es una zona resoluble y `RoomService` la registra desde su tag | PASS · `Order=0 TotalObjects=32` |
+| `CurrentZoneId` es el lobby fuera de las áreas | PASS |
+| **El área da los slots que pide la mina** (el criterio de §5.5) | PASS · **64 slots** generados para 32 objetos (105 intentos, 41 rechazados) |
+| La sesión abierta es la del lobby y está llena | PASS · 32 de 32 activos |
+| **Hay objetos elegibles a Stickiness 0** (bloquea el arranque) | PASS · **16 gratis de 32**, mínimo de diseño 4 |
+| **`CurrentZoneId` sigue siendo el lobby DENTRO de un área** | PASS · `CurrentZoneId=Lobby  VacuumZoneId=ToyRoom` |
+| La sesión de la mina no se cierra al cruzar | PASS · misma generación antes y después |
+| Tras reiniciar la vuelta la zona vuelve al lobby sola | PASS |
+| El gradiente ordena de barato a caro con la distancia | (ver la corrida final) |
+
+### Pendiente de la Fase 3
+
+- **La mina es 1× una zona (16.000 st²), no las 1,5–2× que pide §5.5.** Con 32 objetos conserva
+  exactamente la densidad de una sala de hoy, que es lo que sostiene el ritmo de 1,43–1,64 obj/s,
+  pero el diseño quería más sitio. Agrandarla es mover el `PlacementArea` y el `Mine_Floor` y subir
+  `TotalObjects` en proporción; el techo real es `Collection.MaxRenderedPerRoom` (60).
+- **El gradiente de requisito (`{0, 350, 9.000, 150.000}` con pesos `{6,3,2,1}`) es una primera
+  pasada**, a reafinar con la corrida cronometrada.
+- **Borrar los `PlacementArea` de las diez zonas** (§9) — van al montón C del port-back.
+
+### Corrida final de verificación (todas las fases juntas)
+
+9 secciones de servidor y 4 informes de cliente, **cero fallos**. Lo que demuestra el bucle
+completo del modo nuevo, medido en una sola pasada:
+
+```
+objetos pegados tras farmear EN LA MINA: 5
+
+RAZON   DIBUJADOS  ESPERADOS  LOGICOS  VOLANDO
+1.000           4          4        5        1
+0.856           4          4        5        0
+0.554           2          2        5        1
+0.326           1          1        5        1
+0.137           0          0        5        1
+```
+
+El jugador farmea en el lobby, entra a la zona 1 con su pila, y la pila se recorta en proporción
+a la barra mientras las piezas vuelan hacia la aspiradora — **con los 5 records lógicos intactos
+de principio a fin**. 42 muestras, 0 descuadres.
+
+| Medición | Resultado |
+| --- | --- |
+| Drenaje real en la línea rápida | **1,167 /s** (teórico 1,111) |
+| Drenaje dentro de la bolsa segura | **0,255 /s** (teórico 0,278, multiplicador 0,25) |
+| Slots de la mina | **64** para 32 objetos pedidos |
+| Objetos elegibles a Stickiness 0 | **16 de 32** (mínimo de diseño 4) |
+| Gradiente de requisito | cercana **66** · lejana **31.047** |
+
+### Corrección (2026-09-18): los arneses quedan APAGADOS por defecto
+
+Los dos arneses se dejaron activos por error y corrían solos en cada Play: caminaban al blob por
+la mina, lo teletransportaban entre zonas, le forzaban muertes y le bajaban la barra a mano
+durante unos cinco minutos. Una sesión normal parecía que el personaje se movía solo — porque se
+movía solo.
+
+Ahora los dos empiezan con `local ENABLED = false`. Para volver a verificar el rework hay que
+ponerlo a `true` **en los dos a la vez** (el del servidor conduce, el del cliente mide), dar a
+Play, leer la consola y devolverlos a `false`.
+
+Verificado tras el cambio: consola limpia y el personaje **0,00 studs en 3 segundos**.
+
+⚠️ **Lo que SÍ es comportamiento correcto y parece un bug:** entrar a una zona con poca Stickiness
+mata en el acto. La aspiradora más cercana te absorbe y apareces en el lobby. A Stickiness 0 la
+zona 1 mata en el primer tick, y eso es exactamente lo que dice §7 — el letrero ya avisaba. Para
+probar un cruce hay que farmear primero en la mina.
+
+## Registro — 2026-09-18, sacudida del HUD al subir un valor
+
+Cada vez que sube una cifra del jugador, el elemento del HUD que la muestra da una sacudida
+corta. Antes, un contador que subía solo cambiaba de dígitos: el jugador que está mirando el
+mundo no se enteraba.
+
+### Lo que se construyó
+
+- `StarterPlayer.StarterPlayerScripts.Client.UIShake` — módulo nuevo y reutilizable. Un solo
+  `Heartbeat` para todos los elementos, que se desconecta solo cuando nadie está temblando.
+  0.16s, 3 oscilaciones, ±3°.
+- `HUDController` — dispara la sacudida en `update()` para Stickiness (la etiqueta),
+  Rebirths y Wins (el contador entero: icono + cifra). `Destroy` llama a `UIShake.StopAll()`.
+
+### Las tres decisiones de código
+
+1. **Se anima `Rotation`, no `Position`.** La posición de las etiquetas del HUD la mandan el
+   editor y `ResponsiveLayout`; escribirla desde aquí dejaría el elemento clavado en un
+   desplazamiento nuestro si la sacudida se corta a medias. `Rotation` no participa en el
+   layout (los contadores viven en un `UIListLayout` y no empujan a sus vecinos) y ningún
+   otro sistema del juego la escribe sobre un `GuiObject` — verificado por búsqueda.
+2. **Una sacudida por elemento, no una por subida.** La Stickiness sube varias veces por
+   segundo en una racha. Una subida durante la sacudida reinicia el reloj de la que ya hay,
+   en vez de sumar otro bucle sobre el mismo elemento.
+3. **Solo hacia arriba.** Un Rebirth pone la Stickiness a cero; sacudir por eso premiaría
+   una pérdida. El primer pintado tampoco sacude: está estrenando el HUD, no celebrando nada.
+
+### Probado en Studio (Play, muestreo de `Rotation` por frame)
+
+| Prueba | Resultado |
+| --- | --- |
+| `Wins` +1 y `Rebirths` +1 | Ambos contadores oscilan +2.67° → −1.54° → … y vuelven a 0.00 en ~0.16s |
+| Reposo tras la sacudida | `Rotation` exactamente 0, sin residuo ni texto torcido |
+| Racha: 10 subidas de Stickiness a 0.05s (más rápido que la sacudida) | Pico 2.71° — no se acumula; reposo final 0 |
+| Consola de Studio | Sin errores ni warnings |
+
+## Registro — 2026-09-22, Máquina aspiradora M4: el pool de World 1
+
+Plan: `VacummFeature/PLAN_IMPLEMENTACION.md` §4 M4. Detalle técnico y contratos en `PROJECT_MEMORY.md` (misma fecha).
+
+- [x] Sorteo en servidor (`VacuumDraw`, puro) con duplicados, pesos por item 18/11/6
+- [x] Reembolso 40 % sobre el precio **pagado**; piedad 5 persistida (`VacuumDupStreak`)
+- [x] Contador por item (`BlobElementCopies`), sitio hecho para las variantes
+- [x] Primera tirada de la cuenta a 250 (`VacuumPullCount`)
+- [x] `COMPLETA`: la máquina no cobra con el pool entero
+- [x] `PendingPull` con precio pagado (`pool|precio`); acepta la marca de M3
+- [x] Revelado: ruleta, premio nuevo (`EQUIP`/`CONTINUE`) o duplicado (`YA LO TIENES` + reembolso + pip) en el mismo frame
+- [x] Cartel: precio de primera tirada, pips de piedad, `COMPLETE`
+- [x] 14 claves nuevas en 15 idiomas
+- [x] **Bug previo arreglado:** el Residuo de recoger no se copiaba al perfil al guardar
+- [ ] Reconectar a mitad de racha en servidor real
+- [ ] Cortar el servidor entre cobro y concesión (heredado de M3)
+
+### Probado en Studio (Play)
+
+| Prueba | Resultado |
+| --- | --- |
+| Simulación 2 × 12.000 contra el código real | PASS · mediana 16, P90 21, racha máx. 5, 56 % duplicados |
+| Primera tirada 249 / 250 | PASS · no cobra / cobra 250 |
+| Precio pleno 849 / 850 | PASS · no cobra / cobra 850 |
+| 12 tiradas: saldo, racha y DataStore | PASS · −850 nuevo, −510 duplicado, memoria = DataStore |
+| Pool completo | PASS · 0 cobros, cartel `COMPLETE 7 / 7` |
+| Piedad con racha 5 | PASS · 6/6 el item que faltaba (control racha 4: 5/6 duplicado) |
+| `PendingPull` nuevo / M3 | PASS · devuelve 250 / 850 y el DataStore lo guarda |
+| Panel nuevo y duplicado | PASS · verificado en captura |
+| Muerte con el panel abierto | PASS · panel y blur fuera, lock suelto por timeout |
+| Idioma no-origen | PASS · `es-es`, `ja-jp`, `pt-br` (`Translator:FormatByKey`) |
+| Consola | PASS · sin errores |
+
+⚠️ Sin guardar ni publicar. Backup en `ServerStorage.VacuumM4Backup_20260922`.
