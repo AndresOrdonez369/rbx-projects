@@ -1,6 +1,8 @@
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
+local OwnBaseController = require(script.Parent.OwnBaseController)
+
 local ThawTimerController = {}
 
 local THAW_VISUALS_FOLDER_NAME = "ThawVisuals"
@@ -151,16 +153,17 @@ function ThawTimerController.Start(): ()
     end
     started = true
 
-    local prototypeBase = Workspace:WaitForChild("PrototypeBase")
-    local thawVisuals = prototypeBase:WaitForChild(THAW_VISUALS_FOLDER_NAME)
-    assert(thawVisuals:IsA("Folder"), "Workspace.PrototypeBase.ThawVisuals must be a Folder")
+    task.spawn(function()
+        local thawVisuals = OwnBaseController.WaitForOwnBase():WaitForChild(THAW_VISUALS_FOLDER_NAME)
+        assert(thawVisuals:IsA("Folder"), string.format("%s must be a Folder", thawVisuals:GetFullName()))
 
-    for _, descendant in thawVisuals:GetDescendants() do
-        watchPossibleVisual(descendant, thawVisuals)
-    end
+        for _, descendant in thawVisuals:GetDescendants() do
+            watchPossibleVisual(descendant, thawVisuals)
+        end
 
-    thawVisuals.DescendantAdded:Connect(function(descendant)
-        watchPossibleVisual(descendant, thawVisuals)
+        thawVisuals.DescendantAdded:Connect(function(descendant)
+            watchPossibleVisual(descendant, thawVisuals)
+        end)
     end)
 
     RunService.Heartbeat:Connect(function(deltaTime)

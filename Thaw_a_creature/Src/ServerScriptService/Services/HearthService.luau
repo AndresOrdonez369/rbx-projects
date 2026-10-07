@@ -3,9 +3,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
 local shared = ReplicatedStorage:WaitForChild("Shared")
-local GameConfig = require(shared:WaitForChild("GameConfig"))
 local HearthConfig = require(shared:WaitForChild("HearthConfig"))
 
+local BaseService = require(script.Parent.BaseService)
 local PlayerStateService = require(script.Parent.PlayerStateService)
 
 local HearthService = {}
@@ -16,8 +16,6 @@ local gameplayEvent = remotes:WaitForChild("GameplayEvent")
 assert(gameplayEvent:IsA("RemoteEvent"), "ReplicatedStorage.Remotes.GameplayEvent must be a RemoteEvent")
 
 local hasStarted = false
-local hearthInteractionPoint: BasePart? = nil
-local prototypeBaseOwner: Player? = nil
 local lastUpgradeRequestAtByPlayer: { [Player]: number } = {}
 
 local function isFinitePositiveNumber(value: any): boolean
@@ -29,7 +27,6 @@ local function isFinitePositiveInteger(value: any): boolean
 end
 
 local function validateConfiguration(): ()
-    assert(GameConfig.MaxPlayers == 1, "Prototype Hearth ownership requires the single-player Week-1 topology")
     assert(
         isFinitePositiveNumber(HearthConfig.UpgradeMaxDistance),
         "HearthConfig.UpgradeMaxDistance must be a finite positive number"
@@ -125,11 +122,10 @@ function HearthService.TryUpgrade(player: Player, ...): boolean
         return false
     end
 
-    local interactionPoint = hearthInteractionPoint
-    if player ~= prototypeBaseOwner
-        or not interactionPoint
-        or not interactionPoint:IsDescendantOf(Workspace)
-    then
+    -- Only the player's own Hearth can be upgraded.
+    local base = BaseService.GetBase(player)
+    local interactionPoint = if base then base.HearthBase else nil
+    if not interactionPoint or not interactionPoint:IsDescendantOf(Workspace) then
         return false
     end
 
@@ -182,35 +178,14 @@ function HearthService.Start(): ()
 
     validateConfiguration()
 
-    local prototypeBase = Workspace:WaitForChild("PrototypeBase")
-    local hearth = prototypeBase:WaitForChild("Hearth")
-    local interactionPoint = hearth:WaitForChild("HearthBase")
-    local prompt = interactionPoint:WaitForChild("UpgradePrompt")
-
-    assert(prototypeBase:IsA("Folder"), "Workspace.PrototypeBase must be a Folder")
-    assert(hearth:IsA("Model"), "Workspace.PrototypeBase.Hearth must be a Model")
-    assert(interactionPoint:IsA("BasePart"), "Workspace.PrototypeBase.Hearth.HearthBase must be a BasePart")
-    assert(prompt:IsA("ProximityPrompt"), "Workspace.PrototypeBase.Hearth.HearthBase.UpgradePrompt must be a ProximityPrompt")
-
-    hearthInteractionPoint = interactionPoint
-
-    local function assignPrototypeBaseOwner(player: Player): ()
-        if prototypeBaseOwner == nil then
-            prototypeBaseOwner = player
-        end
+    for _, base in BaseService.GetBases() do
+        local prompt = base.HearthBase:WaitForChild("UpgradePrompt")
+        assert(prompt:IsA("ProximityPrompt"), string.format("%s.UpgradePrompt must be a ProximityPrompt", base.HearthBase:GetFullName()))
     end
 
-    Players.PlayerAdded:Connect(assignPrototypeBaseOwner)
     Players.PlayerRemoving:Connect(function(player)
         lastUpgradeRequestAtByPlayer[player] = nil
-        if prototypeBaseOwner == player then
-            prototypeBaseOwner = nil
-        end
     end)
-
-    for _, player in Players:GetPlayers() do
-        assignPrototypeBaseOwner(player)
-    end
 end
 
 return HearthService

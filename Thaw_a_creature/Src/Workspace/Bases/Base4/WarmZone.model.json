@@ -1,0 +1,15 @@
+{
+  "name": "WarmZone",
+  "className": "Part",
+  "properties": {
+    "Anchored": true,
+    "CanCollide": false,
+    "CanQuery": false,
+    "CanTouch": false,
+    "Color": [1, 0.56, 0.18],
+    "Material": "Neon",
+    "Position": [75, 0.1, -5],
+    "Size": [46, 0.2, 38],
+    "Transparency": 0.84
+  }
+}

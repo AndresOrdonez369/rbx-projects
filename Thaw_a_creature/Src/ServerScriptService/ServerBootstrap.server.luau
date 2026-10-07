@@ -1,8 +1,10 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local BaseService = require(script.Parent.Services.BaseService)
 local CreatureService = require(script.Parent.Services.CreatureService)
 local CreatureRevealService = require(script.Parent.Services.CreatureRevealService)
+local DataService = require(script.Parent.Services.DataService)
 local FrostSpriteService = require(script.Parent.Services.FrostSpriteService)
 local GuardedIceService = require(script.Parent.Services.GuardedIceService)
 local HearthService = require(script.Parent.Services.HearthService)
@@ -61,19 +63,44 @@ local function sendInitialState(player: Player): ()
 end
 
 local function initializePlayer(player: Player): ()
-    PlayerStateService.CreateState(player)
+    -- Assigned before the first character spawn so the player starts at their own plot.
+    if not BaseService.AssignBase(player) then
+        player:Kick("This server has no free base. Please join another server.")
+        return
+    end
+
+    -- Gameplay that depends on persistent state stays unavailable until the profile is loaded.
+    local persistentData = DataService.LoadAsync(player)
+    if not persistentData or player.Parent ~= Players then
+        return
+    end
+
+    PlayerStateService.CreateState(player, persistentData)
+
+    -- Before services start, their Start() presents every player that already has state.
+    if servicesStarted then
+        CreatureService.RefreshPlayerPresentation(player)
+        ThawService.RefreshPlayerVisuals(player)
+    end
+
     sendInitialState(player)
 end
+
+BaseService.Start()
+DataService.Start()
 
 Players.PlayerAdded:Connect(initializePlayer)
 
 for _, player in Players:GetPlayers() do
-    initializePlayer(player)
+    task.spawn(initializePlayer, player)
 end
 
 Players.PlayerRemoving:Connect(function(player)
     clientReadyPlayers[player] = nil
+    DataService.Release(player)
     PlayerStateService.RemoveState(player)
+    -- Deferred so every service's own PlayerRemoving cleanup still sees the assigned plot.
+    task.defer(BaseService.ReleaseBase, player)
 end)
 
 gameplayRequest.OnServerEvent:Connect(function(player, action, ...)

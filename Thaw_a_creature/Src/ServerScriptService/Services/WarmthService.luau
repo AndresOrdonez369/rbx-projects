@@ -1,13 +1,13 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local Workspace = game:GetService("Workspace")
 
 local shared = ReplicatedStorage:WaitForChild("Shared")
 local HearthConfig = require(shared:WaitForChild("HearthConfig"))
 local RegionConfig = require(shared:WaitForChild("RegionConfig"))
 local WarmthConfig = require(shared:WaitForChild("WarmthConfig"))
 
+local BaseService = require(script.Parent.BaseService)
 local CreatureService = require(script.Parent.CreatureService)
 local IceService = require(script.Parent.IceService)
 local PlayerStateService = require(script.Parent.PlayerStateService)
@@ -17,8 +17,6 @@ local WarmthService = {}
 
 local PRESENTATION_UPDATE_INTERVAL = 0.25
 
-local warmZone: BasePart? = nil
-local homeSpawn: SpawnLocation? = nil
 local updateConnection: RBXScriptConnection? = nil
 local presentationUpdateElapsed = 0
 local warmZonePresenceByPlayer: { [Player]: { Character: Model, IsInside: boolean } } = {}
@@ -27,23 +25,6 @@ local remotes = ReplicatedStorage:WaitForChild("Remotes")
 local gameplayEvent = remotes:WaitForChild("GameplayEvent")
 
 assert(gameplayEvent:IsA("RemoteEvent"), "ReplicatedStorage.Remotes.GameplayEvent must be a RemoteEvent")
-
-local function getPrototypeBasePart(name: string): BasePart
-    local prototypeBase = Workspace:WaitForChild("PrototypeBase")
-    local part = prototypeBase:WaitForChild(name)
-
-    assert(part:IsA("BasePart"), string.format("Workspace.PrototypeBase.%s must be a BasePart", name))
-
-    return part
-end
-
-local function getHomeSpawn(): SpawnLocation
-    local spawn = getPrototypeBasePart("SpawnLocation")
-
-    assert(spawn:IsA("SpawnLocation"), "Workspace.PrototypeBase.SpawnLocation must be a SpawnLocation")
-
-    return spawn
-end
 
 local function isCharacterInsideWarmZone(character: Model, zone: BasePart): boolean?
     local humanoid = character:FindFirstChildOfClass("Humanoid")
@@ -96,18 +77,15 @@ local function sendWarmthUpdate(player: Player, state: PlayerStateService.Player
 end
 
 local function updateWarmth(deltaTime: number)
-    local zone = warmZone
-    local spawn = homeSpawn
-    if not zone or not spawn then
-        return
-    end
-
     for _, player in Players:GetPlayers() do
         local state = PlayerStateService.GetState(player)
         local character = player.Character
+        local base = BaseService.GetBase(player)
 
-        if state and character then
-            local isInside = isCharacterInsideWarmZone(character, zone)
+        if state and character and base then
+            -- Only the player's own WarmZone refills/trains; other plots count as outside.
+            local spawn = base.SpawnLocation
+            local isInside = isCharacterInsideWarmZone(character, base.WarmZone)
             if not state.IsFrozen and isInside ~= nil then
                 local previousPresence = warmZonePresenceByPlayer[player]
                 local enteredWarmZone = isInside
@@ -188,7 +166,8 @@ function WarmthService.ApplyDamage(player: Player, amount: number): (boolean, nu
 
     local state = PlayerStateService.GetState(player)
     local character = player.Character
-    local spawn = homeSpawn
+    local base = BaseService.GetBase(player)
+    local spawn = if base then base.SpawnLocation else nil
     if not state or state.IsFrozen or not character or not spawn then
         return false, nil, nil
     end
@@ -216,8 +195,6 @@ function WarmthService.Start()
         return
     end
 
-    warmZone = getPrototypeBasePart("WarmZone")
-    homeSpawn = getHomeSpawn()
     Players.PlayerRemoving:Connect(function(player)
         warmZonePresenceByPlayer[player] = nil
     end)

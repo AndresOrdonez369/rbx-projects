@@ -10,10 +10,12 @@ local CreatureRosterConfig = require(shared:WaitForChild("CreatureRosterConfig")
 local GameConfig = require(shared:WaitForChild("GameConfig"))
 local IceConfig = require(shared:WaitForChild("IceConfig"))
 local RarityConfig = require(shared:WaitForChild("RarityConfig"))
+local RegionConfig = require(shared:WaitForChild("RegionConfig"))
 local SizeConfig = require(shared:WaitForChild("SizeConfig"))
 local WorldCycleConfig = require(shared:WaitForChild("WorldCycleConfig"))
 local StudioTestConfig = require(script.Parent.Parent:WaitForChild("StudioTestConfig"))
 
+local BaseService = require(script.Parent.BaseService)
 local PlayerStateService = require(script.Parent.PlayerStateService)
 local ThawService = require(script.Parent.ThawService)
 local IceVisualFactory = require(script.Parent.IceVisualFactory)
@@ -44,7 +46,7 @@ local CARRY_MIN_CLEARANCE_FROM_ROOT = 2
 local CARRY_WELD_NAME = "CarryWeld"
 local GRAB_PROMPT_NAME = "GrabPrompt"
 local PRESENTATION_WELD_NAME = "PresentationWeld"
-local ICE_TYPE_ORDER = { "Regular", "Thick" }
+local ICE_TYPE_ORDER = { "Regular", "Thick", "Ancient", "Black", "Meteor" }
 local JACKPOT_ICE_TYPE = "Thick"
 local JACKPOT_CREATURE_ID = "Nidhogg"
 local JACKPOT_WEIGHT_MULTIPLIER = 125
@@ -57,8 +59,6 @@ local random = Random.new()
 local hasStarted = false
 local grabLockedDuringGreatFrost = false
 local lastResetCycleIndex: number? = nil
-local prototypePen: Model? = nil
-local penDepositPart: BasePart? = nil
 local jackpotHarnessConsumed = false
 
 local function isJackpotHarnessEnabled(): boolean
@@ -225,9 +225,16 @@ end
 
 local function getSortedMarkers(spawnFolder: Folder): { BasePart }
     local markers = {}
+    local markerNames = {}
 
     for _, child in spawnFolder:GetChildren() do
         if child:IsA("BasePart") then
+            assert(not markerNames[child.Name], string.format(
+                "%s contains duplicate marker name %s",
+                spawnFolder:GetFullName(),
+                child.Name
+            ))
+            markerNames[child.Name] = true
             table.insert(markers, child)
         end
     end
@@ -237,6 +244,44 @@ local function getSortedMarkers(spawnFolder: Folder): { BasePart }
     end)
 
     return markers
+end
+
+local function isPointInsideBounds(worldPosition: Vector3, bounds: BasePart): boolean
+    local localPosition = bounds.CFrame:PointToObjectSpace(worldPosition)
+    local halfSize = bounds.Size * 0.5
+
+    return math.abs(localPosition.X) <= halfSize.X
+        and math.abs(localPosition.Y) <= halfSize.Y
+        and math.abs(localPosition.Z) <= halfSize.Z
+end
+
+local function validateConfiguredMarkerRegion(config, markers: { BasePart }): ()
+    local regionID = config.RegionID
+    if regionID == nil then
+        return
+    end
+
+    assert(
+        type(regionID) == "string" and RegionConfig[regionID],
+        string.format("IceConfig.%s.RegionID must name a configured region", config.IceType)
+    )
+
+    local progressionRegions = Workspace:WaitForChild("ProgressionRegions")
+    local regionFolder = progressionRegions:WaitForChild(regionID)
+    local bounds = regionFolder:WaitForChild("RegionBounds")
+    assert(bounds:IsA("BasePart"), string.format(
+        "Workspace.ProgressionRegions.%s.RegionBounds must be a BasePart",
+        regionID
+    ))
+
+    for _, marker in markers do
+        assert(isPointInsideBounds(marker.Position, bounds), string.format(
+            "%s marker %s must be inside configured region %s",
+            config.IceType,
+            marker:GetFullName(),
+            regionID
+        ))
+    end
 end
 
 local function getOrCreateActiveIceFolder(): Folder
@@ -402,6 +447,7 @@ local function spawnAtMarker(iceType: string, marker: BasePart, activeIceFolder:
             record.CreatureID
         ))
     end
+
 end
 
 local function selectSpawnMarkers(markers: { BasePart }, activeSpawnCount: number): { BasePart }
@@ -439,6 +485,18 @@ local function populateField(): { [string]: number }
         )
 
         local markers = getSortedMarkers(getSpawnFolder(iceType))
+        if config.CandidateSpawnCount ~= nil then
+            assert(
+                #markers == config.CandidateSpawnCount,
+                string.format(
+                    "IceConfig.%s expects exactly %d candidate spawn points, got %d",
+                    iceType,
+                    config.CandidateSpawnCount,
+                    #markers
+                )
+            )
+        end
+        validateConfiguredMarkerRegion(config, markers)
         for _, marker in markers do
             marker.Transparency = 1
         end
@@ -655,13 +713,13 @@ function IceService.TryDepositCarriedIce(player: Player, requestedPen: any): boo
         return false
     end
 
-    local depositPart = penDepositPart
-    if not depositPart or (rootPart.Position - depositPart.Position).Magnitude > GameConfig.DepositIceMaxDistance then
+    -- Deposits are only accepted at the player's own Pen.
+    local base = BaseService.GetBase(player)
+    if not base or (rootPart.Position - base.PenFloor.Position).Magnitude > GameConfig.DepositIceMaxDistance then
         return false
     end
 
-    local pen = prototypePen
-    if not pen or requestedPen ~= pen or not pen:IsDescendantOf(Workspace) then
+    if requestedPen ~= base.Pen or not base.Pen:IsDescendantOf(Workspace) then
         return false
     end
 
@@ -719,15 +777,6 @@ function IceService.Start()
     end
 
     getOrCreateActiveIceFolder()
-    local prototypeBase = Workspace:WaitForChild("PrototypeBase")
-    local pen = prototypeBase:WaitForChild("Pen")
-    local depositPart = pen:WaitForChild("PenFloor")
-
-    assert(pen:IsA("Model"), "Workspace.PrototypeBase.Pen must be a Model")
-    assert(depositPart:IsA("BasePart"), "Workspace.PrototypeBase.Pen.PenFloor must be a BasePart")
-
-    prototypePen = pen
-    penDepositPart = depositPart
 
     for _, iceType in ICE_TYPE_ORDER do
         local config = IceConfig[iceType]

@@ -1,9 +1,9 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
 
 local shared = ReplicatedStorage:WaitForChild("Shared")
+local CreatureSurvivalConfig = require(shared:WaitForChild("CreatureSurvivalConfig"))
 local GameConfig = require(shared:WaitForChild("GameConfig"))
-local HearthConfig = require(shared:WaitForChild("HearthConfig"))
-local WarmthConfig = require(shared:WaitForChild("WarmthConfig"))
 
 local remotes = ReplicatedStorage:WaitForChild("Remotes")
 local gameplayEvent = remotes:WaitForChild("GameplayEvent")
@@ -14,6 +14,7 @@ export type ThawItem = {
     ThawID: string,
     PlayerUserID: number,
     IceType: string,
+    IsSpecial: boolean,
     CreatureID: string,
     Rarity: string,
     WeightMultiplier: number,
@@ -21,6 +22,8 @@ export type ThawItem = {
     DepositedAtTime: number,
     BaseDurationSeconds: number,
     BonusProgressSeconds: number,
+    -- Set when restored from saved data: Great Frost only accelerates time the owner was present for.
+    PresentSinceTime: number?,
 }
 
 export type RevealSession = {
@@ -37,6 +40,30 @@ export type CreatureCopy = {
     WeightMultiplier: number,
 }
 
+export type PersistentThawRecord = {
+    ThawID: string,
+    IceType: string,
+    IsSpecial: boolean,
+    CreatureID: string,
+    Rarity: string,
+    WeightMultiplier: number,
+    DepositedAtUnix: number,
+    BaseDurationSeconds: number,
+    BonusProgressSeconds: number,
+}
+
+export type PersistentData = {
+    DataVersion: number,
+    Cash: number,
+    MaxWarmth: number,
+    HearthLevel: number,
+    CreatureCopies: { [string]: CreatureCopy },
+    PenSlots: { [number]: string? },
+    EquippedCreatureGUID: string?,
+    DiscoveredCreatures: { [string]: boolean },
+    ThawingIce: { PersistentThawRecord },
+}
+
 export type PlayerState = {
     Cash: number,
     CurrentWarmth: number,
@@ -45,6 +72,7 @@ export type PlayerState = {
     CreatureCopies: { [string]: CreatureCopy },
     PenSlots: { [number]: string? },
     EquippedCreatureGUID: string?,
+    DiscoveredCreatures: { [string]: boolean },
     CreatureVitality: number?,
     CreatureFrosted: boolean?,
     CurrentlyCarryingIceID: string?,
@@ -55,9 +83,6 @@ export type PlayerState = {
 
 local PlayerStateService = {}
 
-local DEFAULT_CASH = 0
-local STARTING_HEARTH_LEVEL = HearthConfig[1].Level
-
 local playerStates: { [Player]: PlayerState } = {}
 
 assert(GameConfig.ActivePenCreatureSlots == 4, "The prototype must have exactly four active Pen creature slots")
@@ -67,33 +92,66 @@ local function createEmptyPenSlots(): { [number]: string? }
     return table.create(GameConfig.ActivePenCreatureSlots)
 end
 
-local function createInitialState(): PlayerState
-    local maxWarmth = WarmthConfig.StartingMaxWarmth
+local function createStateFromPersistentData(player: Player, data: PersistentData): PlayerState
+    local restoredAtTime = Workspace:GetServerTimeNow()
+
+    local creatureCopies = {}
+    for creatureGUID, copy in data.CreatureCopies do
+        creatureCopies[creatureGUID] = {
+            CreatureID = copy.CreatureID,
+            WeightMultiplier = copy.WeightMultiplier,
+        }
+    end
+
+    local penSlots = createEmptyPenSlots()
+    for slotIndex = 1, GameConfig.ActivePenCreatureSlots do
+        penSlots[slotIndex] = data.PenSlots[slotIndex]
+    end
+
+    local activeThawItems = {}
+    for _, record in data.ThawingIce do
+        activeThawItems[record.ThawID] = {
+            ThawID = record.ThawID,
+            PlayerUserID = player.UserId,
+            IceType = record.IceType,
+            IsSpecial = record.IsSpecial,
+            CreatureID = record.CreatureID,
+            Rarity = record.Rarity,
+            WeightMultiplier = record.WeightMultiplier,
+            DepositedAtTime = record.DepositedAtUnix,
+            BaseDurationSeconds = record.BaseDurationSeconds,
+            BonusProgressSeconds = record.BonusProgressSeconds,
+            PresentSinceTime = restoredAtTime,
+        }
+    end
+
+    local hasEquippedCreature = data.EquippedCreatureGUID ~= nil
 
     return {
-        Cash = DEFAULT_CASH,
-        CurrentWarmth = maxWarmth,
-        MaxWarmth = maxWarmth,
-        HearthLevel = STARTING_HEARTH_LEVEL,
-        CreatureCopies = {},
-        PenSlots = createEmptyPenSlots(),
-        EquippedCreatureGUID = nil,
-        CreatureVitality = nil,
-        CreatureFrosted = nil,
+        Cash = data.Cash,
+        CurrentWarmth = data.MaxWarmth,
+        MaxWarmth = data.MaxWarmth,
+        HearthLevel = data.HearthLevel,
+        CreatureCopies = creatureCopies,
+        PenSlots = penSlots,
+        EquippedCreatureGUID = data.EquippedCreatureGUID,
+        DiscoveredCreatures = table.clone(data.DiscoveredCreatures),
+        CreatureVitality = if hasEquippedCreature then CreatureSurvivalConfig.CreatureVitalityMax else nil,
+        CreatureFrosted = if hasEquippedCreature then false else nil,
         CurrentlyCarryingIceID = nil,
-        ActiveThawItems = {},
+        ActiveThawItems = activeThawItems,
         ActiveRevealSession = nil,
         IsFrozen = false,
     }
 end
 
-function PlayerStateService.CreateState(player: Player): PlayerState
+function PlayerStateService.CreateState(player: Player, data: PersistentData): PlayerState
     local existingState = playerStates[player]
     if existingState then
         return existingState
     end
 
-    local state = createInitialState()
+    local state = createStateFromPersistentData(player, data)
     playerStates[player] = state
 
     return state

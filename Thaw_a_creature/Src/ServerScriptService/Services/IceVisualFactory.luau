@@ -15,6 +15,25 @@ local VISUAL_PROFILES = {
         Color = Color3.fromRGB(91, 164, 255),
         Size = Vector3.new(6, 7, 6),
     },
+    Ancient = {
+        Color = Color3.fromRGB(35, 132, 190),
+        AccentColor = Color3.fromRGB(100, 238, 255),
+        Size = Vector3.new(6, 7, 6),
+    },
+    Black = {
+        Color = Color3.fromRGB(7, 18, 35),
+        AccentColor = Color3.fromRGB(78, 225, 255),
+        SecondaryAccentColor = Color3.fromRGB(143, 92, 255),
+        DetailStyle = "BlackFrost",
+        Size = Vector3.new(6, 7, 6),
+    },
+    Meteor = {
+        Color = Color3.fromRGB(20, 12, 34),
+        AccentColor = Color3.fromRGB(255, 104, 38),
+        SecondaryAccentColor = Color3.fromRGB(74, 232, 255),
+        DetailStyle = "MeteorImpact",
+        Size = Vector3.new(6, 7, 6),
+    },
 }
 local SILHOUETTE_COLOR = Color3.fromRGB(31, 42, 52)
 local THAWED_ICE_COLOR = Color3.fromRGB(220, 247, 255)
@@ -130,6 +149,193 @@ local CRACK_PROFILES = {
     },
 }
 
+local ANCIENT_RUNE_PROFILES = {
+    {
+        SizeScale = Vector3.new(0.035, 0.34, 0.018),
+        PositionScale = Vector3.new(0, 0.16, -0.511),
+    },
+    {
+        SizeScale = Vector3.new(0.035, 0.23, 0.018),
+        PositionScale = Vector3.new(-0.08, -0.02, -0.512),
+        Rotation = CFrame.Angles(0, 0, math.rad(42)),
+    },
+    {
+        SizeScale = Vector3.new(0.035, 0.23, 0.018),
+        PositionScale = Vector3.new(0.08, -0.02, -0.512),
+        Rotation = CFrame.Angles(0, 0, math.rad(-42)),
+    },
+    {
+        SizeScale = Vector3.new(0.035, 0.24, 0.018),
+        PositionScale = Vector3.new(0, -0.20, -0.513),
+    },
+}
+
+local BLACK_FROST_PROFILES = {
+    {
+        SizeScale = Vector3.new(0.025, 0.62, 0.016),
+        PositionScale = Vector3.new(-0.24, 0.08, -0.512),
+        Rotation = CFrame.Angles(0, 0, math.rad(19)),
+    },
+    {
+        SizeScale = Vector3.new(0.025, 0.50, 0.016),
+        PositionScale = Vector3.new(0.22, 0.13, -0.513),
+        Rotation = CFrame.Angles(0, 0, math.rad(-23)),
+        UseSecondaryColor = true,
+    },
+    {
+        SizeScale = Vector3.new(0.025, 0.39, 0.016),
+        PositionScale = Vector3.new(-0.03, -0.22, -0.514),
+        Rotation = CFrame.Angles(0, 0, math.rad(47)),
+    },
+    {
+        SizeScale = Vector3.new(0.22, 0.025, 0.016),
+        PositionScale = Vector3.new(-0.10, 0.27, -0.515),
+        Rotation = CFrame.Angles(0, 0, math.rad(-11)),
+        UseSecondaryColor = true,
+    },
+    {
+        SizeScale = Vector3.new(0.18, 0.025, 0.016),
+        PositionScale = Vector3.new(0.14, -0.09, -0.516),
+        Rotation = CFrame.Angles(0, 0, math.rad(28)),
+    },
+    {
+        SizeScale = Vector3.new(0.025, 0.34, 0.016),
+        PositionScale = Vector3.new(0.03, 0.12, 0.512),
+        Rotation = CFrame.Angles(0, math.rad(180), math.rad(-36)),
+        UseSecondaryColor = true,
+    },
+}
+
+local METEOR_IMPACT_PROFILES = {
+    {
+        SizeScale = Vector3.new(0.045, 0.72, 0.045),
+        PositionScale = Vector3.new(-0.28, 0.04, -0.515),
+        Rotation = CFrame.Angles(0, 0, math.rad(24)),
+    },
+    {
+        SizeScale = Vector3.new(0.045, 0.58, 0.045),
+        PositionScale = Vector3.new(0.25, 0.11, -0.516),
+        Rotation = CFrame.Angles(0, 0, math.rad(-31)),
+        UseSecondaryColor = true,
+    },
+    {
+        SizeScale = Vector3.new(0.38, 0.045, 0.045),
+        PositionScale = Vector3.new(0.02, -0.27, -0.517),
+        Rotation = CFrame.Angles(0, 0, math.rad(12)),
+    },
+    {
+        SizeScale = Vector3.new(0.24, 0.11, 0.18),
+        PositionScale = Vector3.new(-0.42, 0.34, 0.08),
+        Rotation = CFrame.Angles(math.rad(18), 0, math.rad(-38)),
+        UseSecondaryColor = true,
+    },
+    {
+        SizeScale = Vector3.new(0.20, 0.09, 0.16),
+        PositionScale = Vector3.new(0.43, -0.31, -0.04),
+        Rotation = CFrame.Angles(math.rad(-14), 0, math.rad(41)),
+    },
+}
+
+local function addAncientRunes(visualIce: BasePart, accentColor: Color3)
+    for _, runeProfile in ANCIENT_RUNE_PROFILES do
+        local runePart = Instance.new("Part")
+        runePart.Name = "AncientRune"
+        runePart.Anchored = true
+        runePart.CanCollide = false
+        runePart.CanQuery = false
+        runePart.CanTouch = false
+        runePart.CastShadow = false
+        runePart.Color = accentColor
+        runePart.Material = Enum.Material.Neon
+        runePart.Size = runeProfile.SizeScale * visualIce.Size
+        runePart.TopSurface = Enum.SurfaceType.Smooth
+        runePart.BottomSurface = Enum.SurfaceType.Smooth
+        runePart.Transparency = 0.12
+
+        local positionScale = runeProfile.PositionScale
+        local localPosition = Vector3.new(
+            positionScale.X * visualIce.Size.X,
+            positionScale.Y * visualIce.Size.Y,
+            positionScale.Z * visualIce.Size.Z
+        )
+        runePart.CFrame = visualIce.CFrame * CFrame.new(localPosition) * (runeProfile.Rotation or CFrame.identity)
+        runePart.Parent = visualIce
+    end
+end
+
+local function addBlackFrostDetails(visualIce: BasePart, accentColor: Color3, secondaryAccentColor: Color3)
+    for _, detailProfile in BLACK_FROST_PROFILES do
+        local detailPart = Instance.new("Part")
+        detailPart.Name = "BlackFrostDetail"
+        detailPart.Anchored = true
+        detailPart.CanCollide = false
+        detailPart.CanQuery = false
+        detailPart.CanTouch = false
+        detailPart.CastShadow = false
+        detailPart.Color = if detailProfile.UseSecondaryColor then secondaryAccentColor else accentColor
+        detailPart.Material = Enum.Material.Neon
+        detailPart.Size = detailProfile.SizeScale * visualIce.Size
+        detailPart.TopSurface = Enum.SurfaceType.Smooth
+        detailPart.BottomSurface = Enum.SurfaceType.Smooth
+        detailPart.Transparency = 0.18
+
+        local positionScale = detailProfile.PositionScale
+        local localPosition = Vector3.new(
+            positionScale.X * visualIce.Size.X,
+            positionScale.Y * visualIce.Size.Y,
+            positionScale.Z * visualIce.Size.Z
+        )
+        detailPart.CFrame = visualIce.CFrame
+            * CFrame.new(localPosition)
+            * (detailProfile.Rotation or CFrame.identity)
+        detailPart.Parent = visualIce
+    end
+end
+
+local function addMeteorImpactDetails(visualIce: BasePart, accentColor: Color3, secondaryAccentColor: Color3)
+    for _, detailProfile in METEOR_IMPACT_PROFILES do
+        local detailPart = Instance.new("Part")
+        detailPart.Name = "MeteorImpactDetail"
+        detailPart.Anchored = true
+        detailPart.CanCollide = false
+        detailPart.CanQuery = false
+        detailPart.CanTouch = false
+        detailPart.CastShadow = false
+        detailPart.Color = if detailProfile.UseSecondaryColor then secondaryAccentColor else accentColor
+        detailPart.Material = Enum.Material.Neon
+        detailPart.Size = detailProfile.SizeScale * visualIce.Size
+        detailPart.TopSurface = Enum.SurfaceType.Smooth
+        detailPart.BottomSurface = Enum.SurfaceType.Smooth
+        detailPart.Transparency = 0.14
+
+        local positionScale = detailProfile.PositionScale
+        local localPosition = Vector3.new(
+            positionScale.X * visualIce.Size.X,
+            positionScale.Y * visualIce.Size.Y,
+            positionScale.Z * visualIce.Size.Z
+        )
+        detailPart.CFrame = visualIce.CFrame
+            * CFrame.new(localPosition)
+            * (detailProfile.Rotation or CFrame.identity)
+        detailPart.Parent = visualIce
+    end
+end
+
+local function getVisualProfile(iceType: string)
+    local iceTypeConfig = IceConfig[iceType]
+    assert(iceTypeConfig, string.format("Missing IceConfig for Ice type %s", iceType))
+
+    local presentationProfile = iceTypeConfig.PresentationProfile
+    local visualProfile = VISUAL_PROFILES[presentationProfile]
+    assert(visualProfile, string.format(
+        "Missing visual profile %s for Ice type %s",
+        tostring(presentationProfile),
+        iceType
+    ))
+
+    return visualProfile, iceTypeConfig
+end
+
 local function addSilhouette(silhouetteProfile: string, visualIce: BasePart)
     local silhouettePieces = SILHOUETTE_PROFILES[silhouetteProfile]
     assert(silhouettePieces, string.format("Unsupported SilhouetteProfile %s", silhouetteProfile))
@@ -189,17 +395,14 @@ local function addCracks(visualIce: BasePart)
 end
 
 function IceVisualFactory.GetBaseSize(iceType: string): Vector3
-    local visualProfile = VISUAL_PROFILES[iceType]
-    assert(visualProfile, string.format("Missing visual profile for Ice type %s", iceType))
-
-    local iceTypeConfig = IceConfig[iceType]
-    assert(iceTypeConfig, string.format("Missing IceConfig for Ice type %s", iceType))
+    local visualProfile, iceTypeConfig = getVisualProfile(iceType)
+    local baseVisualScale = iceTypeConfig.BaseVisualScale or iceTypeConfig.PresentationScale
     assert(
-        type(iceTypeConfig.PresentationScale) == "number" and iceTypeConfig.PresentationScale > 0,
-        string.format("IceConfig.%s.PresentationScale must be a positive number", iceType)
+        type(baseVisualScale) == "number" and baseVisualScale > 0,
+        string.format("IceConfig.%s.BaseVisualScale must be a positive number", iceType)
     )
 
-    return visualProfile.Size * iceTypeConfig.PresentationScale
+    return visualProfile.Size * baseVisualScale
 end
 
 function IceVisualFactory.GetScaledSize(iceType: string, weightMultiplier: number): Vector3
@@ -223,8 +426,7 @@ function IceVisualFactory.Create(
     cframe: CFrame,
     parent: Instance
 ): BasePart
-    local visualProfile = VISUAL_PROFILES[iceType]
-    assert(visualProfile, string.format("Missing visual profile for Ice type %s", iceType))
+    local visualProfile = getVisualProfile(iceType)
     local baseSize = IceVisualFactory.GetBaseSize(iceType)
     local visualSize = IceVisualFactory.GetScaledSize(iceType, weightMultiplier)
 
@@ -262,6 +464,14 @@ function IceVisualFactory.Create(
         error(silhouetteError, 0)
     end
 
+    if visualProfile.DetailStyle == "MeteorImpact" then
+        addMeteorImpactDetails(visualIce, visualProfile.AccentColor, visualProfile.SecondaryAccentColor)
+    elseif visualProfile.DetailStyle == "BlackFrost" then
+        addBlackFrostDetails(visualIce, visualProfile.AccentColor, visualProfile.SecondaryAccentColor)
+    elseif visualProfile.AccentColor then
+        addAncientRunes(visualIce, visualProfile.AccentColor)
+    end
+
     visualIce.Parent = parent
 
     return visualIce
@@ -276,8 +486,7 @@ function IceVisualFactory.ApplyThawStage(visualIce: BasePart, stageName: string)
     end
 
     local iceType = visualIce:GetAttribute("IceType")
-    local visualProfile = VISUAL_PROFILES[iceType]
-    assert(visualProfile, string.format("Missing visual profile for Ice type %s", tostring(iceType)))
+    local visualProfile = getVisualProfile(iceType)
 
     if not visualIce:FindFirstChild(CRACK_NAME) then
         addCracks(visualIce)

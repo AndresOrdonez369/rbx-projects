@@ -10,6 +10,7 @@ local CreatureStatCalculator = require(shared:WaitForChild("CreatureStatCalculat
 local GameConfig = require(shared:WaitForChild("GameConfig"))
 local SizeConfig = require(shared:WaitForChild("SizeConfig"))
 
+local BaseService = require(script.Parent.BaseService)
 local CreatureRevealService = require(script.Parent.CreatureRevealService)
 local PlayerStateService = require(script.Parent.PlayerStateService)
 
@@ -33,15 +34,11 @@ assert(
     "Unsupported Equipped-creature Hearth recovery rule"
 )
 
-local PEN_POSITION_FOLDER_NAME = "CreaturePositions"
 local PEN_VISUALS_FOLDER_NAME = "CreatureVisuals"
 local REPLICATED_CREATURE_VISUALS_FOLDER_NAME = "CreatureVisuals"
 local PLAYER_FOLDER_PREFIX = "Player_"
 
 local hasStarted = false
-local equipBaseAnchor: BasePart? = nil
-local penCreaturePositions: { [number]: BasePart } = {}
-local penVisualsFolder: Folder? = nil
 local lastEquipRequestAtByPlayer: { [Player]: number } = {}
 local lastPenManagementRequestAtByPlayer: { [Player]: number } = {}
 local logicalTargetBoundsByCreatureID: { [string]: LogicalTargetBounds } = {}
@@ -214,6 +211,7 @@ function CreatureService.CreateCreatureCopy(
         CreatureID = creatureID,
         WeightMultiplier = weightMultiplier,
     }
+    playerState.DiscoveredCreatures[creatureID] = true
     assertOwnershipInvariants(playerState)
 
     return creatureGUID
@@ -335,9 +333,19 @@ function CreatureService.SendCreatureStateUpdate(player: Player): ()
     })
 end
 
-local function getPlayerPenVisualFolder(player: Player): Folder
-    local container = penVisualsFolder
-    assert(container, "CreatureService must be started before creating Pen creature visuals")
+local function getPenVisualsContainer(base: BaseService.Base): Folder
+    local container = base.Pen:FindFirstChild(PEN_VISUALS_FOLDER_NAME)
+    assert(
+        container and container:IsA("Folder"),
+        string.format("%s.%s must be a Folder", base.Pen:GetFullName(), PEN_VISUALS_FOLDER_NAME)
+    )
+
+    return container
+end
+
+local function getPlayerPenVisualFolder(player: Player, base: BaseService.Base): Folder
+    assert(hasStarted, "CreatureService must be started before creating Pen creature visuals")
+    local container = getPenVisualsContainer(base)
 
     local folderName = PLAYER_FOLDER_PREFIX .. player.UserId
     local existingFolder = container:FindFirstChild(folderName)
@@ -355,12 +363,13 @@ end
 
 local function refreshPenSlotVisual(player: Player, slotIndex: number): ()
     local playerState = PlayerStateService.GetState(player)
-    if not playerState then
+    local base = BaseService.GetBase(player)
+    if not playerState or not base then
         return
     end
 
     local slotName = "Slot" .. slotIndex
-    local playerFolder = getPlayerPenVisualFolder(player)
+    local playerFolder = getPlayerPenVisualFolder(player, base)
     local existingVisual = playerFolder:FindFirstChild(slotName)
     if existingVisual then
         existingVisual:Destroy()
@@ -375,16 +384,12 @@ local function refreshPenSlotVisual(player: Player, slotIndex: number): ()
     local stats = CreatureService.GetCreatureCopyStats(playerState, creatureGUID)
     assert(stats, string.format("Pen slot %d references CreatureGUID %s with invalid stats", slotIndex, creatureGUID))
 
-    local position = penCreaturePositions[slotIndex]
-    local baseAnchor = equipBaseAnchor
-    assert(position and baseAnchor, "CreatureService Pen positions must be initialized before presentation")
-
     local model = CreatureRevealService.Present(
         creatureGUID,
         creatureID,
         stats,
-        position.CFrame,
-        baseAnchor.Position,
+        base.PenSlotPositions[slotIndex].CFrame,
+        base.PenFloor.Position,
         playerFolder
     )
     if model then
@@ -393,11 +398,18 @@ local function refreshPenSlotVisual(player: Player, slotIndex: number): ()
 end
 
 local function removePlayerPenVisuals(player: Player): ()
-    local container = penVisualsFolder
-    local playerFolder = container and container:FindFirstChild(PLAYER_FOLDER_PREFIX .. player.UserId)
-    if playerFolder then
-        playerFolder:Destroy()
+    for _, base in BaseService.GetBases() do
+        local playerFolder = getPenVisualsContainer(base):FindFirstChild(PLAYER_FOLDER_PREFIX .. player.UserId)
+        if playerFolder then
+            playerFolder:Destroy()
+        end
     end
+end
+
+-- Equip and Pen management are only accepted near the player's own Pen.
+local function getOwnBaseAnchor(player: Player): BasePart?
+    local base = BaseService.GetBase(player)
+    return if base then base.PenFloor else nil
 end
 
 function CreatureService.AssignRevealedCreatureToFirstEmptyPenSlot(player: Player, creatureGUID: string): number?
@@ -665,7 +677,7 @@ function CreatureService.TryEquipCreature(player: Player, creatureGUID: any, ...
         return false
     end
 
-    local baseAnchor = equipBaseAnchor
+    local baseAnchor = getOwnBaseAnchor(player)
     if not baseAnchor
         or not baseAnchor:IsDescendantOf(Workspace)
         or (rootPart.Position - baseAnchor.Position).Magnitude > GameConfig.EquipMaxDistance
@@ -770,7 +782,7 @@ function CreatureService.TryUnequipCreature(player: Player, expectedCreatureGUID
         return false
     end
 
-    local baseAnchor = equipBaseAnchor
+    local baseAnchor = getOwnBaseAnchor(player)
     if not baseAnchor
         or not baseAnchor:IsDescendantOf(Workspace)
         or (rootPart.Position - baseAnchor.Position).Magnitude > GameConfig.EquipMaxDistance
@@ -827,7 +839,7 @@ local function getValidPenManagementState(
         return nil
     end
 
-    local baseAnchor = equipBaseAnchor
+    local baseAnchor = getOwnBaseAnchor(player)
     if not baseAnchor
         or not baseAnchor:IsDescendantOf(Workspace)
         or (rootPart.Position - baseAnchor.Position).Magnitude > GameConfig.PenManagementMaxDistance
@@ -922,6 +934,26 @@ function CreatureService.TryRemoveFromPen(player: Player, creatureGUID: any, ...
     return true
 end
 
+-- Re-applies Equipped Speed and rebuilds Pen visuals from the player's current state,
+-- e.g. once a saved profile has been restored after join.
+function CreatureService.RefreshPlayerPresentation(player: Player): ()
+    if player.Character then
+        task.spawn(CreatureService.ApplyEquippedWalkSpeed, player)
+    end
+
+    for slotIndex = 1, GameConfig.ActivePenCreatureSlots do
+        local presented, presentationError = pcall(refreshPenSlotVisual, player, slotIndex)
+        if not presented then
+            warn(string.format(
+                "[CreatureService] Failed to refresh Pen slot %d for %s: %s",
+                slotIndex,
+                player.Name,
+                tostring(presentationError)
+            ))
+        end
+    end
+end
+
 function CreatureService.Start(): ()
     if hasStarted then
         return
@@ -934,38 +966,16 @@ function CreatureService.Start(): ()
         "Prototype Pen income interval must be exactly one second"
     )
 
-    local prototypeBase = Workspace:WaitForChild("PrototypeBase")
-    local pen = prototypeBase:WaitForChild("Pen")
-    local penFloor = pen:WaitForChild("PenFloor")
-    local positionFolder = pen:WaitForChild(PEN_POSITION_FOLDER_NAME)
-
-    assert(prototypeBase:IsA("Folder"), "Workspace.PrototypeBase must be a Folder")
-    assert(pen:IsA("Model"), "Workspace.PrototypeBase.Pen must be a Model")
-    assert(penFloor:IsA("BasePart"), "Workspace.PrototypeBase.Pen.PenFloor must be a BasePart")
-    assert(positionFolder:IsA("Folder"), "Workspace.PrototypeBase.Pen.CreaturePositions must be a Folder")
-    assert(
-        #positionFolder:GetChildren() == GameConfig.ActivePenCreatureSlots,
-        "Workspace.PrototypeBase.Pen must have exactly four creature positions"
-    )
-
-    equipBaseAnchor = penFloor
-
-    for slotIndex = 1, GameConfig.ActivePenCreatureSlots do
-        local position = positionFolder:WaitForChild("Slot" .. slotIndex)
-        assert(position:IsA("BasePart"), string.format("Pen creature position Slot%d must be a BasePart", slotIndex))
-        penCreaturePositions[slotIndex] = position
-    end
-
-    local existingVisuals = pen:FindFirstChild(PEN_VISUALS_FOLDER_NAME)
-    if existingVisuals then
-        assert(existingVisuals:IsA("Folder"), "Workspace.PrototypeBase.Pen.CreatureVisuals must be a Folder")
-        existingVisuals:ClearAllChildren()
-        penVisualsFolder = existingVisuals
-    else
-        local folder = Instance.new("Folder")
-        folder.Name = PEN_VISUALS_FOLDER_NAME
-        folder.Parent = pen
-        penVisualsFolder = folder
+    for _, base in BaseService.GetBases() do
+        local existingVisuals = base.Pen:FindFirstChild(PEN_VISUALS_FOLDER_NAME)
+        if existingVisuals then
+            assert(existingVisuals:IsA("Folder"), string.format("%s must be a Folder", existingVisuals:GetFullName()))
+            existingVisuals:ClearAllChildren()
+        else
+            local folder = Instance.new("Folder")
+            folder.Name = PEN_VISUALS_FOLDER_NAME
+            folder.Parent = base.Pen
+        end
     end
 
     local function connectPlayer(player: Player)
@@ -973,21 +983,7 @@ function CreatureService.Start(): ()
             CreatureService.ApplyEquippedWalkSpeed(player)
         end)
 
-        if player.Character then
-            task.spawn(CreatureService.ApplyEquippedWalkSpeed, player)
-        end
-
-        for slotIndex = 1, GameConfig.ActivePenCreatureSlots do
-            local presented, presentationError = pcall(refreshPenSlotVisual, player, slotIndex)
-            if not presented then
-                warn(string.format(
-                    "[CreatureService] Failed to refresh Pen slot %d for %s: %s",
-                    slotIndex,
-                    player.Name,
-                    tostring(presentationError)
-                ))
-            end
-        end
+        CreatureService.RefreshPlayerPresentation(player)
     end
 
     Players.PlayerAdded:Connect(connectPlayer)

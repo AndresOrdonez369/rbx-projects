@@ -1,0 +1,132 @@
+{
+  "name": "Pen",
+  "className": "Model",
+  "children": [
+    {
+      "name": "PenFloor",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "CanCollide": true,
+        "Color": [0.39, 0.27, 0.16],
+        "Position": [-15, 0.25, -5],
+        "Size": [12, 0.5, 10]
+      },
+      "children": [
+        {
+          "name": "DepositPrompt",
+          "className": "ProximityPrompt",
+          "properties": {
+            "ActionText": "Deposit Ice",
+            "ObjectText": "Pen",
+            "HoldDuration": 0,
+            "MaxActivationDistance": 20,
+            "RequiresLineOfSight": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "FrontFence",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "CanCollide": true,
+        "Color": [0.55, 0.38, 0.2],
+        "Position": [-15, 1.5, -10],
+        "Size": [12, 2.5, 0.5]
+      }
+    },
+    {
+      "name": "BackFence",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "CanCollide": true,
+        "Color": [0.55, 0.38, 0.2],
+        "Position": [-15, 1.5, 0],
+        "Size": [12, 2.5, 0.5]
+      }
+    },
+    {
+      "name": "LeftFence",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "CanCollide": true,
+        "Color": [0.55, 0.38, 0.2],
+        "Position": [-21, 1.5, -5],
+        "Size": [0.5, 2.5, 10]
+      }
+    },
+    {
+      "name": "RightFence",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "CanCollide": true,
+        "Color": [0.55, 0.38, 0.2],
+        "Position": [-9, 1.5, -5],
+        "Size": [0.5, 2.5, 10]
+      }
+    },
+    {
+      "name": "CreaturePositions",
+      "className": "Folder",
+      "children": [
+        {
+          "name": "Slot1",
+          "className": "Part",
+          "properties": {
+            "Anchored": true,
+            "CanCollide": false,
+            "CanQuery": false,
+            "CanTouch": false,
+            "Position": [-18, 0.5, -7.5],
+            "Size": [0.5, 0.5, 0.5],
+            "Transparency": 1
+          }
+        },
+        {
+          "name": "Slot2",
+          "className": "Part",
+          "properties": {
+            "Anchored": true,
+            "CanCollide": false,
+            "CanQuery": false,
+            "CanTouch": false,
+            "Position": [-12, 0.5, -7.5],
+            "Size": [0.5, 0.5, 0.5],
+            "Transparency": 1
+          }
+        },
+        {
+          "name": "Slot3",
+          "className": "Part",
+          "properties": {
+            "Anchored": true,
+            "CanCollide": false,
+            "CanQuery": false,
+            "CanTouch": false,
+            "Position": [-18, 0.5, -2.5],
+            "Size": [0.5, 0.5, 0.5],
+            "Transparency": 1
+          }
+        },
+        {
+          "name": "Slot4",
+          "className": "Part",
+          "properties": {
+            "Anchored": true,
+            "CanCollide": false,
+            "CanQuery": false,
+            "CanTouch": false,
+            "Position": [-12, 0.5, -2.5],
+            "Size": [0.5, 0.5, 0.5],
+            "Transparency": 1
+          }
+        }
+      ]
+    }
+  ]
+}

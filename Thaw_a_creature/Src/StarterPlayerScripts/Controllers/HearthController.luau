@@ -1,5 +1,6 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace = game:GetService("Workspace")
+
+local OwnBaseController = require(script.Parent.OwnBaseController)
 
 local HearthController = {}
 
@@ -482,31 +483,52 @@ function HearthController.Start(): ()
     end
     started = true
 
-    local prototypeBase = Workspace:WaitForChild("PrototypeBase")
-    local hearth = prototypeBase:WaitForChild("Hearth")
-    local hearthBase = hearth:WaitForChild("HearthBase")
-    local fireOuter = hearth:WaitForChild("FireOuter")
-    local fireCore = hearth:WaitForChild("FireCore")
-    local warmZone = prototypeBase:WaitForChild("WarmZone")
-    local prompt = hearthBase:WaitForChild("UpgradePrompt")
-
-    assert(hearth:IsA("Model"), "Workspace.PrototypeBase.Hearth must be a Model")
-    assert(hearthBase:IsA("BasePart"), "Workspace.PrototypeBase.Hearth.HearthBase must be a BasePart")
-    assert(fireOuter:IsA("BasePart"), "Workspace.PrototypeBase.Hearth.FireOuter must be a BasePart")
-    assert(fireCore:IsA("BasePart"), "Workspace.PrototypeBase.Hearth.FireCore must be a BasePart")
-    assert(warmZone:IsA("BasePart"), "Workspace.PrototypeBase.WarmZone must be a BasePart")
-    assert(prompt:IsA("ProximityPrompt"), "Workspace.PrototypeBase.Hearth.HearthBase.UpgradePrompt must be a ProximityPrompt")
-
-    presentation = createPresentation(hearth, hearthBase, fireOuter, fireCore)
-    createWarmZonePresentation(warmZone)
-
-    prompt.Triggered:Connect(function()
-        gameplayRequest:FireServer("UpgradeHearth")
-    end)
+    -- Only the player's own Hearth is presented; HearthUpdated always describes it.
+    local hearthBase: BasePart? = nil
+    local prompt: ProximityPrompt? = nil
+    local pendingUpdate: any = nil
 
     gameplayEvent.OnClientEvent:Connect(function(eventName, data)
-        if eventName == "HearthUpdated" and presentation then
+        if eventName ~= "HearthUpdated" then
+            return
+        end
+
+        if presentation and hearthBase and prompt then
             applyStage(hearthBase, prompt, presentation, data)
+        else
+            pendingUpdate = data
+        end
+    end)
+
+    task.spawn(function()
+        local ownBase = OwnBaseController.WaitForOwnBase()
+        local hearth = ownBase:WaitForChild("Hearth")
+        local base = hearth:WaitForChild("HearthBase")
+        local fireOuter = hearth:WaitForChild("FireOuter")
+        local fireCore = hearth:WaitForChild("FireCore")
+        local warmZone = ownBase:WaitForChild("WarmZone")
+        local upgradePrompt = base:WaitForChild("UpgradePrompt")
+
+        assert(hearth:IsA("Model"), string.format("%s must be a Model", hearth:GetFullName()))
+        assert(base:IsA("BasePart"), string.format("%s must be a BasePart", base:GetFullName()))
+        assert(fireOuter:IsA("BasePart"), string.format("%s must be a BasePart", fireOuter:GetFullName()))
+        assert(fireCore:IsA("BasePart"), string.format("%s must be a BasePart", fireCore:GetFullName()))
+        assert(warmZone:IsA("BasePart"), string.format("%s must be a BasePart", warmZone:GetFullName()))
+        assert(upgradePrompt:IsA("ProximityPrompt"), string.format("%s must be a ProximityPrompt", upgradePrompt:GetFullName()))
+
+        presentation = createPresentation(hearth, base, fireOuter, fireCore)
+        createWarmZonePresentation(warmZone)
+        hearthBase = base
+        prompt = upgradePrompt
+
+        upgradePrompt.Triggered:Connect(function()
+            gameplayRequest:FireServer("UpgradeHearth")
+        end)
+
+        local currentPresentation = presentation
+        if pendingUpdate ~= nil and currentPresentation then
+            applyStage(base, upgradePrompt, currentPresentation, pendingUpdate)
+            pendingUpdate = nil
         end
     end)
 end

@@ -1,5 +1,6 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace = game:GetService("Workspace")
+
+local OwnBaseController = require(script.Parent.OwnBaseController)
 
 local RevealController = {}
 
@@ -55,11 +56,6 @@ function RevealController.Start()
     end
     started = true
 
-    local prototypeBase = Workspace:WaitForChild("PrototypeBase")
-    local thawVisuals = prototypeBase:WaitForChild(THAW_VISUALS_FOLDER_NAME)
-
-    assert(thawVisuals:IsA("Folder"), "Workspace.PrototypeBase.ThawVisuals must be a Folder")
-
     gameplayEvent.OnClientEvent:Connect(function(action, firstValue, secondValue)
         if action == "CreatureRevealed" then
             if type(firstValue) ~= "string"
@@ -88,12 +84,17 @@ function RevealController.Start()
         activeThawID = secondValue
     end)
 
-    for _, descendant in thawVisuals:GetDescendants() do
-        connectReadyPrompt(descendant, thawVisuals)
-    end
+    task.spawn(function()
+        local thawVisuals = OwnBaseController.WaitForOwnBase():WaitForChild(THAW_VISUALS_FOLDER_NAME)
+        assert(thawVisuals:IsA("Folder"), string.format("%s must be a Folder", thawVisuals:GetFullName()))
 
-    thawVisuals.DescendantAdded:Connect(function(descendant)
-        connectReadyPrompt(descendant, thawVisuals)
+        for _, descendant in thawVisuals:GetDescendants() do
+            connectReadyPrompt(descendant, thawVisuals)
+        end
+
+        thawVisuals.DescendantAdded:Connect(function(descendant)
+            connectReadyPrompt(descendant, thawVisuals)
+        end)
     end)
 end
 

@@ -1,0 +1,11 @@
+{
+  "name": "HomeGround",
+  "className": "Part",
+  "properties": {
+    "Anchored": true,
+    "CanCollide": true,
+    "Color": [0.52, 0.42, 0.32],
+    "Position": [25, -1, 0],
+    "Size": [50, 2, 50]
+  }
+}

@@ -17,6 +17,7 @@ local gameplayEvent = remotes:WaitForChild("GameplayEvent")
 
 assert(gameplayEvent:IsA("RemoteEvent"), "ReplicatedStorage.Remotes.GameplayEvent must be a RemoteEvent")
 
+local BaseService = require(script.Parent.BaseService)
 local CreatureRevealService = require(script.Parent.CreatureRevealService)
 local CreatureService = require(script.Parent.CreatureService)
 local IceVisualFactory = require(script.Parent.IceVisualFactory)
@@ -32,7 +33,6 @@ export type DepositedIce = {
 local ThawService = {}
 
 local INITIAL_BONUS_PROGRESS_SECONDS = 0
-local THAW_VISUALS_FOLDER_NAME = "ThawVisuals"
 local PLAYER_FOLDER_PREFIX = "Player_"
 local READY_PROMPT_NAME = "ReadyPrompt"
 local THAW_READY_AT_ATTRIBUTE = "ThawReadyAt"
@@ -41,11 +41,17 @@ local GRID_VISUAL_PADDING = 1.5
 local GRID_FIRST_ROW_PADDING = 0.5
 local MAX_PROTOTYPE_VISUAL_WIDTH = math.max(
     IceVisualFactory.GetBaseSize("Regular").X,
-    IceVisualFactory.GetBaseSize("Thick").X
+    IceVisualFactory.GetBaseSize("Thick").X,
+    IceVisualFactory.GetBaseSize("Ancient").X,
+    IceVisualFactory.GetBaseSize("Black").X,
+    IceVisualFactory.GetBaseSize("Meteor").X
 )
 local MAX_PROTOTYPE_VISUAL_DEPTH = math.max(
     IceVisualFactory.GetBaseSize("Regular").Z,
-    IceVisualFactory.GetBaseSize("Thick").Z
+    IceVisualFactory.GetBaseSize("Thick").Z,
+    IceVisualFactory.GetBaseSize("Ancient").Z,
+    IceVisualFactory.GetBaseSize("Black").Z,
+    IceVisualFactory.GetBaseSize("Meteor").Z
 )
 local GRID_COLUMN_SPACING = MAX_PROTOTYPE_VISUAL_WIDTH + GRID_VISUAL_PADDING
 local GRID_ROW_SPACING = MAX_PROTOTYPE_VISUAL_DEPTH + GRID_VISUAL_PADDING
@@ -57,9 +63,6 @@ local JACKPOT_WEIGHT_MULTIPLIER = 125
 local visualsByPlayer: { [Player]: { [string]: BasePart } } = {}
 local lastBeginRevealRequestAtByPlayer: { [Player]: number } = {}
 local issuedSessionIDs: { [string]: boolean } = {}
-local thawVisualsFolder: Folder? = nil
-local penFloor: BasePart? = nil
-local presentationSurfaceY: number? = nil
 local hasStarted = false
 local presentationUpdateElapsed = 0
 local DAY_PHASE = "Day"
@@ -84,7 +87,11 @@ local function getGreatFrostOverlapRealSeconds(
     frostStartedAtTime: number,
     frostContributionEndsAtTime: number
 ): number
-    local overlapStart = math.max(thawItem.DepositedAtTime, frostStartedAtTime)
+    local overlapStart = math.max(
+        thawItem.DepositedAtTime,
+        frostStartedAtTime,
+        thawItem.PresentSinceTime or thawItem.DepositedAtTime
+    )
     local availableFrostRealSeconds = math.max(0, frostContributionEndsAtTime - overlapStart)
     if availableFrostRealSeconds == 0 then
         return 0
@@ -231,10 +238,17 @@ local function generateThawID(activeThawItems: { [string]: PlayerStateService.Th
     return thawID
 end
 
-local function getPlayerFolder(player: Player): Folder
-    local container = thawVisualsFolder
-    assert(container, "ThawService must be started before creating thaw visuals")
-    assert(container:IsDescendantOf(Workspace), "Workspace.PrototypeBase.ThawVisuals must be in Workspace")
+local function getPresentationSurfaceY(base: BaseService.Base): number
+    return math.max(
+        base.HomeGround.Position.Y + base.HomeGround.Size.Y * 0.5,
+        base.WarmZone.Position.Y + base.WarmZone.Size.Y * 0.5
+    )
+end
+
+local function getPlayerFolder(player: Player, base: BaseService.Base): Folder
+    assert(hasStarted, "ThawService must be started before creating thaw visuals")
+    local container = base.ThawVisuals
+    assert(container:IsDescendantOf(Workspace), string.format("%s must be in Workspace", container:GetFullName()))
 
     local folderName = PLAYER_FOLDER_PREFIX .. player.UserId
     local existingFolder = container:FindFirstChild(folderName)
@@ -268,11 +282,14 @@ local function getSortedThawItems(activeThawItems: { [string]: PlayerStateServic
     return sortedThawItems
 end
 
-local function getDisplayCFrame(displayIndex: number, iceType: string, weightMultiplier: number): CFrame
-    local anchor = penFloor
-    local surfaceY = presentationSurfaceY
-    assert(anchor, "ThawService must be started before positioning thaw visuals")
-    assert(surfaceY, "ThawService must have a presentation surface before positioning thaw visuals")
+local function getDisplayCFrame(
+    base: BaseService.Base,
+    displayIndex: number,
+    iceType: string,
+    weightMultiplier: number
+): CFrame
+    local anchor = base.PenFloor
+    local surfaceY = getPresentationSurfaceY(base)
 
     local zeroBasedIndex = displayIndex - 1
     local column = zeroBasedIndex % GRID_COLUMNS
@@ -295,6 +312,7 @@ end
 
 local function createVisual(
     player: Player,
+    base: BaseService.Base,
     thawItem: PlayerStateService.ThawItem,
     displayIndex: number,
     readyInteractionAvailable: boolean
@@ -302,12 +320,12 @@ local function createVisual(
     local creature = CreatureConfig[thawItem.CreatureID]
     assert(creature, string.format("Unknown creature %s in ThawItem %s", thawItem.CreatureID, thawItem.ThawID))
 
-    local playerFolder = getPlayerFolder(player)
+    local playerFolder = getPlayerFolder(player, base)
     local visualIce = IceVisualFactory.Create(
         thawItem.IceType,
         creature.SilhouetteProfile,
         thawItem.WeightMultiplier,
-        getDisplayCFrame(displayIndex, thawItem.IceType, thawItem.WeightMultiplier),
+        getDisplayCFrame(base, displayIndex, thawItem.IceType, thawItem.WeightMultiplier),
         playerFolder
     )
     local configured, configurationError = pcall(function()
@@ -326,7 +344,7 @@ local function createVisual(
         assert(visualIce.Transparency < 1, "Created thaw visual must be visible")
         assert(
             visualIce.Position.Y - visualIce.Size.Y * 0.5
-                >= (presentationSurfaceY or 0) - PRESENTATION_SURFACE_EPSILON,
+                >= getPresentationSurfaceY(base) - PRESENTATION_SURFACE_EPSILON,
             "Created thaw visual must be above the base presentation surface"
         )
     end)
@@ -382,16 +400,18 @@ local function removePlayerVisuals(player: Player)
 
     visualsByPlayer[player] = nil
 
-    local container = thawVisualsFolder
-    local playerFolder = container and container:FindFirstChild(PLAYER_FOLDER_PREFIX .. player.UserId)
-    if playerFolder then
-        playerFolder:Destroy()
+    for _, base in BaseService.GetBases() do
+        local playerFolder = base.ThawVisuals:FindFirstChild(PLAYER_FOLDER_PREFIX .. player.UserId)
+        if playerFolder then
+            playerFolder:Destroy()
+        end
     end
 end
 
 function ThawService.RefreshPlayerVisuals(player: Player): ()
     local playerState = PlayerStateService.GetState(player)
-    if not playerState then
+    local base = BaseService.GetBase(player)
+    if not playerState or not base then
         removePlayerVisuals(player)
         return
     end
@@ -426,12 +446,12 @@ function ThawService.RefreshPlayerVisuals(player: Player): ()
             end
 
             if not visualIce then
-                visualIce = createVisual(player, thawItem, displayIndex, readyInteractionAvailable)
+                visualIce = createVisual(player, base, thawItem, displayIndex, readyInteractionAvailable)
                 playerVisuals[thawItem.ThawID] = visualIce
             else
                 IceVisualFactory.SetCFrame(
                     visualIce,
-                    getDisplayCFrame(displayIndex, thawItem.IceType, thawItem.WeightMultiplier)
+                    getDisplayCFrame(base, displayIndex, thawItem.IceType, thawItem.WeightMultiplier)
                 )
                 updatePresentation(
                     visualIce,
@@ -488,6 +508,7 @@ function ThawService.CreateFromDepositedIce(
         ThawID = thawID,
         PlayerUserID = player.UserId,
         IceType = depositedIce.IceType,
+        IsSpecial = false,
         CreatureID = depositedIce.CreatureID,
         Rarity = depositedIce.Rarity,
         WeightMultiplier = depositedIce.WeightMultiplier,
@@ -531,6 +552,15 @@ function ThawService.GetProgress(thawItem: PlayerStateService.ThawItem): number
     local elapsed = getEffectiveElapsedAtTime(thawItem, currentTime)
 
     return math.clamp(elapsed / thawItem.BaseDurationSeconds, 0, 1)
+end
+
+-- Folds any in-progress Great Frost acceleration into the bonus so a saved record
+-- keeps the online progress already earned without mutating the live ThawItem.
+function ThawService.GetPersistentBonusProgressSeconds(thawItem: PlayerStateService.ThawItem): number
+    local currentTime = Workspace:GetServerTimeNow()
+    local elapsed = getEffectiveElapsedAtTime(thawItem, currentTime)
+
+    return elapsed - (currentTime - thawItem.DepositedAtTime)
 end
 
 function ThawService.HandleWorldCyclePhaseChanged(
@@ -761,12 +791,16 @@ function ThawService.TryCrack(player: Player, sessionID: any): boolean
             return false
         end
 
+        local base = BaseService.GetBase(player)
+        if not base then
+            return false
+        end
+
         thawItem.IsResolving = true
 
         local creatureID = thawItem.CreatureID
         local rarity = thawItem.Rarity
-        local surfaceY = presentationSurfaceY
-        assert(surfaceY, "ThawService must have a presentation surface before revealing a creature")
+        local surfaceY = getPresentationSurfaceY(base)
         local revealPosition = Vector3.new(visualIce.Position.X, surfaceY, visualIce.Position.Z)
         local revealCFrame = CFrame.new(revealPosition) * visualIce.CFrame.Rotation
         local revealParent = visualIce.Parent
@@ -837,27 +871,9 @@ function ThawService.Start(): ()
 
     hasStarted = true
 
-    local prototypeBase = Workspace:WaitForChild("PrototypeBase")
-    local pen = prototypeBase:WaitForChild("Pen")
-    local depositPart = pen:WaitForChild("PenFloor")
-    local homeGround = prototypeBase:WaitForChild("HomeGround")
-    local warmZone = prototypeBase:WaitForChild("WarmZone")
-    local container = prototypeBase:WaitForChild(THAW_VISUALS_FOLDER_NAME)
-
-    assert(prototypeBase:IsA("Folder"), "Workspace.PrototypeBase must be a Folder")
-    assert(pen:IsA("Model"), "Workspace.PrototypeBase.Pen must be a Model")
-    assert(depositPart:IsA("BasePart"), "Workspace.PrototypeBase.Pen.PenFloor must be a BasePart")
-    assert(homeGround:IsA("BasePart"), "Workspace.PrototypeBase.HomeGround must be a BasePart")
-    assert(warmZone:IsA("BasePart"), "Workspace.PrototypeBase.WarmZone must be a BasePart")
-    assert(container:IsA("Folder"), "Workspace.PrototypeBase.ThawVisuals must be a Folder")
-
-    container:ClearAllChildren()
-    thawVisualsFolder = container
-    penFloor = depositPart
-    presentationSurfaceY = math.max(
-        homeGround.Position.Y + homeGround.Size.Y * 0.5,
-        warmZone.Position.Y + warmZone.Size.Y * 0.5
-    )
+    for _, base in BaseService.GetBases() do
+        base.ThawVisuals:ClearAllChildren()
+    end
 
     Players.PlayerRemoving:Connect(function(player)
         lastBeginRevealRequestAtByPlayer[player] = nil

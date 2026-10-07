@@ -1,0 +1,28 @@
+{
+  "name": "HomeCamp",
+  "className": "Folder",
+  "children": [
+    {
+      "name": "HomeCampEdgeLeft",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "CanCollide": true,
+        "Color": [0.52, 0.42, 0.32],
+        "Position": [-70, -1, 40],
+        "Size": [60, 2, 30]
+      }
+    },
+    {
+      "name": "HomeCampEdgeRight",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "CanCollide": true,
+        "Color": [0.52, 0.42, 0.32],
+        "Position": [70, -1, 40],
+        "Size": [60, 2, 30]
+      }
+    }
+  ]
+}

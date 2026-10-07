@@ -1,6 +1,8 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
+local OwnBaseController = require(script.Parent.OwnBaseController)
+
 local IceController = {}
 
 local ACTIVE_ICE_FOLDER_NAME = "ActiveIce"
@@ -63,22 +65,24 @@ function IceController.Start()
     started = true
 
     local activeIceFolder = Workspace:WaitForChild(ACTIVE_ICE_FOLDER_NAME)
-    local prototypeBase = Workspace:WaitForChild("PrototypeBase")
-    local pen = prototypeBase:WaitForChild("Pen")
-
-    assert(pen:IsA("Model"), "Workspace.PrototypeBase.Pen must be a Model")
 
     for _, descendant in activeIceFolder:GetDescendants() do
         connectGrabPrompt(descendant)
     end
 
-    for _, descendant in pen:GetDescendants() do
-        connectDepositPrompt(descendant, pen)
-    end
-
     activeIceFolder.DescendantAdded:Connect(connectGrabPrompt)
-    pen.DescendantAdded:Connect(function(descendant)
-        connectDepositPrompt(descendant, pen)
+
+    task.spawn(function()
+        local pen = OwnBaseController.WaitForOwnBase():WaitForChild("Pen")
+        assert(pen:IsA("Model"), string.format("%s must be a Model", pen:GetFullName()))
+
+        for _, descendant in pen:GetDescendants() do
+            connectDepositPrompt(descendant, pen)
+        end
+
+        pen.DescendantAdded:Connect(function(descendant)
+            connectDepositPrompt(descendant, pen)
+        end)
     end)
 end
 

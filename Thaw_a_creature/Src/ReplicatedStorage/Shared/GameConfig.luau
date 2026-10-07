@@ -1,5 +1,5 @@
 local PrototypeConfig = {
-    MaxPlayers = 1,
+    MaxPlayers = 4,
     BaseWalkSpeed = 16,
     ActivePenCreatureSlots = 4,
     PenIncomeIntervalSeconds = 1,

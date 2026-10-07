@@ -3,8 +3,8 @@ local PrototypeConfig = {
     NormalDrainRate = 4,
     CarryDrainMultiplier = 2.00,
     RefillFractionOfMaxWarmthPerSecond = 0.50,
-    LowThreshold = 0.40,
-    CriticalThreshold = 0.20,
+    LowThreshold = 0.35,
+    CriticalThreshold = 0.15,
     FrozenThreshold = 0,
 }
 
