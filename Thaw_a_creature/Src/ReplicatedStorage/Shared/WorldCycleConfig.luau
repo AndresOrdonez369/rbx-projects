@@ -1,9 +1,10 @@
-local PrototypeConfig = {
-    CycleLength = 120,
+local WorldCycleConfig = {
+    CycleLength = 300,
     GreatFrostDuration = 15,
-    GreatFrostThawMultiplier = 10,
-    SpecialIceEnabled = false,
+    CycleEpochUnix = 0,
+    ThawSurgePercent = 0.15,
+    SpecialIceEveryNCycles = 3,
     GrabLockedDuringGreatFrost = true,
 }
 
-return PrototypeConfig
+return WorldCycleConfig

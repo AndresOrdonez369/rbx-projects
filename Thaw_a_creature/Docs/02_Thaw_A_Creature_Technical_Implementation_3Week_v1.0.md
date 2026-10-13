@@ -1,14 +1,30 @@
 # THAW A CREATURE
 
-## Technical Implementation Specification - 3-Week Public Launch - Canonical v0.7
+## Technical Implementation Specification - 3-Week Public Launch - Canonical v1.0
 
 **Platform:** Roblox  
 **Target:** 3-week public launch  
 **Multiplayer Target:** 4 players/server initially  
 **Architecture:** Server-authoritative, configuration-driven  
-**Primary Design Source:** Concise GDD v0.7  
+**Primary Design Source:** Concise GDD v1.0  
 
 ### Revision notes
+
+- Replaces instant wilderness Ice pickup with an authoritative, **size-scaled Grab Hold**: first-pass `1.00 sec` at `0.75x Scale` to `2.00 sec` at `5.00x Scale`, configurable and initially linear. Starting a hold does not reserve the Ice; the first valid completed hold accepted by the server wins.
+- Adds **Carrier Commitment** after successful Grab: only movement, jump, Ride/Unride, DropIce, and own-Pen deposit/placement remain available. Tool/Mounted Strike, PvE/PvP attack, breakables, inventory/progression actions, and reveal interactions are rejected while carrying.
+- Supersedes the old no-intentional-DropIce rule with a server-authoritative DropIce request that preserves exact Ice identity/reward/size/Special metadata and applies a short first-pass `0.75 sec` same-player regrab lock.
+- Refines Wilderness Contest for mounted targets: a forced PvP knock-off deals `25% of CreatureVitalityMax`; a mounted carrier cannot be ragdolled/knocked off while mount Vitality remains above zero, but valid wilderness hits deal the same `25%` mount Vitality damage. At zero, Frosted forces Unride while the exact Ice remains carried.
+- Adds authoritative Home Camp / Lobby Safe-Zone semantics: no `CurrentWarmth` drain inside the shared lobby, no automatic refill/training outside the owner's own WarmZone, and no player contest effects inside the safe zone.
+- Adds Frosted Companion Orb presentation without changing ownership/allocation: Frosted remains session-only, forces Unride, blocks Ride, and rematerializes at the owner's own WarmZone/failure recovery.
+- Adds seven-level Pen capacity support (`4 -> 10`) with `PenLevel`, `PenSlots[1..10]`, and current Pen footprint progression `32x24 -> 32x48`.
+- Replaces fixed thaw-grid-only presentation with approved player-chosen session placement inside the Pen plus deterministic rejoin fallback; logical thaw capacity remains unlimited.
+- Raises launch content support to 20 configured species and region-exclusive normal-Ice creature families.
+- Allows the nine new Day-11 species to use functional placeholder meshes; final asset-specific ReferenceWeight/BaseVisualScale/SilhouetteProfile may remain provisional until the final asset audit.
+- Preserves species-owned BaseIncome/BaseWalkSpeed with overlapping regional income bands and the existing per-copy size formulas.
+- Updates RegionConfig/SurvivalConfig production values to the new Recommended Warmth, cold, and Frost Sprite damage curve.
+- Keeps Special Ice on the existing shared lifecycle while its exact eligible-region rarity tables move to 90% Rare / 10% Legendary in Constants v1.4.
+- Expands Frozen Archive launch completion to 20 species and defines Sell as a low-value cleanup path rather than a primary progression source.
+
 
 - Promotes every Equipped creature into a launch mount with runtime `Following <-> Riding` states.
 - Uses the existing authored creature `Seat` as the default rider anchor; optional species-specific mount presentation profiles may refine pose/camera/animation without changing gameplay.
@@ -21,7 +37,7 @@
 - Adds region-scaled Frost Sprite Warmth damage across all five geographic Ice tiers.
 - Makes every spawned Ice one shared authoritative server object; removes private onboarding-Ice copies.
 - Replaces discard/origin-return carrier failure behavior with exact-Ice drop-and-rescue on Freeze, death, reset/respawn, and disconnect.
-- Locks rescue/relay as valid multiplayer behavior while retaining no intentional DropIce request.
+- Locks rescue/relay as valid multiplayer behavior and adds intentional DropIce as an identity-preserving voluntary release path.
 - Adds Great Frost semantics for dropped Ice and shared guardian refresh.
 - Marks survival runtime state and carried/dropped wilderness Ice as non-persistent.
 - Updates production authority to GDD -> Launch Technical -> Constants -> Development Plan; the finalized prototype spec remains historical validation evidence.
@@ -221,6 +237,8 @@ BaseWalkSpeed
 
 Species now owns baseline economy/traversal identity. Rarity may still influence presentation, pools, sell baselines, and rarity treatment, but it no longer uniquely determines Pen Income or Equipped Speed.
 
+For Day-11 launch species whose final art is not yet available, `ModelName` may point to a functional placeholder asset. Placeholder `ReferenceWeight`, `BaseVisualScale`, and `SilhouetteProfile` may be provisional for integration/presentation testing and must be finalized from the actual production asset rather than treated as locked balance data. Placeholder status never changes rarity, pool, BaseIncomePerSecond, or BaseWalkSpeed.
+
 ### RarityConfig
 
 Defines supported rarity presentation/economy tiers. The current economy supports:
@@ -237,7 +255,7 @@ Epic/Legendary content assignment is separate from the validity of those configu
 Do not infer creatures/pools/weights merely because the tier exists.
 
 RarityConfig may define:
-- SellValue baseline unless species-specific sell is later approved;
+- SellValue baseline / cleanup payout. Exact values are Day-14 balance data and must remain economically secondary to Pen income;
 - RevealPresentationProfile;
 - RarityUI;
 - EffectsProfile;
@@ -294,6 +312,8 @@ Meteor
 
 Every spawned Ice gets a server-authoritative `WeightMultiplier`. Scale is derived from the formula and is independent of hidden rarity/species unless a later explicit design change says otherwise.
 
+Normal geographic Ice pools are region-exclusive according to Constants. Do not automatically inherit earlier-region creatures into later Ice. Region selects the creature family; rarity selects the exceptional result within that family.
+
 ### WarmthConfig / RegionConfig
 
 WarmthConfig defines starting progression and base drain/refill behavior.
@@ -346,6 +366,7 @@ DataVersion = 2
 Cash
 MaxWarmth
 HearthLevel
+PenLevel
 
 CreatureCopies = {
     [CreatureGUID] = {
@@ -356,10 +377,11 @@ CreatureCopies = {
 
 PenSlots = {
     [1] = CreatureGUID or nil,
-    [2] = CreatureGUID or nil,
-    [3] = CreatureGUID or nil,
-    [4] = CreatureGUID or nil,
+    ...
+    [10] = CreatureGUID or nil,
 }
+
+Only indices `1..PenCapacity(PenLevel)` are active/earning/assignable. Locked higher indices remain empty.
 
 EquippedCreatureGUID = CreatureGUID or nil
 
@@ -462,12 +484,18 @@ PlayerStateService maintains non-persistent session state such as:
 ```text
 CurrentWarmth
 IsInsideOwnWarmZone
+IsInsideHomeSafeZone
 IsTrainingWarmth
 CurrentlyCarryingIceID
+ActiveGrabHoldIceID
+GrabHoldStartedAtServerTime
+DroppedIceSelfRegrabBlockedUntil
 ActiveRevealSession
 AssignedBase
 IsFrozen
 LastGameplayRequestTimes
+IsPlayerContestRagdolled
+PlayerContestImmunityUntil
 CurrentMovementSpeed
 EquippedCreatureVitality
 EquippedCreatureFrosted
@@ -492,26 +520,32 @@ MaxWarmth is permanent.
 CurrentWarmth is session state.
 
 
+Home Camp / Lobby Safe Zone
+While inside the authored shared Home Camp / Lobby Safe Zone but outside the player's own WarmZone:
+```text
+CurrentWarmth change = 0
+MaxWarmth training = 0
+```
+
+This remains true while carrying Ice. The Lobby is social/safe traversal space, not a refill/training source.
+
 Wilderness
-While outside the player's own Warm Zone:
+While outside the Home Camp / Lobby Safe Zone:
 ```text
-           1 CurrentWarmth -= DrainRate * dt
+CurrentWarmth -= DrainRate * dt
 ```
 
-
-While carrying Ice:
+While carrying Ice in wilderness:
 ```text
-           1 CurrentWarmth -= DrainRate
-           2                  * CarryMultiplier
-           3                  * dt
+CurrentWarmth -= DrainRate
+                 * CarryMultiplier
+                 * dt
 ```
-
 
 No creature directly increases Warmth.
 
-
-Warm Base
-While inside the player's own Warm Zone:
+Own Warm Base
+While inside the player's own WarmZone:
 ```text
             1 CurrentWarmth += RefillRate * dt
 ```
@@ -850,31 +884,70 @@ Use the canonical SilhouetteProfile IDs/mapping from Implementation Constants. T
 
 ## 20. Grabbing Ice
 
-Player interacts with an Ice using a ProximityPrompt or equivalent world interaction.
-Client requests:
+Wilderness Ice uses a **continuous input hold**, not instant pickup.
+
+The required first-pass duration is derived from the Ice's already-visible `Scale`:
+
 ```text
-               1 GrabIce(IceInstanceID)
+GrabHoldMinScale   = 0.75
+GrabHoldMaxScale   = 5.00
+GrabHoldMinSeconds = 1.00
+GrabHoldMaxSeconds = 2.00
+
+NormalizedScale = clamp((Scale - GrabHoldMinScale) / (GrabHoldMaxScale - GrabHoldMinScale), 0, 1)
+GrabHoldSeconds = lerp(GrabHoldMinSeconds, GrabHoldMaxSeconds, NormalizedScale)
 ```
 
+The interpolation mode is configuration-driven; first pass is linear.
 
-Server validates:
-Ice exists;
-state is Available ;
-player is alive;
-player is not Frozen;
-player carries no other Ice;
-server-measured proximity is valid;
-Ice is still unclaimed.
-First valid server request wins.
-Then:
+The networking implementation may use server-observed ProximityPrompt hold events or an equivalent Begin/Cancel/Complete request path, but the **server must verify the hold attempt and completion**. A client may render progress but may not authoritatively claim completion time.
+
+Starting a Grab Hold does **not** reserve the Ice:
+
 ```text
-               1 State = Carried
-               2 OwnerUserID = player.UserId
+State = Available
+OwnerUserID = nil
 ```
 
+Multiple players may hold the same Available Ice at once. The first valid **completed** hold accepted by the server atomically wins.
 
-The Ice is attached/presented as being carried.
+During an active Grab Hold:
+- player may remain on foot or Riding;
+- normal movement/jump is allowed while the player remains within valid interaction range;
+- Tool Swing / Mounted Strike is rejected until the hold ends;
+- the player is not yet a carrier and Carrier Commitment has not begun.
 
+Cancel/reset the hold to zero when:
+- the input is released/cancelled;
+- server-measured Grab range is lost;
+- player becomes contest-ragdolled/knocked away;
+- player freezes, dies, resets, or becomes otherwise invalid;
+- the Ice leaves `Available` state;
+- Great Frost/world-state rules invalidate the opportunity;
+- another authoritative state transition makes the attempt impossible.
+
+At completion the server revalidates at minimum:
+- Ice exists;
+- `State == Available`;
+- player is alive and not Frozen;
+- player is not contest-ragdolled;
+- player carries no other Ice;
+- server-measured proximity remains valid;
+- the configured hold duration was satisfied;
+- Great Frost / Grab-lock state allows the claim;
+- any same-player DropIce regrab lock for this Ice has expired.
+
+Then atomically:
+
+```text
+State = Carried
+OwnerUserID = player.UserId
+CurrentlyCarryingIceID = IceInstanceID
+```
+
+Carrier Commitment begins immediately.
+
+Hidden CreatureID, hidden rarity, Ice region/tier, and Special status do not modify hold duration. Visible Scale is the only reward-lineage input.
 
 ## 21. One-Ice Carry Limit
 
@@ -885,22 +958,64 @@ Attempts to Grab another Ice while carrying one are rejected.
 There is no backpack storage for unthawed Ice.
 Successfully returned Ice is deposited into the Pen instead.
 
-## 22. Carrying Ice
+## 22. Carrying Ice - Carrier Commitment
 
 Carrying Ice:
-- increases Warmth drain;
+- increases Warmth drain outside the Home Camp / Lobby Safe Zone;
 - does not reduce WalkSpeed;
 - remains visually obvious;
 - preserves the exact shared Ice identity and size/reward lineage.
 
-Large/high-value Ice may have stronger visual presentation but uses the same gameplay carry system.
+Once `CurrentlyCarryingIceID` is non-nil, the server enforces a restricted **Carrier Commitment** action set.
 
-There is no intentional `DropIce` gameplay request at launch.
-Raw Ice leaves the carry state only through:
-- successful Pen deposit; or
+Allowed while carrying:
+- normal movement;
+- jump;
+- RideEquippedCreature / UnrideEquippedCreature, subject to normal mount/Frosted validation;
+- DropIce;
+- valid own-Pen deposit/placement completion.
+
+Rejected while carrying:
+- Tool Swing / Mounted Strike / any survival attack request;
+- player contest attacks;
+- Frost Sprite attacks;
+- breakable-route attacks;
+- GrabIce / starting another Grab Hold;
+- Equip/Unequip and other creature-management allocation requests;
+- Sell;
+- UpgradeHearth / UpgradePen;
+- BeginReveal / Crack;
+- starting unrelated thaw-placement or other gameplay interactions that change progression/ownership/combat state.
+
+The server must enforce this state; hiding client buttons alone is insufficient.
+
+### 22A. Intentional DropIce
+
+`DropIce` is now an approved authoritative request.
+
+Server validates at minimum:
+- player currently carries an Ice;
+- character/runtime state is valid for a voluntary Drop;
+- request rate limit passes.
+
+On success:
+1. resolve a valid safe grounded drop CFrame near the carrier; when Riding, use a ground-safe carrier/mount-relative drop position rather than Seat height;
+2. detach the exact Ice;
+3. preserve `IceInstanceID`, IceType, CreatureID, Rarity, WeightMultiplier/Scale, Special metadata, and applicable origin/cycle metadata;
+4. set `OwnerUserID = nil`;
+5. set `State = Available`;
+6. clear `CurrentlyCarryingIceID`;
+7. start the configured same-player self-regrab lock for that Ice;
+8. do **not** force Unride.
+
+DropIce never rerolls the Ice, converts it into Inventory, refunds Warmth, or teleports it back to spawn.
+
+Other players may begin a Grab Hold immediately if otherwise valid. The original dropper may begin a new Grab Hold only after the first-pass `0.75 sec` self-regrab lock expires.
+
+A carry ends through:
+- successful own-Pen deposit/placement;
+- intentional DropIce; or
 - carrier failure: Freeze, character death, Reset Character/respawn, or disconnect.
-
-On failure, the exact Ice returns to `Available` in the shared world rather than being rerolled or converted to inventory.
 
 ## 23. Freeze / Expedition Failure
 
@@ -1091,30 +1206,22 @@ Stages are derived from progress thresholds.
 Do not expose hidden rarity through these stages.
 
 
-## 31. Unlimited Thaw Visual Layout
+## 31. Unlimited Thaw Visual Layout / Player Placement
 
-Gameplay thaw capacity is unlimited.
-Visual placement should therefore not rely on named gameplay slots.
-Instead, define:
-```text
-              1 Pen.ThawDisplayOrigin
-              2 Pen.ThawDisplayArea
-```
+Gameplay thaw capacity is unlimited and must not rely on named gameplay slots.
 
+For a newly deposited Ice, the client may present a placement ghost inside the owner's currently unlocked Pen footprint. The player chooses an X/Z location with mouse/touch; the server validates the requested position before finalizing presentation. Validation must ensure at minimum:
+- inside the current Pen bounds;
+- no overlap with another authoritative thawing-Ice presentation footprint;
+- outside reserved fence/gate/banner exclusion space;
+- reasonable proximity to the player's own Pen;
+- the requested ThawID belongs to the player / corresponds to the current deposit flow.
 
-and generate deterministic display positions.
-For example:
-```text
-              1 index -> row/column placement
-```
+Roaming creature visuals are not authoritative obstacles and do not invalidate placement.
 
+Exact manual thaw position is **session-only presentation data** and is not persisted. On rejoin/server reconstruction, deterministic auto-layout may place existing ThawItems into valid Pen positions.
 
-If extreme quantities create performance problems, presentation may use:
-model pooling;
-distance culling;
-simplified LOD;
-visual grouping.
-This must not change ownership or thaw gameplay.
+If extreme quantities create performance problems, presentation may use model pooling, distance culling, simplified LOD, deterministic packing, or visual grouping. None of these may create a gameplay thaw limit.
 
 
 ## 32. Ready-to-Crack Interaction
@@ -1244,8 +1351,8 @@ This operation must be idempotent. Repeated/duplicate Crack requests must never 
 After reveal:
 
 ```text
-if Pen has empty active creature position:
-    PenSlots[firstEmpty] = CreatureGUID
+if Pen has empty unlocked creature capacity for current PenLevel:
+    PenSlots[firstEmptyUnlocked] = CreatureGUID
 else:
     CreatureGUID remains in derived Inventory
 ```
@@ -1277,7 +1384,7 @@ Only the approved size/weight roll creates random per-copy stat variation. Do no
 
 ## 39. Pen Income
 
-Pen income is calculated from the four authoritative CreatureGUID slots using one aggregate server tick.
+Pen income is calculated from occupied **unlocked** `PenSlots` according to current `PenLevel`/capacity using one aggregate server tick.
 Current cadence:
 
 ```text
@@ -1305,6 +1412,22 @@ No offline Pen income.
 Equipped and Inventory copies earn zero.
 A gigantic copy may therefore be an extreme economic jackpot.
 
+### Pen Level / Capacity contract
+
+```text
+PenLevel 1 -> Capacity 4 -> 32x24
+PenLevel 2 -> Capacity 5 -> 32x28
+PenLevel 3 -> Capacity 6 -> 32x32
+PenLevel 4 -> Capacity 7 -> 32x36
+PenLevel 5 -> Capacity 8 -> 32x40
+PenLevel 6 -> Capacity 9 -> 32x44
+PenLevel 7 -> Capacity 10 -> 32x48
+```
+
+`UpgradePen` is a server-authoritative Cash purchase. The server validates own base/proximity, loaded profile, next level, and configured cost before deducting Cash and incrementing `PenLevel`. There is no downgrade and no Robux capacity.
+
+Visual creature roaming is independent of logical `PenSlots`; active creatures share the entire unlocked Pen area.
+
 ## 40. Selling
 
 Sell requests operate on a specific CreatureGUID.
@@ -1321,23 +1444,21 @@ remove CreatureCopies[CreatureGUID]
 Cash += configured SellValue
 ```
 
-Sell Value is not automatically size-scaled in this revision. Size-derived value currently affects Pen Income and Equipped Speed only.
+Selling is a cleanup path, not a primary economy strategy. Exact SellValue values remain Day-14 balance constants and should be intentionally small relative to the creature's recurring Pen value.
 
-If selling from Pen or Equipped is supported, clear that exact GUID allocation before removal.
+Sell Value is not automatically size-scaled by the `Scale^2` Pen-income multiplier. If selling from Pen or Equipped is supported, clear that exact GUID allocation before removal.
 Frozen Archive discovery remains species-based and never reverses.
 
 ## 41. Frozen Archive
 
 Persistent structure:
 ```text
-            1 DiscoveredCreatures[CreatureID] = true
+DiscoveredCreatures[CreatureID] = true
 ```
 
-
 It never becomes false.
-The Archive UI reads from this set.
+The launch Archive presents **20 species slots** (`X / 20`) and reads from this set.
 Selling the last owned copy does not remove discovery.
-
 
 ## 42. Great Frost Architecture
 
@@ -1470,7 +1591,7 @@ OriginCycleIndex = CycleIndex
 OriginSpawnPointID = SpawnPointID
 ```
 
-A Special Ice is one shared, contestable Ice object. First valid server-side Grab wins.
+A Special Ice is one shared, contestable Ice object. First valid completed Grab Hold accepted by the server wins.
 
 Lifecycle:
 - unclaimed Special Ice remains available until claimed or until a later Great Frost removes the shared field;
@@ -1515,8 +1636,7 @@ Nidhogg spawned.
 
 ## 50. Multiplayer Ice Ownership
 
-The wilderness is shared.
-Every spawned Ice opportunity is one authoritative server object for the entire server.
+The wilderness is shared. Every spawned Ice opportunity is one authoritative server object for the entire server.
 
 This applies to all Ice types and modifiers:
 - Regular;
@@ -1529,27 +1649,40 @@ This applies to all Ice types and modifiers:
 No per-player wilderness Ice copies exist.
 
 When multiple players attempt to take one Ice:
-- first valid server-side Grab wins;
+- starting a Grab Hold does not reserve it;
+- multiple players may hold the same Available Ice concurrently;
+- the first valid completed hold accepted by the server wins;
 - server atomically changes `Available -> Carried`;
 - server sets `OwnerUserID = player.UserId`;
+- Carrier Commitment begins;
 - every client observes the same ownership/state change.
+
+On intentional DropIce:
+
+```text
+Carried
+-> exact Ice placed at valid safe grounded position
+-> OwnerUserID = nil
+-> Available
+-> original dropper self-regrab lock begins
+-> all eligible players use a fresh Grab Hold
+```
 
 On carrier failure:
 
 ```text
 Carried
--> same Ice restored to shared world
+-> same Ice restored to shared world at failure-safe position
 -> OwnerUserID = nil
 -> Available
--> first valid server Grab wins again
+-> first valid completed Grab Hold accepted by the server wins again
 ```
 
-A rescued Ice keeps its original hidden reward, rarity, WeightMultiplier/Scale, IceType, and Special metadata.
+A dropped/rescued Ice keeps its original hidden reward, rarity, WeightMultiplier/Scale, IceType, and Special metadata.
 
 The player who successfully deposits the Ice becomes the owner of the resulting persistent `ThawItem`.
 
-Rescue/relay is valid emergent multiplayer behavior.
-There is still no intentional DropIce/transfer remote.
+Rescue/relay and voluntary relinquish are valid emergent multiplayer behavior. `DropIce` is not a direct transfer/trade request: it returns the exact Ice to shared `Available` state where normal Grab Hold contention applies.
 
 ## 50A. Canonical Survival Pressure
 
@@ -1609,9 +1742,9 @@ First-pass values:
 ```text
 Snowfield / Regular          10 Warmth per hit
 Frozen Pass / Thick          100 Warmth per hit
-Ancient Expanse / Ancient    1,000 Warmth per hit
-Black Ice Hollow / Black     10,000 Warmth per hit
-Meteor Reach / Meteor        100,000 Warmth per hit
+Ancient Expanse / Ancient    4,000 Warmth per hit
+Black Ice Hollow / Black     250,000 Warmth per hit
+Meteor Reach / Meteor        8,000,000 Warmth per hit
 ```
 
 Conceptual rule:
@@ -1653,11 +1786,13 @@ Then:
 - ownership is preserved;
 - the creature remains logically Equipped;
 - if Riding, force Unride immediately;
-- follower/mount presentation may become Frosted/hidden;
+- follower/mount presentation transitions into a client-side **Frosted Companion Orb/Wisp** beside the player;
 - Ride requests are rejected until recovery;
+- the Frosted Orb is presentation-only, remains tied to the same `EquippedCreatureGUID`, is not targetable, and takes no further Vitality damage;
+- creature Vitality may reach zero through Frost Sprite damage or the approved mounted-player contest damage path; both resolve through this same Frosted state;
 - mounted Speed is unavailable and player returns to base WalkSpeed;
 - the player may continue the expedition;
-- entering the player's **own** Hearth/WarmZone restores full Vitality, clears Frosted, and restores Speed;
+- entering the player's **own** Hearth/WarmZone restores full Vitality, clears Frosted, rematerializes the Equipped creature from the Orb, and restores Speed;
 - another player's Hearth does not restore the visitor's creature;
 - Freeze/death/reset recovery also restores safely without permanent loss.
 
@@ -1670,18 +1805,106 @@ Following / on foot -> universal tool swing
 Riding             -> Mounted Strike
 ```
 
-Gameplay values are identical in both states:
+Gameplay values are identical in both states when the player is not carrying Ice:
 - same configured Frost Sprite damage/effect;
 - same cooldown;
 - same approved target categories;
 - same server authority;
 - same anti-spam/rate validation.
 
+Carrier Commitment disables the survival attack entirely while `CurrentlyCarryingIceID` is non-nil. A carrier cannot Tool Swing, Mounted Strike, damage Frost Sprites, damage breakables, or initiate player/mount contest effects.
+
 Mounted Strike must not scale from CreatureID, rarity, visual Scale, WeightMultiplier, `FinalWalkSpeed`, or rider height. There are no mount Damage/AttackSpeed stats and no contact/trample damage.
 
 For Riding, the server resolves hit validation from a logical `MountedCombatOrigin` near the mount's ground/front interaction area rather than from the rider's hand/Seat height. Effective attack reach remains the canonical survival-attack reach regardless of visual mount size. Per-species visual animation may be a bite, stomp, kick, swipe, peck, headbutt, or similar, but those are cosmetic presentations of the same attack.
 
 For giant mounts, client presentation should preserve threat readability with scale-aware camera framing and/or a subtle valid-target marker for nearby approved targets. Target-assist presentation must not auto-attack or change server target validation.
+
+## 50E.1 Wilderness Contest Knockback + Mounted Consequences
+
+The same universal attack may affect another player only as the approved wilderness Ice-contest mechanic. It is not a general damage/PvP system.
+
+### Eligibility and shared validation
+
+At hit resolution:
+- attacker != target;
+- both characters valid/alive;
+- both server-confirmed inside Wilderness contest space;
+- attacker is **not carrying Ice**;
+- attacker is not in an active Grab Hold;
+- target is outside applicable contest immunity/grace;
+- normal attack range/cooldown validation passes.
+
+Home Camp / Lobby rejects all player/mount contest effects. Both players must be in Wilderness at authoritative hit resolution. If a valid hit already resolved in Wilderness and subsequent physics carries the target into Home Camp, that existing ragdoll may finish, but no new contest hit may apply there.
+
+Mounted attacker uses the same logical `MountedCombatOrigin` and canonical effective range as other Mounted Strike targets. Mount species, rarity, Scale, WeightMultiplier, `FinalWalkSpeed`, current velocity, rider height, and visual mass never increase PvP reach, damage, ragdoll, or knockback. Landing a valid hit does not force the attacker to Unride.
+
+### Target: on foot, not carrying Ice
+
+On a valid hit:
+1. cancel/reset any active Grab Hold;
+2. set server-authoritative contest ragdoll;
+3. apply configured knockback;
+4. reject Grab completion while ragdolled;
+5. recover after configured ragdoll duration;
+6. apply configured post-recovery contest immunity.
+
+No Player HP, CurrentWarmth, CreatureVitality, Cash, ownership, Inventory, Pen allocation, or Ice state changes occur.
+
+### Target: Riding, not carrying Ice
+
+On a valid hit:
+1. cancel/reset any active Grab Hold;
+2. apply `PlayerContestMountDamageFraction * CreatureVitalityMax` to the target's currently Equipped creature;
+3. force Unride as a consequence of the validated contest hit;
+4. if Vitality remains above zero, transition the exact Equipped creature to `Following`;
+5. ragdoll and knock back only the player;
+6. after recovery, player remains on foot; there is no automatic remount;
+7. if Vitality reaches zero, resolve normal Frosted/Downed behavior and Orb presentation;
+8. apply configured post-recovery contest immunity.
+
+The mounted contest damage is tied specifically to a **validated PvP forced-Unride event**. Manual Unride, Seat repair/cleanup, respawn, teleport/reset presentation repair, or Frosted's own forced-Unride must never apply it.
+
+### Target: on foot, carrying Ice
+
+Carrier Commitment already disables the carrier's attack actions. Player contest effects against an on-foot carrier are rejected: no ragdoll, knockback, Warmth damage, or forced Ice drop.
+
+### Target: Riding, carrying Ice
+
+A valid Wilderness contest hit may hinder the carrier **through the mount only**.
+
+On success:
+1. do not ragdoll the player;
+2. do not apply player knockback;
+3. do not force Unride while mount Vitality remains above zero;
+4. do not modify CurrentWarmth;
+5. do not modify Ice ownership/state and never force DropIce;
+6. apply `PlayerContestMountDamageFraction * CreatureVitalityMax` to the currently Equipped creature;
+7. immediately apply the configured carrier/mount contest grace so simultaneous attackers cannot collapse multiple hits into one frame;
+8. if Vitality reaches zero, resolve Frosted/Downed -> force Unride -> Frosted Companion Orb; the player continues carrying the exact Ice on foot.
+
+A full-health creature with the canonical `0.25` fraction therefore normally requires four separated valid PvP hits to reach zero. The damage uses the existing session-only `CreatureVitality`; do not create separate PvP mount HP.
+
+### Grab/Hit race
+
+Before ownership, a valid contest hit cancels an active Grab Hold. The target must return to range and begin a fresh full hold.
+
+The authoritative race is:
+- if the completed Grab Hold transaction resolves first, Carrier Commitment begins and subsequent contest processing uses the appropriate carrier target rule above;
+- if a non-carrier contest hit resolves first, the hold cancels and cannot complete while the target is ragdolled/out of valid range.
+
+### Prohibited effects
+
+Player contest never directly changes:
+- Player HP;
+- CurrentWarmth;
+- Cash;
+- creature ownership;
+- Pen/Inventory allocation;
+- carried Ice identity/reward/size;
+- Ice state through forced drop.
+
+There is no trample/contact damage. Only an explicit server-validated attack request can produce the contest effect.
 
 ## 50F. Breakable Route Obstacles
 
@@ -1699,6 +1922,8 @@ They are route objects, not resource nodes.
 BaseService assigns each player one `AssignedBase`.
 
 Launch topology uses up to four personal base plots grouped side-by-side along one shared home-camp edge. All plots face the same primary wilderness direction so players read home behind them and adventure ahead of them.
+
+The shared home topology also contains an authored `HomeCampSafeZone` (or equivalent server-readable zone) covering the lobby/social base area.
 
 A base contains at minimum:
 - SpawnPoint;
@@ -1720,7 +1945,7 @@ Only the owner may:
 - Sell;
 - restore their own currently Equipped creature from Frosted/Downed.
 
-Another player's Hearth/WarmZone does not refill Current Warmth, does not train Maximum Warmth, and does not restore the visitor's creature Vitality. It is presentation/social space only for visitors.
+Inside `HomeCampSafeZone`, `CurrentWarmth` does not decrease for any player, including carriers. This safe-zone effect does not refill Current Warmth, train MaxWarmth, or recover Frosted creatures. Only the owner's own WarmZone provides those benefits. Another player's Hearth/WarmZone remains presentation/social space only for visitors. Player contest knockback is disabled throughout the Safe Zone.
 
 ### Shared onboarding rule
 
@@ -1732,7 +1957,7 @@ If another player claims that Ice first, onboarding may retarget another shared 
 ## 52. Pen Creature Presentation
 
 Pen movement remains cosmetic.
-Gameplay uses authoritative `PenSlots` CreatureGUID allocations, not visual position.
+Gameplay uses authoritative `PenSlots` CreatureGUID allocations, not visual position. Logical slots are invisible bookkeeping only. All active Pen creatures roam the shared unlocked `32 x Depth` area for the current PenLevel.
 
 Each visible Pen creature should:
 - use the copy's derived Scale;
@@ -1773,7 +1998,8 @@ Recommended shared GameplayRequest actions:
 
 ```text
 ClientReady
-GrabIce
+GrabIce  -- authoritative completed-hold claim; implementation may additionally use server-observed hold begin/cancel events
+DropIce
 DepositCarriedIce
 BeginReveal
 Crack
@@ -1788,7 +2014,7 @@ UpgradeHearth
 UseSurvivalAttack  -- existing validated SwingSurvivalTool path may be retained internally if it resolves both states
 ```
 
-There is intentionally **no** `DropIce` request.
+`DropIce` is an approved authoritative request. It releases the exact shared Ice; it is not a trade/transfer request.
 
 Warmth training, income, Great Frost timing, thaw completion, Ice spawning, carrier-failure release, Frost Sprite attacks, and world reset require no trusted client request.
 
@@ -2145,7 +2371,7 @@ MaxWarmth >= starting value
 0 or 1 owner per shared wilderness Ice
 0 or 1 Equipped creature
 MountState in {None, Following, Riding}
-max 4 active Pen creatures
+active Pen creatures <= PenCapacity(PenLevel) <= 10
 PenCopies + EquippedCopies <= OwnedCreatureCount
 ```
 
@@ -2157,7 +2383,9 @@ Shared-Ice invariants:
 - one Ice may have only one carrier at a time;
 - failure release clears owner before another Grab can succeed;
 - carrier failure/rescue never rerolls CreatureID, Rarity, WeightMultiplier, Scale, IceType, or Special metadata;
-- no intentional DropIce request exists.
+- intentional DropIce is allowed only through the canonical authoritative release path and never rerolls/transfers directly;
+- an Available Ice is not reserved by hold-start; only a valid completed Grab Hold may atomically create a carrier;
+- while carrying, server-enforced Carrier Commitment restricts gameplay actions to move/jump/Ride-Unride/Drop/deposit-placement.
 
 Survival invariants:
 
@@ -2174,7 +2402,7 @@ Survival invariants:
 - Frost Sprite player damage modifies CurrentWarmth only;
 - Frost Sprite Warmth damage comes from configured region/location values.
 
-Only the server may mutate gameplay truth, including Cash, MaxWarmth, HearthLevel, CreatureCopies, PenSlots, EquippedCreatureGUID, DiscoveredCreatures, ThawingIce, shared Ice ownership/state/reward lineage, and survival runtime state.
+Only the server may mutate gameplay truth, including Cash, MaxWarmth, HearthLevel, PenLevel, CreatureCopies, PenSlots, EquippedCreatureGUID, DiscoveredCreatures, ThawingIce, shared Ice ownership/state/reward lineage, HomeCampSafeZone membership used for authoritative rules, and survival/player-contest runtime state.
 
 ## 68. Explicit Technical Non-Goals
 

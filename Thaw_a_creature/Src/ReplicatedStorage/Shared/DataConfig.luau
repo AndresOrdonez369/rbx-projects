@@ -1,7 +1,7 @@
 local DataConfig = {
     DataStoreName = "PlayerData",
     KeyPrefix = "Player_",
-    DataVersion = 2,
+    DataVersion = 3,
     AutosaveIntervalSeconds = 60,
     SaveRetryAttempts = 3,
     RetryBackoffSeconds = { 1, 2, 4 },

@@ -7,22 +7,22 @@ local RegionConfig = {
     FrozenPass = {
         DisplayName = "FROZEN PASS",
         RecommendedWarmth = 1000,
-        ColdMultiplier = 10,
+        ColdMultiplier = 5,
     },
     AncientExpanse = {
         DisplayName = "ANCIENT EXPANSE",
-        RecommendedWarmth = 10000,
-        ColdMultiplier = 100,
+        RecommendedWarmth = 40000,
+        ColdMultiplier = 125,
     },
     BlackIceHollow = {
         DisplayName = "BLACK ICE HOLLOW",
-        RecommendedWarmth = 100000,
-        ColdMultiplier = 1000,
+        RecommendedWarmth = 2500000,
+        ColdMultiplier = 6250,
     },
     MeteorReach = {
         DisplayName = "METEOR REACH",
-        RecommendedWarmth = 1000000,
-        ColdMultiplier = 10000,
+        RecommendedWarmth = 80000000,
+        ColdMultiplier = 150000,
     },
 }
 

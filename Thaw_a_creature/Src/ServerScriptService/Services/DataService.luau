@@ -8,9 +8,9 @@ local Workspace = game:GetService("Workspace")
 local shared = ReplicatedStorage:WaitForChild("Shared")
 local CreatureConfig = require(shared:WaitForChild("CreatureConfig"))
 local DataConfig = require(shared:WaitForChild("DataConfig"))
-local GameConfig = require(shared:WaitForChild("GameConfig"))
 local HearthConfig = require(shared:WaitForChild("HearthConfig"))
 local IceConfig = require(shared:WaitForChild("IceConfig"))
+local PenConfig = require(shared:WaitForChild("PenConfig"))
 local RarityConfig = require(shared:WaitForChild("RarityConfig"))
 local SizeConfig = require(shared:WaitForChild("SizeConfig"))
 local WarmthConfig = require(shared:WaitForChild("WarmthConfig"))
@@ -42,7 +42,13 @@ local LOAD_FAILURE_KICK_MESSAGE = "Your saved data could not be loaded safely. P
 
 -- DataVersion 2 is the first persisted schema (per-copy CreatureGUID ownership).
 -- Add an entry keyed by source version whenever DataConfig.DataVersion is raised.
-local MIGRATIONS: { [number]: (any) -> any } = {}
+local MIGRATIONS: { [number]: (any) -> any } = {
+    -- 2 -> 3 adds PenLevel. The string-keyed Pen slots 1..4 are kept exactly; every profile starts at level 1.
+    [2] = function(stored)
+        stored.PenLevel = 1
+        return stored
+    end,
+}
 
 local hasStarted = false
 local isShuttingDown = false
@@ -87,8 +93,9 @@ local function createDefaultData(): PersistentData
         Cash = 0,
         MaxWarmth = WarmthConfig.StartingMaxWarmth,
         HearthLevel = HearthConfig[1].Level,
+        PenLevel = PenConfig.Levels[1].Level,
         CreatureCopies = {},
-        PenSlots = table.create(GameConfig.ActivePenCreatureSlots),
+        PenSlots = table.create(PenConfig.MaxSlots),
         EquippedCreatureGUID = nil,
         DiscoveredCreatures = {},
         ThawingIce = {},
@@ -203,6 +210,13 @@ local function decode(stored: { [string]: any }, logPrefix: string): (Persistent
         data.HearthLevel = stored.HearthLevel
     end
 
+    if stored.PenLevel ~= nil then
+        if not PenConfig.IsValidLevel(stored.PenLevel) then
+            return nil, "invalid PenLevel"
+        end
+        data.PenLevel = stored.PenLevel
+    end
+
     if type(stored.CreatureCopies) == "table" then
         for creatureGUID, copy in stored.CreatureCopies do
             if isNonEmptyString(creatureGUID)
@@ -219,12 +233,15 @@ local function decode(stored: { [string]: any }, logPrefix: string): (Persistent
         end
     end
 
+    -- A creature found in a locked slot is left unallocated, so it stays owned and appears in Inventory.
     local allocatedGUIDs = {}
+    local penCapacity = PenConfig.GetCapacity(data.PenLevel)
     if type(stored.PenSlots) == "table" then
-        for slotIndex = 1, GameConfig.ActivePenCreatureSlots do
+        for slotIndex = 1, PenConfig.MaxSlots do
             local creatureGUID = stored.PenSlots[tostring(slotIndex)]
             if creatureGUID ~= nil then
-                if type(creatureGUID) == "string"
+                if slotIndex <= penCapacity
+                    and type(creatureGUID) == "string"
                     and data.CreatureCopies[creatureGUID]
                     and not allocatedGUIDs[creatureGUID]
                 then
@@ -280,7 +297,7 @@ end
 -- DataStore values are JSON: Pen slots are written with string keys so empty slots never create array holes.
 local function encode(data: PersistentData, sessionLock: SessionLock?): { [string]: any }
     local penSlots = {}
-    for slotIndex = 1, GameConfig.ActivePenCreatureSlots do
+    for slotIndex = 1, PenConfig.MaxSlots do
         local creatureGUID = data.PenSlots[slotIndex]
         if creatureGUID then
             penSlots[tostring(slotIndex)] = creatureGUID
@@ -292,6 +309,7 @@ local function encode(data: PersistentData, sessionLock: SessionLock?): { [strin
         Cash = data.Cash,
         MaxWarmth = data.MaxWarmth,
         HearthLevel = data.HearthLevel,
+        PenLevel = data.PenLevel,
         CreatureCopies = data.CreatureCopies,
         PenSlots = penSlots,
         EquippedCreatureGUID = data.EquippedCreatureGUID,
@@ -307,6 +325,7 @@ local function createSnapshot(state: PlayerStateService.PlayerState): Persistent
     data.Cash = state.Cash
     data.MaxWarmth = state.MaxWarmth
     data.HearthLevel = state.HearthLevel
+    data.PenLevel = state.PenLevel
     data.EquippedCreatureGUID = state.EquippedCreatureGUID
     data.DiscoveredCreatures = table.clone(state.DiscoveredCreatures)
 
@@ -317,7 +336,7 @@ local function createSnapshot(state: PlayerStateService.PlayerState): Persistent
         }
     end
 
-    for slotIndex = 1, GameConfig.ActivePenCreatureSlots do
+    for slotIndex = 1, PenConfig.MaxSlots do
         data.PenSlots[slotIndex] = state.PenSlots[slotIndex]
     end
 

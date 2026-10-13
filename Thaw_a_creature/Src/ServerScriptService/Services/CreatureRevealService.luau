@@ -14,6 +14,7 @@ local ARTIST_CREATURES_FOLDER_NAME = "Creatures"
 local RUNTIME_TEMPLATES_FOLDER_NAME = "RuntimeCreatureVisualTemplates"
 local REPLICATED_CREATURE_VISUALS_FOLDER_NAME = "CreatureVisuals"
 local PRESENTATION_ROOT_NAME = "CreaturePresentationRoot"
+local RIDER_ANCHOR_ATTRIBUTE = "RiderAnchorOffset"
 local TEMPORARY_REVEAL_PRESENTATION_ATTRIBUTE = "IsTemporaryRevealPresentation"
 local TEMPORARY_REVEAL_PRESENTATION_LIFETIME_SECONDS = 2
 local VALID_SILHOUETTE_PROFILES = {
@@ -90,8 +91,22 @@ local function makePresentationSafe(model: Model): ()
             descendant.CanQuery = false
             descendant.CanTouch = false
             descendant.Massless = true
+            -- Authored Seats are rider anchors only; presentation clones must never seat a Humanoid.
+            if descendant:IsA("Seat") or descendant:IsA("VehicleSeat") then
+                descendant.Disabled = true
+            end
         end
     end
+end
+
+local function findAuthoredSeat(model: Model): BasePart?
+    for _, descendant in model:GetDescendants() do
+        if descendant:IsA("BasePart") and (descendant.Name == "Seat" or descendant:IsA("Seat")) then
+            return descendant
+        end
+    end
+
+    return nil
 end
 
 local function normalizeArtistModel(source: Model, creatureID: string): Model?
@@ -149,9 +164,17 @@ local function normalizeArtistModel(source: Model, creatureID: string): Model?
         model.PrimaryPart = root
     end
 
+    -- Shared mount contract: the rider sits on the authored Seat's top surface, or on the
+    -- top centre of the model bounds when an asset has no Seat. Stored relative to the pivot.
+    local seat = findAuthoredSeat(model)
+    local riderAnchorPosition = if seat
+        then seat.CFrame:PointToWorldSpace(Vector3.new(0, seat.Size.Y * 0.5, 0))
+        else boundsCFrame.Position + Vector3.new(0, boundsSize.Y * 0.5, 0)
+
     model.Name = creatureID
     model:SetAttribute("CreatureID", creatureID)
     model:SetAttribute("PresentationRootName", root.Name)
+    model:SetAttribute(RIDER_ANCHOR_ATTRIBUTE, desiredPivot:PointToObjectSpace(riderAnchorPosition))
 
     return model
 end
@@ -197,7 +220,11 @@ local function validateRosterConfiguration(): ()
                 string.format("CreatureConfig.%s.Rarity must name a configured rarity", creatureID)
             )
             assert(creature.Rarity == rarity, string.format("CreatureConfig.%s must be %s", creatureID, rarity))
-            assert(creature.DisplayName == creatureID, string.format("CreatureConfig.%s.DisplayName must be %s", creatureID, creatureID))
+            -- Display names may differ from IDs (e.g. "White Stag"); IDs and ModelNames stay exact.
+            assert(
+                type(creature.DisplayName) == "string" and creature.DisplayName ~= "",
+                string.format("CreatureConfig.%s.DisplayName must be a non-empty string", creatureID)
+            )
             assert(creature.ModelName == creatureID, string.format("CreatureConfig.%s.ModelName must be %s", creatureID, creatureID))
             assert(
                 type(creature.SilhouetteProfile) == "string" and VALID_SILHOUETTE_PROFILES[creature.SilhouetteProfile],

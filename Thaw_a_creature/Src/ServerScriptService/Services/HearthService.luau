@@ -36,7 +36,7 @@ local function validateConfiguration(): ()
         "HearthConfig.UpgradeRequestMinInterval must be a finite positive number"
     )
 
-    for level = 1, 6 do
+    for level = 1, HearthConfig.MaxLevel do
         local levelConfig = HearthConfig[level]
         assert(type(levelConfig) == "table", string.format("Missing HearthConfig for level %d", level))
         assert(levelConfig.Level == level, string.format("HearthConfig level %d must identify itself", level))
@@ -59,7 +59,10 @@ local function validateConfiguration(): ()
         end
     end
 
-    assert(HearthConfig[7] == nil, "Hearth progression must stop at level 6")
+    assert(
+        HearthConfig[HearthConfig.MaxLevel + 1] == nil,
+        string.format("Hearth progression must stop at level %d", HearthConfig.MaxLevel)
+    )
 end
 
 local function getClientState(hearthLevel: number): { [string]: any }?

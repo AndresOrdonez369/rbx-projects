@@ -1,4 +1,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+
+local WarmthConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("WarmthConfig"))
 
 local OwnBaseController = require(script.Parent.OwnBaseController)
 
@@ -7,6 +10,21 @@ local HearthController = {}
 local PRESENTATION_NAME = "HearthPresentation"
 local WARM_ZONE_PRESENTATION_NAME = "WarmZonePresentation"
 local EMBER_TEXTURE = "rbxasset://textures/particles/sparkles_main.dds"
+
+local BILLBOARD_WIDTH = 250
+local BILLBOARD_HEIGHT = 82
+local ACCENT_COLOR = Color3.fromRGB(255, 150, 60)
+local RATE_COLOR = Color3.fromRGB(255, 176, 78)
+local LEVEL_COLOR = Color3.fromRGB(255, 236, 190)
+local QUIET_COLOR = Color3.fromRGB(190, 174, 152)
+local COMPACT_SUFFIXES = { "K", "M", "B", "T", "Qa", "Qi" }
+
+-- "There's home": local-only boost while the player is Low/Critical. Safe stays at the normal stage look.
+local PRESSURE_LIGHT_BRIGHTNESS = { Safe = 1, Low = 1.9, Critical = 2.8 }
+local PRESSURE_LIGHT_RANGE = { Safe = 1, Low = 1.7, Critical = 2.3 }
+local PRESSURE_EMBER_RATE = { Safe = 1, Low = 2, Critical = 3 }
+local PRESSURE_SPARK_RATE = { Safe = 0, Low = 9, Critical = 15 }
+local PRESSURE_TWEEN_INFO = TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
 type StageStyle = {
     OuterSize: Vector3,
@@ -38,10 +56,12 @@ type Presentation = {
     Light: PointLight,
     Smoke: Smoke,
     Embers: ParticleEmitter,
+    HomeSparks: ParticleEmitter,
     Posts: { BasePart },
     Runes: { BasePart },
+    Background: Frame,
+    Stroke: UIStroke,
     LevelLabel: TextLabel,
-    StageLabel: TextLabel,
     TrainingLabel: TextLabel,
     UpgradeLabel: TextLabel,
 }
@@ -128,9 +148,15 @@ local STAGE_STYLES: { [number]: StageStyle } = {
         Color3.fromRGB(255, 199, 130), Color3.fromRGB(126, 235, 255)
     ),
 }
+-- Lv.7-10 reuse the Lv.6 look until the world-art pass defines their final presentation.
+for level = 7, 10 do
+    STAGE_STYLES[level] = STAGE_STYLES[6]
+end
 
 local started = false
 local presentation: Presentation? = nil
+local warmthPressure = "Safe"
+local currentLevel: number? = nil
 
 local remotes = ReplicatedStorage:WaitForChild("Remotes")
 local gameplayRequest = remotes:WaitForChild("GameplayRequest")
@@ -150,6 +176,47 @@ local function formatInteger(value: number): string
 
     table.insert(parts, 1, digits)
     return table.concat(parts, ",")
+end
+
+local function trimZeros(text: string): string
+    if text:find(".", 1, true) then
+        text = text:gsub("0+$", ""):gsub("%.$", "")
+    end
+    return text
+end
+
+local function formatScientific(abs: number): string
+    local mantissa, exponent = string.format("%.2e", abs):match("^(.-)e([%+%-]?%d+)$")
+    if not mantissa then
+        return tostring(abs)
+    end
+    return string.format("%se%d", trimZeros(mantissa), tonumber(exponent) :: number)
+end
+
+-- Display only: 950, 1.25K, 60K, 3.4M, 8.2B, 1.1T ... falling back to scientific notation.
+local function formatCompact(value: number): string
+    local abs = math.abs(value)
+    local rounded = math.round(abs)
+    if rounded < 1000 then
+        return tostring(rounded)
+    end
+
+    local index = math.max(math.floor(math.log10(abs) / 3), 1)
+    for _ = 1, 2 do
+        if index > #COMPACT_SUFFIXES then
+            return formatScientific(abs)
+        end
+
+        local scaled = abs / (1000 ^ index)
+        local decimals = if scaled < 100 then 2 elseif scaled < 1000 then 1 else 0
+        local text = trimZeros(string.format("%." .. decimals .. "f", scaled))
+        if (tonumber(text) :: number) < 1000 then
+            return text .. COMPACT_SUFFIXES[index]
+        end
+        index += 1
+    end
+
+    return formatScientific(abs)
 end
 
 local function createSafePart(name: string, parent: Instance): Part
@@ -218,7 +285,7 @@ local function createWarmZonePresentation(warmZone: BasePart): ()
     meaning.Size = UDim2.fromScale(0.8, 0.09)
     meaning.BackgroundTransparency = 1
     meaning.Font = Enum.Font.GothamBold
-    meaning.Text = "WARM ZONE  •  TRAINING + REFILL + SAFETY"
+    meaning.Text = "WARM ZONE  •  TRAINS MAX WARMTH  •  REFILLS"
     meaning.TextColor3 = Color3.fromRGB(255, 211, 132)
     meaning.TextScaled = true
     meaning.TextStrokeColor3 = Color3.fromRGB(75, 34, 8)
@@ -242,7 +309,7 @@ local function createPresentation(
     folder.Name = PRESENTATION_NAME
     folder.Parent = hearth
 
-    for _, effectName in { "Flame", "Smoke", "Embers" } do
+    for _, effectName in { "Flame", "Smoke", "Embers", "HomeSparks" } do
         local existingEffect = fireOuter:FindFirstChild(effectName)
         if existingEffect then
             existingEffect:Destroy()
@@ -294,6 +361,32 @@ local function createPresentation(
     })
     embers.Parent = fireOuter
 
+    -- Tall, slow spark column visible only while the player is Low/Critical (disabled otherwise).
+    local homeSparks = Instance.new("ParticleEmitter")
+    homeSparks.Name = "HomeSparks"
+    homeSparks.Enabled = false
+    homeSparks.Rate = 0
+    homeSparks.Texture = EMBER_TEXTURE
+    homeSparks.Lifetime = NumberRange.new(2.2, 3)
+    homeSparks.Speed = NumberRange.new(14, 20)
+    homeSparks.Acceleration = Vector3.new(0, 2, 0)
+    homeSparks.Drag = 0.4
+    homeSparks.LightEmission = 1
+    homeSparks.LightInfluence = 0
+    homeSparks.SpreadAngle = Vector2.new(10, 10)
+    homeSparks.Color = ColorSequence.new(Color3.fromRGB(255, 214, 120), Color3.fromRGB(255, 120, 40))
+    homeSparks.Size = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 1.3),
+        NumberSequenceKeypoint.new(0.6, 1),
+        NumberSequenceKeypoint.new(1, 0),
+    })
+    homeSparks.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0.1),
+        NumberSequenceKeypoint.new(0.7, 0.35),
+        NumberSequenceKeypoint.new(1, 1),
+    })
+    homeSparks.Parent = fireOuter
+
     local posts = {}
     for index = 1, 4 do
         local post = createSafePart(string.format("BrazierPost%02d", index), folder)
@@ -316,60 +409,93 @@ local function createPresentation(
     billboard.AlwaysOnTop = true
     billboard.LightInfluence = 0
     billboard.MaxDistance = 110
-    billboard.Size = UDim2.fromOffset(390, 158)
+    billboard.Size = UDim2.fromOffset(BILLBOARD_WIDTH, BILLBOARD_HEIGHT)
     billboard.StudsOffsetWorldSpace = Vector3.new(0, 8.5, 0)
     billboard.Parent = folder
 
     local background = Instance.new("Frame")
     background.Name = "Background"
     background.Size = UDim2.fromScale(1, 1)
-    background.BackgroundColor3 = Color3.fromRGB(30, 15, 7)
-    background.BackgroundTransparency = 0.16
+    background.BackgroundColor3 = Color3.fromRGB(24, 17, 14)
+    background.BackgroundTransparency = 0.1
     background.BorderSizePixel = 0
     background.Parent = billboard
 
     local backgroundCorner = Instance.new("UICorner")
-    backgroundCorner.CornerRadius = UDim.new(0, 12)
+    backgroundCorner.CornerRadius = UDim.new(0, 8)
     backgroundCorner.Parent = background
 
     local backgroundBorder = Instance.new("UIStroke")
-    backgroundBorder.Color = Color3.fromRGB(255, 170, 70)
-    backgroundBorder.Thickness = 3
-    backgroundBorder.Transparency = 0.1
+    backgroundBorder.Name = "Stroke"
+    backgroundBorder.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    backgroundBorder.Color = ACCENT_COLOR
+    backgroundBorder.Thickness = 2
+    backgroundBorder.Transparency = 0.3
     backgroundBorder.Parent = background
 
+    local function constrain(label: TextLabel, minSize: number, maxSize: number)
+        local constraint = Instance.new("UITextSizeConstraint")
+        constraint.MinTextSize = minSize
+        constraint.MaxTextSize = maxSize
+        constraint.Parent = label
+    end
+
+    -- Compact three-row card: level, training rate (hero), next level/cost. Stage name stays in data/config only.
     local levelLabel = createBillboardLabel(
-        "Level", UDim2.fromScale(0.04, 0.03), UDim2.fromScale(0.92, 0.28), Color3.fromRGB(255, 236, 190)
+        "Level", UDim2.fromScale(0.06, 0.08), UDim2.fromScale(0.88, 0.27), LEVEL_COLOR
     )
+    levelLabel.Font = Enum.Font.GothamBlack
+    levelLabel.TextXAlignment = Enum.TextXAlignment.Left
     levelLabel.Parent = background
-    local stageLabel = createBillboardLabel(
-        "Stage", UDim2.fromScale(0.08, 0.28), UDim2.fromScale(0.84, 0.16), Color3.fromRGB(255, 176, 78)
-    )
-    stageLabel.Parent = background
+    constrain(levelLabel, 10, 16)
+
     local trainingLabel = createBillboardLabel(
-        "Training", UDim2.fromScale(0.05, 0.48), UDim2.fromScale(0.9, 0.21), Color3.fromRGB(255, 213, 112)
+        "Training", UDim2.fromScale(0.06, 0.38), UDim2.fromScale(0.88, 0.32), RATE_COLOR
     )
+    trainingLabel.Font = Enum.Font.GothamBlack
+    trainingLabel.TextXAlignment = Enum.TextXAlignment.Left
     trainingLabel.Parent = background
+    constrain(trainingLabel, 11, 22)
+
     local upgradeLabel = createBillboardLabel(
-        "Upgrade", UDim2.fromScale(0.05, 0.72), UDim2.fromScale(0.9, 0.21), Color3.fromRGB(255, 245, 220)
+        "Upgrade", UDim2.fromScale(0.06, 0.74), UDim2.fromScale(0.88, 0.18), QUIET_COLOR
     )
+    upgradeLabel.TextXAlignment = Enum.TextXAlignment.Left
+    upgradeLabel.TextStrokeTransparency = 0.6
     upgradeLabel.Parent = background
+    constrain(upgradeLabel, 8, 13)
 
     return {
         Billboard = billboard,
+        Background = background,
+        Stroke = backgroundBorder,
         FireOuter = fireOuter,
         FireCore = fireCore,
         Flame = flame,
         Light = light,
         Smoke = smoke,
         Embers = embers,
+        HomeSparks = homeSparks,
         Posts = posts,
         Runes = runes,
         LevelLabel = levelLabel,
-        StageLabel = stageLabel,
         TrainingLabel = trainingLabel,
         UpgradeLabel = upgradeLabel,
     }
+end
+
+local function updateBillboardScale(currentPresentation: Presentation): ()
+    local camera = workspace.CurrentCamera
+    if not camera then
+        return
+    end
+
+    -- Slightly smaller on narrow screens; never below 0.85 so text stays legible.
+    local scale = math.clamp(camera.ViewportSize.X / 1000, 0.85, 1)
+    currentPresentation.Billboard.Size = UDim2.fromOffset(
+        math.round(BILLBOARD_WIDTH * scale),
+        math.round(BILLBOARD_HEIGHT * scale)
+    )
 end
 
 local function isValidUpdate(data: any): boolean
@@ -396,6 +522,47 @@ local function isValidUpdate(data: any): boolean
         and data.NextUpgradeCost > 0
         and data.NextUpgradeCost < math.huge
         and data.NextUpgradeCost % 1 == 0
+end
+
+local function applyPressure(currentPresentation: Presentation, instant: boolean): ()
+    local style = if currentLevel then STAGE_STYLES[currentLevel] else nil
+    if not style then
+        return
+    end
+
+    local lightGoal = {
+        Brightness = style.LightBrightness * PRESSURE_LIGHT_BRIGHTNESS[warmthPressure],
+        Range = style.LightRange * PRESSURE_LIGHT_RANGE[warmthPressure],
+    }
+    if instant then
+        currentPresentation.Light.Brightness = lightGoal.Brightness
+        currentPresentation.Light.Range = lightGoal.Range
+    else
+        TweenService:Create(currentPresentation.Light, PRESSURE_TWEEN_INFO, lightGoal):Play()
+    end
+
+    currentPresentation.Embers.Rate = style.EmberRate * PRESSURE_EMBER_RATE[warmthPressure]
+    local sparkRate = PRESSURE_SPARK_RATE[warmthPressure]
+    currentPresentation.HomeSparks.Rate = sparkRate
+    currentPresentation.HomeSparks.Enabled = sparkRate > 0
+end
+
+local function classifyPressure(data: any): string?
+    if type(data) ~= "table" then
+        return nil
+    end
+    local current, max = data.CurrentWarmth, data.MaxWarmth
+    if type(current) ~= "number" or type(max) ~= "number" or current ~= current or max ~= max or max <= 0 then
+        return nil
+    end
+
+    local ratio = math.clamp(current / max, 0, 1)
+    if ratio <= WarmthConfig.CriticalThreshold then
+        return "Critical"
+    elseif ratio <= WarmthConfig.LowThreshold then
+        return "Low"
+    end
+    return "Safe"
 end
 
 local function applyStage(
@@ -462,14 +629,17 @@ local function applyStage(
     end
 
     currentPresentation.LevelLabel.Text = string.format("HEARTH LV. %d", level)
-    currentPresentation.StageLabel.Text = string.upper(data.VisualStage)
     currentPresentation.TrainingLabel.Text = string.format(
-        "TRAINING +%s WARMTH/s",
-        formatInteger(data.WarmthTrainingRate)
+        "+%s MAX WARMTH/s",
+        formatCompact(data.WarmthTrainingRate)
     )
     currentPresentation.UpgradeLabel.Text = if data.IsMaxLevel
-        then "MAX"
-        else string.format("NEXT $%s", formatInteger(data.NextUpgradeCost))
+        then "MAX LEVEL"
+        else string.format("NEXT LV. %d · $%s", level + 1, formatCompact(data.NextUpgradeCost))
+    currentPresentation.UpgradeLabel.TextColor3 = if data.IsMaxLevel then RATE_COLOR else QUIET_COLOR
+
+    currentLevel = level
+    applyPressure(currentPresentation, true)
 
     prompt.ObjectText = string.format("HEARTH LV. %d", level)
     prompt.ActionText = if data.IsMaxLevel
@@ -489,6 +659,17 @@ function HearthController.Start(): ()
     local pendingUpdate: any = nil
 
     gameplayEvent.OnClientEvent:Connect(function(eventName, data)
+        if eventName == "WarmthUpdated" then
+            local pressure = classifyPressure(data)
+            if pressure and pressure ~= warmthPressure then
+                warmthPressure = pressure
+                if presentation then
+                    applyPressure(presentation, false)
+                end
+            end
+            return
+        end
+
         if eventName ~= "HearthUpdated" then
             return
         end
@@ -518,6 +699,18 @@ function HearthController.Start(): ()
 
         presentation = createPresentation(hearth, base, fireOuter, fireCore)
         createWarmZonePresentation(warmZone)
+
+        local createdPresentation = presentation
+        if createdPresentation then
+            updateBillboardScale(createdPresentation)
+
+            local camera = workspace.CurrentCamera
+            if camera then
+                camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+                    updateBillboardScale(createdPresentation)
+                end)
+            end
+        end
         hearthBase = base
         prompt = upgradePrompt
 

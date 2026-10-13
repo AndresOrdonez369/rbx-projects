@@ -25,6 +25,7 @@ local PlayerStateService = require(script.Parent.PlayerStateService)
 
 export type DepositedIce = {
     IceType: string,
+    IsSpecial: boolean,
     CreatureID: string,
     Rarity: string,
     WeightMultiplier: number,
@@ -65,69 +66,23 @@ local lastBeginRevealRequestAtByPlayer: { [Player]: number } = {}
 local issuedSessionIDs: { [string]: boolean } = {}
 local hasStarted = false
 local presentationUpdateElapsed = 0
-local DAY_PHASE = "Day"
 local GREAT_FROST_PHASE = "GreatFrost"
-local currentWorldCyclePhase = DAY_PHASE
-local activeGreatFrostCycleIndex: number? = nil
-local activeGreatFrostStartedAtTime: number? = nil
-local activeGreatFrostEndsAtTime: number? = nil
-local lastCompletedGreatFrostCycleIndex: number? = nil
+local lastSurgedCycleIndex: number? = nil
 
 local function isJackpotHarnessEnabled(): boolean
     return RunService:IsStudio() and StudioTestConfig.EnableJackpotHarness == true
 end
 
 assert(
-    WorldCycleConfig.GreatFrostThawMultiplier > 1,
-    "WorldCycleConfig.GreatFrostThawMultiplier must be greater than one"
+    WorldCycleConfig.ThawSurgePercent > 0 and WorldCycleConfig.ThawSurgePercent < 1,
+    "WorldCycleConfig.ThawSurgePercent must be between zero and one"
 )
-
-local function getGreatFrostOverlapRealSeconds(
-    thawItem: PlayerStateService.ThawItem,
-    frostStartedAtTime: number,
-    frostContributionEndsAtTime: number
-): number
-    local overlapStart = math.max(
-        thawItem.DepositedAtTime,
-        frostStartedAtTime,
-        thawItem.PresentSinceTime or thawItem.DepositedAtTime
-    )
-    local availableFrostRealSeconds = math.max(0, frostContributionEndsAtTime - overlapStart)
-    if availableFrostRealSeconds == 0 then
-        return 0
-    end
-
-    local effectiveElapsedAtOverlapStart = overlapStart
-        - thawItem.DepositedAtTime
-        + thawItem.BonusProgressSeconds
-    local effectiveSecondsUntilReady = thawItem.BaseDurationSeconds - effectiveElapsedAtOverlapStart
-    if effectiveSecondsUntilReady <= 0 then
-        return 0
-    end
-
-    local realSecondsUntilReady = effectiveSecondsUntilReady / WorldCycleConfig.GreatFrostThawMultiplier
-    return math.min(availableFrostRealSeconds, realSecondsUntilReady)
-end
 
 local function getEffectiveElapsedAtTime(
     thawItem: PlayerStateService.ThawItem,
     currentTime: number
 ): number
-    local elapsed = currentTime - thawItem.DepositedAtTime + thawItem.BonusProgressSeconds
-    local frostStartedAtTime = activeGreatFrostStartedAtTime
-    local frostEndsAtTime = activeGreatFrostEndsAtTime
-
-    if currentWorldCyclePhase == GREAT_FROST_PHASE and frostStartedAtTime and frostEndsAtTime then
-        local contributionEndsAtTime = math.min(currentTime, frostEndsAtTime)
-        local activeFrostRealSeconds = getGreatFrostOverlapRealSeconds(
-            thawItem,
-            frostStartedAtTime,
-            contributionEndsAtTime
-        )
-        elapsed += activeFrostRealSeconds * (WorldCycleConfig.GreatFrostThawMultiplier - 1)
-    end
-
-    return elapsed
+    return currentTime - thawItem.DepositedAtTime + thawItem.BonusProgressSeconds
 end
 
 local function isBeginRevealRateLimited(player: Player): boolean
@@ -288,15 +243,14 @@ local function getDisplayCFrame(
     iceType: string,
     weightMultiplier: number
 ): CFrame
-    local anchor = base.PenFloor
+    local anchor = base.ThawArea
     local surfaceY = getPresentationSurfaceY(base)
 
     local zeroBasedIndex = displayIndex - 1
     local column = zeroBasedIndex % GRID_COLUMNS
     local row = math.floor(zeroBasedIndex / GRID_COLUMNS)
     local xOffset = (column - (GRID_COLUMNS - 1) * 0.5) * GRID_COLUMN_SPACING
-    local zOffset = anchor.Size.Z * 0.5
-        + MAX_PROTOTYPE_VISUAL_DEPTH * 0.5
+    local zOffset = MAX_PROTOTYPE_VISUAL_DEPTH * 0.5
         + GRID_FIRST_ROW_PADDING
         + row * GRID_ROW_SPACING
     local visualSize = IceVisualFactory.GetScaledSize(iceType, weightMultiplier)
@@ -323,7 +277,7 @@ local function createVisual(
     local playerFolder = getPlayerFolder(player, base)
     local visualIce = IceVisualFactory.Create(
         thawItem.IceType,
-        creature.SilhouetteProfile,
+        IceVisualFactory.GetPreRevealSilhouetteProfile(thawItem.CreatureID, thawItem.IceType, thawItem.IsSpecial),
         thawItem.WeightMultiplier,
         getDisplayCFrame(base, displayIndex, thawItem.IceType, thawItem.WeightMultiplier),
         playerFolder
@@ -508,7 +462,7 @@ function ThawService.CreateFromDepositedIce(
         ThawID = thawID,
         PlayerUserID = player.UserId,
         IceType = depositedIce.IceType,
-        IsSpecial = false,
+        IsSpecial = depositedIce.IsSpecial == true,
         CreatureID = depositedIce.CreatureID,
         Rarity = depositedIce.Rarity,
         WeightMultiplier = depositedIce.WeightMultiplier,
@@ -554,81 +508,28 @@ function ThawService.GetProgress(thawItem: PlayerStateService.ThawItem): number
     return math.clamp(elapsed / thawItem.BaseDurationSeconds, 0, 1)
 end
 
--- Folds any in-progress Great Frost acceleration into the bonus so a saved record
--- keeps the online progress already earned without mutating the live ThawItem.
 function ThawService.GetPersistentBonusProgressSeconds(thawItem: PlayerStateService.ThawItem): number
-    local currentTime = Workspace:GetServerTimeNow()
-    local elapsed = getEffectiveElapsedAtTime(thawItem, currentTime)
-
-    return elapsed - (currentTime - thawItem.DepositedAtTime)
+    return thawItem.BonusProgressSeconds
 end
 
-function ThawService.HandleWorldCyclePhaseChanged(
-    currentPhase: string,
-    cycleIndex: number,
-    phaseStartedAtTime: number,
-    phaseEndsAtTime: number
-): ()
-    if currentPhase == GREAT_FROST_PHASE then
-        if activeGreatFrostCycleIndex == cycleIndex or lastCompletedGreatFrostCycleIndex == cycleIndex then
-            return
-        end
-
-        currentWorldCyclePhase = GREAT_FROST_PHASE
-        activeGreatFrostCycleIndex = cycleIndex
-        activeGreatFrostStartedAtTime = phaseStartedAtTime
-        activeGreatFrostEndsAtTime = phaseEndsAtTime
-
-        for _, player in Players:GetPlayers() do
-            ThawService.RefreshPlayerVisuals(player)
-        end
-
+-- Online-only Thaw Surge: each unfinished ThawItem of a player present at an observed Frost
+-- gains a fixed share of its base duration once. Ready Ice and offline players are unaffected.
+function ThawService.HandleWorldCyclePhaseChanged(currentPhase: string, cycleIndex: number): ()
+    if currentPhase ~= GREAT_FROST_PHASE or lastSurgedCycleIndex == cycleIndex then
         return
     end
+    lastSurgedCycleIndex = cycleIndex
 
-    if currentPhase ~= DAY_PHASE then
-        return
-    end
-
-    local completedCycleIndex = activeGreatFrostCycleIndex
-    local frostStartedAtTime = activeGreatFrostStartedAtTime
-    local frostEndsAtTime = activeGreatFrostEndsAtTime
-    local foldedCompletedFrost = false
-
-    if completedCycleIndex ~= nil
-        and frostStartedAtTime ~= nil
-        and frostEndsAtTime ~= nil
-        and lastCompletedGreatFrostCycleIndex ~= completedCycleIndex
-    then
-        local completedFrostEndsAtTime = math.min(frostEndsAtTime, phaseStartedAtTime)
-
-        for _, player in Players:GetPlayers() do
-            local playerState = PlayerStateService.GetState(player)
-            if playerState then
-                for _, thawItem in playerState.ActiveThawItems do
-                    local frostOverlapRealSeconds = getGreatFrostOverlapRealSeconds(
-                        thawItem,
-                        frostStartedAtTime,
-                        completedFrostEndsAtTime
-                    )
-                    thawItem.BonusProgressSeconds += frostOverlapRealSeconds
-                        * (WorldCycleConfig.GreatFrostThawMultiplier - 1)
+    local currentTime = Workspace:GetServerTimeNow()
+    for _, player in Players:GetPlayers() do
+        local playerState = PlayerStateService.GetState(player)
+        if playerState then
+            for _, thawItem in playerState.ActiveThawItems do
+                if getEffectiveElapsedAtTime(thawItem, currentTime) < thawItem.BaseDurationSeconds then
+                    thawItem.BonusProgressSeconds += thawItem.BaseDurationSeconds * WorldCycleConfig.ThawSurgePercent
                 end
             end
-        end
 
-        lastCompletedGreatFrostCycleIndex = completedCycleIndex
-        foldedCompletedFrost = true
-
-    end
-
-    currentWorldCyclePhase = DAY_PHASE
-    activeGreatFrostCycleIndex = nil
-    activeGreatFrostStartedAtTime = nil
-    activeGreatFrostEndsAtTime = nil
-
-    if foldedCompletedFrost then
-        for _, player in Players:GetPlayers() do
             ThawService.RefreshPlayerVisuals(player)
         end
     end

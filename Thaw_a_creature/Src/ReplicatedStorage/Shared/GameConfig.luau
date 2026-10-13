@@ -1,7 +1,6 @@
 local PrototypeConfig = {
     MaxPlayers = 4,
     BaseWalkSpeed = 16,
-    ActivePenCreatureSlots = 4,
     PenIncomeIntervalSeconds = 1,
     EquippedCreatureLimit = 1,
     CarriedIceLimit = 1,
@@ -13,6 +12,8 @@ local PrototypeConfig = {
     PenManagementRequestMinInterval = 0.25,
     EquipMaxDistance = 25,
     EquipRequestMinInterval = 0.25,
+    -- Sell is a small cleanup payout: this many seconds of the species BaseIncomePerSecond, never size-scaled.
+    SellValueBaseIncomeSeconds = 10,
     Currency = "Cash",
 }
 

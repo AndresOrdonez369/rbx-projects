@@ -1,0 +1,14 @@
+{
+  "name": "ThawArea",
+  "className": "Part",
+  "properties": {
+    "Anchored": true,
+    "CanCollide": false,
+    "CanQuery": false,
+    "CanTouch": false,
+    "CastShadow": false,
+    "Position": [35, 0.5, 0],
+    "Size": [1, 0.2, 1],
+    "Transparency": 1
+  }
+}

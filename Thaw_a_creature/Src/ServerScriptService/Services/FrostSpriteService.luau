@@ -10,6 +10,7 @@ local FrostSpriteConfig = require(shared:WaitForChild("FrostSpriteConfig"))
 
 local CreatureService = require(script.Parent.CreatureService)
 local PlayerStateService = require(script.Parent.PlayerStateService)
+local RegionService = require(script.Parent.RegionService)
 local SurvivalToolService = require(script.Parent.SurvivalToolService)
 local WarmthService = require(script.Parent.WarmthService)
 
@@ -39,6 +40,7 @@ type SpriteRecord = {
     TelegraphLight: PointLight?,
     CurrentProjectile: BasePart?,
     CurrentHealth: number,
+    PlayerWarmthDamage: number,
     IsDefeated: boolean,
 }
 
@@ -292,10 +294,7 @@ local function runProjectile(record: SpriteRecord, target: SpriteTarget, targetP
         if result then
             projectile.Position = projectilePreviousPosition + direction * result.Distance
             if isLockedTargetHit(target, result.Instance) and target.Kind == "Player" then
-                local hitApplied = WarmthService.ApplyDamage(
-                    target.Player,
-                    FrostSpriteConfig.PlayerWarmthDamagePerHit
-                )
+                local hitApplied = WarmthService.ApplyDamage(target.Player, record.PlayerWarmthDamage)
                 if hitApplied then
                     gameplayEvent:FireClient(target.Player, "SurvivalFeedback", {
                         Kind = "PlayerHit",
@@ -408,11 +407,24 @@ function FrostSpriteService.Spawn(
     local templateCore = template:FindFirstChild(CORE_PART_NAME)
     assert(templateCore and templateCore:IsA("BasePart"), "Frost Sprite template Core must be a BasePart")
 
+    -- Stationary, so the region (and its Warmth damage) is fixed where the guardian is authored.
+    local regionID = RegionService.GetRegionAtPosition(spawnCFrame.Position)
+    local playerWarmthDamage = regionID and FrostSpriteConfig.PlayerWarmthDamageByRegion[regionID]
+    assert(
+        type(playerWarmthDamage) == "number" and playerWarmthDamage > 0,
+        string.format(
+            "Frost Sprite %s/%s must stand inside a region with configured Warmth damage",
+            spawnPointID,
+            guardianMarkerID
+        )
+    )
+
     local model = template:Clone()
     model.Name = string.format("FrostSprite_%s_%s", guardProfile, guardianMarkerID)
     model:SetAttribute("GuardedSpawnPointID", spawnPointID)
     model:SetAttribute("GuardProfile", guardProfile)
     model:SetAttribute("GuardianMarkerID", guardianMarkerID)
+    model:SetAttribute("RegionID", regionID)
     model:SetAttribute("CurrentHealth", FrostSpriteConfig.FrostSpriteMaxHealth)
     model:SetAttribute("MaxHealth", FrostSpriteConfig.FrostSpriteMaxHealth)
     model:SetAttribute("IsTelegraphing", false)
@@ -438,6 +450,7 @@ function FrostSpriteService.Spawn(
         TelegraphLight = light :: PointLight?,
         CurrentProjectile = nil,
         CurrentHealth = FrostSpriteConfig.FrostSpriteMaxHealth,
+        PlayerWarmthDamage = playerWarmthDamage,
         IsDefeated = false,
     }
     recordsByModel[model] = record

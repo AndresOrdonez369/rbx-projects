@@ -1,15 +1,33 @@
 # THAW A CREATURE
 
-## Implementation Constants & Content Configuration - Canonical v1.1
+## Implementation Constants & Content Configuration - Canonical v1.4
 
 **Purpose:** Exact first-pass values, content tables, implementation constraints, and AI guardrails  
-**Design Source:** Concise GDD v0.7  
+**Design Source:** Concise GDD v1.0  
 **Prototype Source:** Bare-Minimum Prototype Technical Specification v1.0 FINAL  
-**Launch Source:** Technical Implementation Specification v0.7  
-**Development Source:** Development Plan v1.1  
+**Launch Source:** Technical Implementation Specification v1.0  
+**Development Source:** Development Plan v1.4  
 **Status:** Numerical values are first-pass balancing values unless explicitly structural  
 
 ### Revision notes
+
+- Adds Grab Hold constants: visible-Scale range `0.75x-5.00x`, hold range `1.00-2.00 sec`, first-pass linear interpolation, no reservation on hold start.
+- Adds Carrier Commitment structural rules and canonical intentional DropIce, including a first-pass `0.75 sec` same-player self-regrab lock.
+- Refines Wilderness Contest constants for mounted play: `25% of CreatureVitalityMax` per validated PvP forced knock-off and per valid mounted-carrier mount hit; carrier player/ice remain protected; existing Frosted behavior resolves at zero Vitality.
+- Adds Home Camp / Lobby Safe-Zone rules: zero Warmth drain throughout the shared lobby, including while carrying Ice; only the owner's own WarmZone refills/trains and restores Frosted companion Vitality.
+- Adds Frosted Companion Orb presentation constants while preserving session-only Frosted state and logical Equipped ownership.
+- Adds seven Pen levels with capacity `4 -> 10`, fixed width `32`, depth `24 -> 48`, and approved Cash upgrade costs `150K / 2.5M / 10M / 40M / 150M / 750M`.
+- Records player-chosen session thaw placement inside the Pen as presentation-only state; exact placement CFrames do not persist and logical thaw capacity remains unlimited.
+- Corrects §33A Frost Sprite regional Warmth damage to the canonical `10 / 100 / 4,000 / 250,000 / 8,000,000`.
+- Raises the approved launch roster to 20 species / four signature creatures per region and defines region-exclusive normal-Ice pools.
+- Rebalances BaseIncomePerSecond across all 20 launch species into overlapping regional economic bands while preserving the existing Scale^2 income formula.
+- Keeps existing 11-species BaseWalkSpeed values and adds controlled BaseWalkSpeed values for the nine new launch species.
+- Allows the nine new species to use placeholder meshes; final ReferenceWeight/BaseVisualScale/SilhouetteProfile values remain provisional until actual asset audits.
+- Replaces the prototype six-level Hearth table with the approved 10-level launch costs and Warmth training rates.
+- Updates Recommended Warmth to 100 / 1,000 / 40,000 / 2,500,000 / 80,000,000 with corresponding cold multipliers and 10%-of-recommendation Sprite damage.
+- Changes Special Ice rarity weights to 90% Rare / 10% Legendary in Ancient, Black, and Meteor.
+- Expands Frozen Archive to 20 slots and records Sell as a low-value cleanup payout whose exact Day-14 constants remain intentionally secondary to Pen income.
+
 
 - Adds all-creature launch mounts with runtime Following/Riding states.
 - Locks base WalkSpeed while Following and copy-specific `FinalWalkSpeed` while Riding.
@@ -22,20 +40,18 @@
 - Locks one shared authoritative Ice field for all players and removes private onboarding-Ice configuration.
 - Adds exact-Ice carrier-failure release/rescue rules for Freeze, death, reset/respawn, and disconnect.
 - Preserves hidden reward + WeightMultiplier/Scale across multiplayer handoff without reroll.
-- Updates the current validated 11-creature base stats and five functional Ice pools.
 - Updates persistence boundaries for session-only survival state.
-- Marks the remaining five species needed to reach the 16-creature launch quantity as explicit future content decisions rather than stale placeholders.
 
 ## 1. Document Authority
 
 For launch production after the successful Week-1 gate:
-1. Concise GDD v0.7 - player-facing intent.
-2. Launch Technical Implementation Specification v0.7 - production behavior/architecture.
-3. This Constants v1.1 - exact first-pass values/content configuration and AI guardrails.
-4. Development Plan v1.1 - implementation order/gates.
+1. Concise GDD v1.0 - player-facing intent.
+2. Launch Technical Implementation Specification v1.0 - production behavior/architecture.
+3. This Constants v1.4 - exact first-pass values/content configuration and AI guardrails.
+4. Development Plan v1.4 - implementation order/gates.
 5. Prototype Technical Specification v1.0 FINAL - historical Week-1 validation evidence.
 
-If a value in this document conflicts with an older document version, this v1.1 value supersedes it unless the higher-authority current document explicitly says otherwise.
+If a value in this document conflicts with an older document version, this v1.4 value supersedes it unless the higher-authority current document explicitly says otherwise.
 
 ## 2. General Implementation Rule
 
@@ -69,7 +85,7 @@ Implement exactly as documented.
 Configurable Value
 Example:
 
-CarryDrainMultiplier = 1.75.
+CarryDrainMultiplier = 2.00.
 Use the current canonical value unless the task is specifically a balance change.
 
 Unspecified Technical Detail
@@ -547,45 +563,41 @@ any new player-facing shortcut that bypasses retrieval risk.
 3.26 Resolved Player-Facing Edge Decisions
 The following questions are no longer ambiguous.
 
+Ice Grab interaction
+Wilderness Ice requires a continuous size-scaled hold. First-pass hold scales linearly from `1.00 sec` at `0.75x` visual Scale to `2.00 sec` at `5.00x`. Starting a hold does not reserve the Ice. First valid completed hold accepted by the server wins.
+
+Carrier action set
+After successful Grab, the player enters Carrier Commitment. Allowed gameplay actions are movement, jump, Ride/Unride, intentional DropIce, and valid own-Pen deposit/placement. Survival attacks, breakables, other Grab attempts, creature management, Sell, upgrades, reveal, and unrelated progression interactions are rejected while carrying.
+
 Intentional raw-Ice drop
-Not available.
-A carry ends through Pen deposit or documented Freeze/death/reset/respawn/disconnect handling.
+Available through the canonical server-authoritative `DropIce` request. It preserves exact Ice identity/reward/size/Special metadata, returns the Ice to shared `Available` state at a valid safe grounded position, never rerolls, and never directly trades/transfers ownership. The original dropper uses the configured same-player self-regrab lock before starting another full Grab Hold.
 
 Universal shared Ice
-Every spawned wilderness Ice is one authoritative shared server object.
-No private/per-player copies.
-First valid server-side Grab wins.
+Every spawned wilderness Ice is one authoritative shared server object. No private/per-player copies. The first valid completed Grab Hold accepted by the server wins.
+
+Mounted wilderness contest
+A validated PvP contest hit against a mounted non-carrier force-Unrides/ragdolls the player and removes `25% of CreatureVitalityMax` from the Equipped creature. A mounted carrier is not player-ragdolled/knocked off while mount Vitality remains above zero; instead a valid hit removes the same `25%` mount Vitality. At zero, normal Frosted/Downed forces Unride while the exact carried Ice remains carried.
 
 Carrier failure
-Freeze, character death, Reset Character/respawn, or disconnect releases the exact carried Ice at the last valid safe position.
-Ownership clears; any player may rescue it.
-No reward/rarity/WeightMultiplier/Scale reroll.
+Freeze, character death, Reset Character/respawn, or disconnect releases the exact carried Ice at the last valid safe position. Ownership clears; any player may rescue it after satisfying normal Grab Hold rules. No reward/rarity/WeightMultiplier/Scale reroll.
 
 Freeze / normal respawn recovery
-Return to own base and set CurrentWarmth = MaxWarmth immediately.
-Restore the currently Equipped creature from Frosted/Downed.
-Permanent progression is preserved.
+Return to own base and set CurrentWarmth = MaxWarmth immediately. Restore the currently Equipped creature from Frosted/Downed. Permanent progression is preserved.
 
 Launch base topology
-Up to four personal plots are grouped side-by-side along one shared home-camp edge.
-All plots face the same primary wilderness direction.
+Up to four personal plots are grouped side-by-side along one shared home-camp edge. All plots face the same primary wilderness direction.
 
 Visitor Hearth behavior
 Another player's WarmZone does not refill CurrentWarmth, train MaxWarmth, or restore the visitor's creature Vitality.
 
 Onboarding
-No private onboarding Ice.
-Guide/retarget eligible new players toward available shared Regular Ice; if none exists, communicate the next shared refresh.
+No private onboarding Ice. Guide/retarget eligible new players toward available shared Regular Ice; if none exists, communicate the next shared refresh.
 
 Special Ice lifecycle
-Special Ice follows the universal shared-Ice failure rule.
-On carrier failure it drops at the last valid safe position with exact reward/size/Special metadata preserved.
-A later Great Frost may remove it if still unclaimed.
+Special Ice follows the universal shared-Ice failure/drop identity-preservation rules. On carrier failure or intentional Drop it preserves exact reward/size/Special metadata; a later Great Frost may remove it if still unclaimed.
 
 Great Frost server boot
-Boot during Day: populate current field immediately.
-Boot during Great Frost: wait until next Day.
-Do not retroactively award the launch Thaw Surge or Special Ice from a Frost transition the server did not observe.
+Boot during Day: populate current field immediately. Boot during Great Frost: wait until next Day. Do not retroactively award the launch Thaw Surge or Special Ice from a Frost transition the server did not observe.
 
 
 3.27 Canonical Survival Pressure Scope
@@ -640,7 +652,7 @@ Player:
 - Ride/Unride never changes Pen/Inventory allocation;
 - `MountState` / `IsRiding` is never persisted;
 - 1 carried Ice maximum;
-- 4 active Pen creature positions;
+- active Pen creature capacity = `PenCapacity(PenLevel)`, from 4 at Lv1 through 10 at Lv7;
 - unlimited owned creature counts;
 - unlimited logical thawing Ice;
 - 1 currency: Cash;
@@ -653,8 +665,11 @@ Ice:
 - wilderness reward is rolled server-side before player ownership;
 - Ice cannot enter normal Inventory before thawing;
 - on Freeze/death/reset/respawn/disconnect before deposit, the exact same Ice is released into the shared world with no reroll;
+- intentional DropIce is allowed and preserves exact Ice identity/reward/size/Special metadata;
+- every Available Ice claim requires the canonical size-scaled Grab Hold;
+- starting a hold never reserves the Ice;
 - rescue/relay is allowed;
-- there is no intentional DropIce request.
+- while carrying, Carrier Commitment restricts gameplay actions to move/jump/Ride-Unride/Drop/deposit-placement.
 
 Areas:
 - no hard Warmth gates;
@@ -746,32 +761,39 @@ CurrentWarmthRefillPerSecond = MaxWarmth * 0.50
 This preserves the old prototype feel of roughly filling from empty in about two seconds even after MaxWarmth becomes enormous.
 
 
-## 9. Hearth Progression - Revised Prototype First Pass
+## 9. Hearth Progression - Launch First Pass
 
-The initial 3-level Day-5 Hearth proved the mechanic. Days 6-7 expand it.
+The Week-1 six-level Hearth proved the mechanic. Launch uses ten levels with a deliberately longer minutes-to-hours progression curve and increasingly large visible training numbers.
 
-```text
-Hearth Lv.   Upgrade Cost   Warmth Training Rate
-1            Start          +10/sec
-2            $150           +50/sec
-3            $1,000         +250/sec
-4            $7,500         +1,250/sec
-5            $60,000        +6,250/sec
-6            $500,000       +31,250/sec
-```
+| Hearth Lv. | Upgrade Cost | Warmth Training Rate |
+|---:|---:|---:|
+| 1 | Start | +3/sec |
+| 2 | $5,000 | +5/sec |
+| 3 | $100,000 | +30/sec |
+| 4 | $500,000 | +50/sec |
+| 5 | $2,000,000 | +500/sec |
+| 6 | $10,000,000 | +1,000/sec |
+| 7 | $50,000,000 | +5,000/sec |
+| 8 | $250,000,000 | +10,000/sec |
+| 9 | $2,000,000,000 | +50,000/sec |
+| 10 | $10,000,000,000 | +100,000/sec |
 
-These are first-pass prototype progression values and should be tuned from actual pacing.
-The functional rule is structural:
+Functional rules are structural:
 - Hearth upgrade never grants a fixed MaxWarmth amount;
-- Hearth level only changes ongoing training rate;
-- MaxWarmth remains uncapped.
+- Hearth level only changes ongoing automatic training rate;
+- MaxWarmth remains uncapped;
+- only the player's own Hearth trains MaxWarmth;
+- exact balance values remain first-pass and may be tuned through explicit playtest revisions.
 
-The former Day-5 `+0.50 / +1.00 / +1.75` rates are superseded once D7-R03 is implemented.
-
+Pacing intent:
+- early region preparation is measured in minutes;
+- midgame preparation is measured in tens of minutes / around an hour;
+- late-game preparation is measured in hours;
+- faster mounts and jackpot copies may sequence-break recommendations without turning them into hard gates.
 
 ## 10. Hearth Visual Stages
 
-Prototype presentation target:
+Existing approved/prototype presentation labels may continue where useful:
 
 ```text
 Lv.1       Small Hearth
@@ -782,7 +804,8 @@ Lv.5       Frostfire Forge
 Lv.6       Great Runic Furnace
 ```
 
-These do not require six unique production meshes.
+Lv.7-Lv.10 may use explicit placeholder/reused `VisualStage` references until the world-art pass defines final presentation. Do not block mechanical 10-level progression on ten unique production meshes or invent permanent art names merely to satisfy config.
+
 Presentation may reuse geometry with stronger flame/light/runes/scale.
 
 Always communicate:
@@ -793,23 +816,30 @@ TRAINING +<rate> WARMTH/s
 NEXT $<cost> / MAX
 ```
 
-
 ## 11. Region Recommended Warmth + Cold Severity
 
-First-pass big-number progression and canonical Frost Sprite Warmth damage:
+First-pass launch progression:
 
-```text
-Region             Main Ice   Recommended Warmth   Cold Multiplier   Sprite Warmth Damage/Hit
-Snowfield          Regular    100                  1x                10
-Frozen Pass        Thick      1,000                10x               100
-Ancient Expanse    Ancient    10,000               100x              1,000
-Black Ice Hollow   Black      100,000              1,000x            10,000
-Meteor Reach       Meteor     1,000,000            10,000x           100,000
-```
+| Region | Main Ice | Recommended Warmth | Cold Multiplier | Base Drain/s | Carry Drain/s | Sprite Warmth Damage/Hit |
+|---|---|---:|---:|---:|---:|---:|
+| Snowfield | Regular | 100 | 1x | 4 | 8 | 10 |
+| Frozen Pass | Thick | 1,000 | 5x | 20 | 40 | 100 |
+| Ancient Expanse | Ancient | 40,000 | 125x | 500 | 1,000 | 4,000 |
+| Black Ice Hollow | Black | 2,500,000 | 6,250x | 25,000 | 50,000 | 250,000 |
+| Meteor Reach | Meteor | 80,000,000 | 150,000x | 600,000 | 1,200,000 | 8,000,000 |
 
 Recommended Warmth is guidance only. Never a server access condition.
 
-Warmth drain:
+Home Camp / Lobby Safe Zone:
+```text
+InsideHomeCampSafeZone and not inside own WarmZone:
+    CurrentWarmth change = 0
+    MaxWarmth training = 0
+```
+
+This remains true while carrying Ice. The Safe Zone does not refill CurrentWarmth, train MaxWarmth, or recover a Frosted companion by itself. Only the player's **own** WarmZone provides those benefits. Another player's WarmZone remains social-only.
+
+Warmth drain applies only outside the Home Camp / Lobby Safe Zone:
 
 ```text
 WarmthDrainPerSecond =
@@ -824,7 +854,7 @@ Frost Sprite hit:
 CurrentWarmth -= RegionFrostSpriteWarmthDamage
 ```
 
-Conceptual first-pass relationship:
+Structural first-pass relationship:
 
 ```text
 RegionFrostSpriteWarmthDamage = RegionRecommendedWarmth * 0.10
@@ -833,6 +863,18 @@ RegionFrostSpriteWarmthDamage = RegionRecommendedWarmth * 0.10
 The configured regional damage value is authoritative.
 Do not scale Sprite damage from player `MaxWarmth`, Ice rarity, Ice size, hidden creature, or Special status.
 Special Ice uses its spawn region's damage value.
+
+Approximate training-pacing benchmarks at the intended Hearth pair for each transition:
+
+```text
+100 -> 1,000                 about 3-5 min
+1,000 -> 40,000              about 13-22 min
+40,000 -> 2,500,000          about 41-82 min
+2,500,000 -> 80,000,000      about 2.2-4.3 hr
+80,000,000 -> ~2.5B          about 6.7-13.4 hr (post-Meteor benchmark)
+```
+
+These are balance targets, not access rules.
 
 ## 12. World Distance Targets
 
@@ -961,21 +1003,67 @@ BaseIncomePerSecond
 BaseWalkSpeed
 ```
 
-Current validated 11-species baseline:
+Launch first-pass gameplay baseline:
 
-| Creature | Rarity | ReferenceWeight kg | BaseVisualScale | BaseIncome/s | BaseWalkSpeed |
-|---|---|---:|---:|---:|---:|
-| Penguin | Common | 25 | 1.0000 | 2 | 22 |
-| Rabbit | Common | 4 | 1.0000 | 2 | 26 |
-| Seal | Common | 180 | 1.0000 | 3 | 20 |
-| Wolf | Uncommon | 65 | 1.0000 | 5 | 31 |
-| Bear | Uncommon | 500 | 1.0000 | 7 | 26 |
-| Mammoth | Rare | 6,000 | 1.4373 | 15 | 30 |
-| Sleipnir | Rare | 900 | 1.4798 | 10 | 39 |
-| Troll | Epic | 1,200 | 1.4798 | 24 | 35 |
-| IceSerpent | Epic | 3,000 | 2.2605 | 20 | 44 |
-| Hraesvlgr | Legendary | 5,000 | 1.7404 | 32 | 50 |
-| Nidhogg | Legendary | 8,000 | 2.1523 | 40 | 46 |
+| Region | Creature | Rarity | BaseIncome/s | BaseWalkSpeed |
+|---|---|---|---:|---:|
+| Regular | Penguin | Common | 10 | 22 |
+| Regular | Rabbit | Common | 12 | 26 |
+| Regular | Seal | Common | 15 | 20 |
+| Regular | Wolf | Uncommon | 30 | 31 |
+| Thick | White Stag | Common | 100 | 34 |
+| Thick | Bear | Uncommon | 200 | 26 |
+| Thick | Sleipnir | Rare | 500 | 39 |
+| Thick | Troll | Epic | 3,000 | 35 |
+| Ancient | Sabertooth | Common | 1,000 | 37 |
+| Ancient | Mammoth | Rare | 2,500 | 30 |
+| Ancient | IceSerpent | Epic | 7,500 | 44 |
+| Ancient | Tyrannosaurus | Legendary | 30,000 | 33 |
+| Black | Giant Spider | Common | 10,000 | 40 |
+| Black | Dreadmare | Uncommon | 25,000 | 48 |
+| Black | Manticore | Rare | 60,000 | 44 |
+| Black | Hraesvlgr | Legendary | 300,000 | 50 |
+| Meteor | Griffin | Common | 100,000 | 49 |
+| Meteor | Kirin | Rare | 250,000 | 52 |
+| Meteor | Phoenix | Epic | 600,000 | 50 |
+| Meteor | Nidhogg | Legendary | 3,000,000 | 46 |
+
+Existing production-asset reference values remain:
+
+| Creature | ReferenceWeight kg | BaseVisualScale |
+|---|---:|---:|
+| Penguin | 25 | 1.0000 |
+| Rabbit | 4 | 1.0000 |
+| Seal | 180 | 1.0000 |
+| Wolf | 65 | 1.0000 |
+| Bear | 500 | 1.0000 |
+| Mammoth | 6,000 | 1.4373 |
+| Sleipnir | 900 | 1.4798 |
+| Troll | 1,200 | 1.4798 |
+| IceSerpent | 3,000 | 2.2605 |
+| Hraesvlgr | 5,000 | 1.7404 |
+| Nidhogg | 8,000 | 2.1523 |
+
+Asset-dependent fields for these nine new species remain intentionally provisional until their production models exist:
+
+```text
+White Stag
+Sabertooth
+Tyrannosaurus
+Giant Spider
+Dreadmare
+Manticore
+Griffin
+Kirin
+Phoenix
+
+ReferenceWeight = TBD from final asset/content audit
+BaseVisualScale = TBD from final asset/content audit
+SilhouetteProfile = provisional placeholder allowed during Day 11
+ModelName = functional placeholder allowed during Day 11
+```
+
+Day 11 may use provisional values sufficient for placeholder runtime presentation. Those values are not canonical final art values and must not override the approved rarity, region, BaseIncomePerSecond, or BaseWalkSpeed.
 
 Runtime copy values:
 
@@ -1002,11 +1090,18 @@ At the supported extremes:
 
 Income intentionally scales much harder: `Scale^2`.
 
-Do not change these approved species baselines without an explicit design decision.
+Economic design rule:
+- Income = exponential regional progression;
+- Speed = controlled species progression;
+- Rarity = collection desirability / exceptional species result inside the region;
+- Size = individual-copy jackpot multiplier.
 
-## 17. Supported Rarity / Economy Tiers
+Adjacent regional value bands intentionally overlap. A previous-region apex can outperform the next region's first one or two results, while the next region's upper tiers normally overtake it at equal Scale. Exceptional size rolls may break that ordering.
 
-Configured economy tier labels:
+
+## 17. Supported Rarity / Presentation Tiers
+
+Configured rarity labels:
 
 1. Common
 2. Uncommon
@@ -1014,20 +1109,9 @@ Configured economy tier labels:
 4. Epic
 5. Legendary
 
-Current Pen-income reference baselines retained for migration/comparison only:
+Rarity does **not** directly determine Pen Income or Equipped Speed. Those are species baselines modified by copy Scale.
 
-```text
-Common       $2/sec
-Uncommon     $5/sec
-Rare         $12/sec
-Epic         $20/sec
-Legendary    $28/sec
-```
-
-After D6-R05/D6-R06, actual Pen income comes from species `BaseIncomePerSecond * Scale^2`, not directly from rarity.
-
-The existence of Epic/Legendary economy tiers does not automatically define prototype creature content, pools, or weights.
-
+SellValue remains a separate low-value cleanup economy. Exact SellValue constants are deferred to Day 14 and must remain intentionally small relative to recurring Pen income. Do not infer SellValue from BaseIncome, rarity, or `Scale^2` without an explicit balance decision.
 
 ## 18. Creature Stat Presentation
 
@@ -1086,35 +1170,51 @@ Scale / Income / Speed are derived.
 
 ## 21. Launch Creature Roster
 
-Launch quantity target: **16 species**.
+Launch quantity target: **20 species**.
+Exactly four signature creatures belong to each geographic region:
 
-Current locked/integrated baseline: **11 species**:
+```text
+REGULAR / SNOWFIELD
+Common      Penguin, Rabbit, Seal
+Uncommon    Wolf
 
-**Common**  
-Penguin, Rabbit, Seal
+THICK / FROZEN PASS
+Common      White Stag
+Uncommon    Bear
+Rare        Sleipnir
+Epic        Troll
 
-**Uncommon**  
-Wolf, Bear
+ANCIENT / ANCIENT EXPANSE
+Common      Sabertooth
+Rare        Mammoth
+Epic        IceSerpent
+Legendary   Tyrannosaurus
 
-**Rare**  
-Mammoth, Sleipnir
+BLACK / BLACK ICE HOLLOW
+Common      Giant Spider
+Uncommon    Dreadmare
+Rare        Manticore
+Legendary   Hraesvlgr
 
-**Epic**  
-Troll, IceSerpent
+METEOR / METEOR REACH
+Common      Griffin
+Rare        Kirin
+Epic        Phoenix
+Legendary   Nidhogg
+```
 
-**Legendary**  
-Hraesvlgr, Nidhogg
+The nine new species may use placeholder meshes until final production assets are available.
 
-The remaining five species/content assignments are not canonically defined by this revision.
-Do not resurrect stale placeholder roster names or invent the remaining species without explicit approval.
+Creature-source rule: real animals, extinct animals, Norse mythology, worldwide folklore/myth, and original fantasy are all valid when the regional family remains coherent and immediately readable/desirable.
 
 ## 22. Current Functional Creature Roster
 
-The current functional build uses all 11 validated species listed in Section 21.
+The launch content target is the 20-species roster above.
 
-The former eight-species prototype roster is deprecated.
+The existing 11 production meshes remain valid historical/asset foundations, but their launch BaseIncome values and normal geographic pool assignments are superseded by this v1.2 configuration.
+The nine new species may be represented by functional placeholders during Day 11.
 
-## 23. Current Functional Ice Rarity Weights
+## 23. Normal Geographic Ice Rarity Weights
 
 Weights are ordered:
 
@@ -1123,69 +1223,62 @@ Common / Uncommon / Rare / Epic / Legendary
 ```
 
 ```text
-Regular   74 / 23 / 3  / 0  / 0
-Thick     30 / 35 / 25 / 10 / 0
-Ancient   0  / 30 / 45 / 25 / 0
-Black     0  / 10 / 35 / 40 / 15
-Meteor    0  / 0  / 20 / 55 / 25
+Regular   80 / 20 / 0  / 0  / 0
+Thick     60 / 25 / 11 / 4  / 0
+Ancient   60 / 0  / 25 / 11 / 4
+Black     60 / 25 / 11 / 0  / 4
+Meteor    60 / 0  / 25 / 11 / 4
 ```
 
 Every row totals 100.
-These are the current approved geographic-Ice rarity weights for the validated 11-species baseline.
 
-## 24. Current 11-Species Creature Pools
+Design rule:
 
-Once rarity is rolled, choose uniformly among eligible creatures of that rarity within the current Ice pool unless a later explicit weighting revision says otherwise.
+> Farther Ice does not guarantee a better rarity. It guarantees a more extraordinary creature fantasy/economic band.
+
+## 24. Region-Exclusive Creature Pools
+
+Normal geographic Ice pools are region-exclusive.
+Once rarity is rolled, choose from the approved species of that rarity within the current region. Do not automatically inherit earlier-region creatures.
 
 ### Regular
-- Common: Penguin, Rabbit, Seal
-- Uncommon: Wolf, Bear
-- Rare: Mammoth
+- Common: Penguin, Rabbit, Seal (uniform among the three)
+- Uncommon: Wolf
+- Rare: none
 - Epic: none
 - Legendary: none
 
 ### Thick
-- Common: Seal
-- Uncommon: Wolf, Bear
-- Rare: Mammoth, Sleipnir
+- Common: White Stag
+- Uncommon: Bear
+- Rare: Sleipnir
 - Epic: Troll
 - Legendary: none
 
 ### Ancient
-- Common: none
-- Uncommon: Bear
-- Rare: Mammoth, Sleipnir
-- Epic: Troll, IceSerpent
-- Legendary: none
+- Common: Sabertooth
+- Uncommon: none
+- Rare: Mammoth
+- Epic: IceSerpent
+- Legendary: Tyrannosaurus
 
 ### Black
-- Common: none
-- Uncommon: Wolf
-- Rare: Mammoth, Sleipnir
-- Epic: Troll, IceSerpent
+- Common: Giant Spider
+- Uncommon: Dreadmare
+- Rare: Manticore
+- Epic: none
 - Legendary: Hraesvlgr
 
 ### Meteor
-- Common: none
+- Common: Griffin
 - Uncommon: none
-- Rare: Mammoth, Sleipnir
-- Epic: Troll, IceSerpent
-- Legendary: Hraesvlgr, Nidhogg
+- Rare: Kirin
+- Epic: Phoenix
+- Legendary: Nidhogg
 
-Unlock ladder:
-- Regular: core baseline;
-- Thick: adds Sleipnir + Troll;
-- Ancient: adds IceSerpent;
-- Black: adds Hraesvlgr / first Legendary;
-- Meteor: adds Nidhogg.
+## 25. Deprecated Prototype Pool Tables
 
-Nidhogg is Meteor-only in normal geographic Ice.
-Hraesvlgr begins at Black.
-IceSerpent begins at Ancient.
-
-## 25. Deprecated Prototype Pool Table
-
-The former Regular/Thick-only eight-species prototype pools are superseded by the full five-tier 11-species pools in Sections 23-24.
+Earlier cumulative 8-species/11-species geographic pool tables are historical and superseded for launch by Sections 23-24.
 
 ## 26. Bad-Luck Protection
 
@@ -1398,9 +1491,9 @@ Player Warmth damage is **regional**:
 ```text
 Snowfield          10
 Frozen Pass        100
-Ancient Expanse    1,000
-Black Ice Hollow   10,000
-Meteor Reach       100,000
+Ancient Expanse    4,000
+Black Ice Hollow   250,000
+Meteor Reach       8,000,000
 ```
 
 Do not use one flat player-damage value across all regions.
@@ -1411,8 +1504,51 @@ Equipped creature state:
 CreatureVitalityMax               100
 FrostedAtVitality                 0
 FrostedSpeedBonusEnabled          false
+FrostedPresentationProfile        FrostedCompanionOrb
+FrostedOrbTargetable              false
+FrostedRecoverySource             OwnWarmZoneOnly
 HearthRecovery                    full restore on OWN Hearth entry
 ```
+
+Grab Hold baseline:
+
+```text
+GrabHoldMinScale                           0.75
+GrabHoldMaxScale                           5.00
+GrabHoldMinSeconds                         1.00 sec
+GrabHoldMaxSeconds                         2.00 sec
+GrabHoldInterpolation                      Linear (first pass)
+GrabHoldReservesIce                        false
+DropIceSelfRegrabLock                      0.75 sec
+```
+
+First-pass formula:
+
+```text
+NormalizedScale = clamp((Scale - 0.75) / (5.00 - 0.75), 0, 1)
+GrabHoldSeconds = lerp(1.00, 2.00, NormalizedScale)
+```
+
+Player contest baseline:
+
+```text
+PlayerContestEnabled                       true
+PlayerContestWildernessOnly                true
+PlayerContestHomeCampSafe                  true
+PlayerContestRagdollDuration               1.25 sec
+PlayerContestPostRecoveryImmunity          1.75 sec
+PlayerContestMountedCarrierHitGrace        1.75 sec
+PlayerContestMountDamageFraction           0.25 of CreatureVitalityMax
+PlayerContestDamageToPlayerHP              0
+PlayerContestDamageToWarmth                0
+PlayerContestForcesIceDrop                 false
+CarrierCanUseSurvivalAttack                false
+CarrierOnFootPlayerContestImmune           true
+CarrierMountedPlayerRagdollImmune          true
+CarrierMountedMountDamageEnabled           true
+```
+
+Knockback strength/direction remains a designer-tunable feel value to be locked by multiplayer playtest. It must be strong enough to create a meaningful pre-Grab window without becoming a map-launch/grief tool. Mount damage never scales from species, rarity, Scale, WeightMultiplier, Speed, velocity, or visual mass.
 
 Own-Hearth recovery immediately restores full session Vitality, clears Frosted, and makes Riding available again. If the player remains unmounted they stay at base WalkSpeed; mounted Speed returns when they Ride. Another player's Hearth does not recover the visitor's creature.
 
@@ -1553,36 +1689,25 @@ Meteor    20%
 
 ## 40. Special Ice Rarity Weights
 
-
 Special Ice guarantees:
 
-Rare or Legendary
-Ancient Special
 ```text
-            Rarity                               Weight
-           Rare                                  75%
-           Legendary                             25%
+Rare        90%
+Legendary   10%
 ```
 
+The same first-pass rarity split applies to Ancient, Black, and Meteor Special Ice.
 
-Black Special
+Eligible regional creature mapping:
+
 ```text
-            Rarity                               Weight
-           Rare                                  55%
-           Legendary                             45%
+Ancient   Rare Mammoth      / Legendary Tyrannosaurus
+Black     Rare Manticore    / Legendary Hraesvlgr
+Meteor    Rare Kirin        / Legendary Nidhogg
 ```
 
-
-Meteor Special
-```text
-            Rarity                               Weight
-           Rare                                  35%
-           Legendary                             65%
-```
-
-
-Creature remains restricted to that Ice Type's normal creature pool.
-
+Creature remains restricted to that Ice Type's approved regional family.
+Special Ice does not add earlier-region creatures or reroll outside that family.
 
 ## 41. Special Ice Presentation
 
@@ -1659,6 +1784,8 @@ MythicUnknown    Troll / Nidhogg
 
 Sleipnir, IceSerpent, and Hraesvlgr must use their actual approved/configured profile once verified in the current repository; do not infer stale placeholder mappings.
 
+White Stag, Sabertooth, Tyrannosaurus, Giant Spider, Dreadmare, Manticore, Griffin, Kirin, and Phoenix may use provisional placeholder `SilhouetteProfile` assignments during Day 11. Final profiles are approved from the actual production models; do not canonize guessed final silhouettes before those assets exist.
+
 Profiles should remain coarser than exact species where practical. Presentation may obscure/distort further at distance.
 
 ## 45. Interaction Distances
@@ -1671,13 +1798,14 @@ Profiles should remain coarser than exact species where practical. Presentation 
              Crack while revealing                  20 studs
              Hearth Upgrade                         20 studs
              Pen Management                         25 studs
+             Pen Upgrade                            25 studs
              Equip / Sell                           25 studs
              Survival Attack Hit                    8 studs
 ```
 
 
 These are server-validation distances.
-Prompt display distance may differ.
+Prompt display distance may differ. The player must remain within server-valid Grab distance for the full Grab Hold; leaving range cancels/reset progress.
 
 
 ## 46. Request Rate Limits
@@ -1689,6 +1817,7 @@ Prompt display distance may differ.
 
 ```text
              GrabIce                              0.35 sec
+             DropIce                              0.50 sec
              DepositCarriedIce                    0.50 sec
              BeginReveal                          0.50 sec
              Crack                                0.20 sec
@@ -1696,6 +1825,7 @@ Prompt display distance may differ.
              Pen Management                       0.25 sec
              Sell                                 0.25 sec
              UpgradeHearth                        0.50 sec
+             UpgradePen                           0.50 sec
              Survival Attack                       0.65 sec
 ```
 
@@ -1705,15 +1835,30 @@ These are technical anti-spam protections, not intended gameplay cooldowns.
 
 ## 47. Pen Rules
 
-Launch:
-4 active earning creature positions;
-duplicates allowed;
-thawing Ice consumes zero creature positions;
-Pen creatures earn income;
-Equipped creature earns no Pen income;
-Sell from Pen leaves slot empty;
-Equip from Pen leaves slot empty;
-no automatic Inventory refill.
+Launch Pen progression:
+
+| Pen Level | Active Earning Capacity | Width X | Depth Z | Upgrade Cost |
+|---|---:|---:|---:|---:|
+| 1 | 4 | 32 | 24 | Start |
+| 2 | 5 | 32 | 28 | 150,000 |
+| 3 | 6 | 32 | 32 | 2,500,000 |
+| 4 | 7 | 32 | 36 | 10,000,000 |
+| 5 | 8 | 32 | 40 | 40,000,000 |
+| 6 | 9 | 32 | 44 | 150,000,000 |
+| 7 | 10 | 32 | 48 | 750,000,000 |
+
+Rules:
+- X width never changes; every upgrade adds `+4 Z` and `+1` active earning creature;
+- all seven levels use normal Cash progression; no Robux capacity;
+- no downgrade;
+- duplicates allowed;
+- thawing Ice consumes zero creature capacity;
+- Pen creatures earn income;
+- Equipped creature earns no Pen income;
+- Sell from Pen leaves logical slot empty;
+- Equip from Pen leaves logical slot empty;
+- no automatic Inventory refill;
+- logical `PenSlots[1..10]` are invisible bookkeeping only; active creature visuals roam the shared unlocked Pen area.
 
 
 ## 48. Inventory Rule
@@ -1767,50 +1912,57 @@ No automatic Pen refill.
 ## 51. Sell Rules
 
 Sell at own base.
-Inventory
+
+Inventory:
 ```text
-              1 OwnedCount -= 1
-              2 Cash += SellValue
+OwnedCount -= 1
+Cash += SellValue
 ```
 
-
-Pen
+Pen:
 ```text
-              1 Clear Pen Slot
-              2 OwnedCount -= 1
-              3 Cash += SellValue
+Clear Pen Slot
+OwnedCount -= 1
+Cash += SellValue
 ```
 
-
-Equipped
+Equipped:
 ```text
-              1   Unequip
-              2   OwnedCount -= 1
-              3   Cash += SellValue
-              4   RecalculateSpeed
+Unequip
+OwnedCount -= 1
+Cash += SellValue
+RecalculateSpeed
 ```
-
 
 Archive discovery remains.
 
+Economy intent:
+
+> **Sell = inventory cleanup + small consolation payout.**
+
+Exact SellValue constants are a Day-14 balance decision. They must remain low enough that selling does not compete with keeping strong creatures in the Pen. Do not automatically apply the full `Scale^2` Income multiplier to SellValue.
 
 ## 52. Frozen Archive
 
 Launch:
 
-16 slots
-Prototype stretch:
+```text
+20 slots
+X / 20
+```
 
-8 slots
 Undiscovered:
 
+```text
 ???
-Discovered:
-name;
-rarity;
-icon/visual.
-Selling all owned copies does not reverse discovery.
+```
 
+Discovered:
+- name;
+- rarity;
+- icon/visual.
+
+Selling all owned copies does not reverse discovery.
 
 ## 53. Equipped Creature Following / Riding
 
@@ -1844,7 +1996,7 @@ Do not use server-heavy pathfinding, Humanoid AI, follower/mount position for cl
 
 ### Mounted attack rule
 
-The player's one survival attack becomes Mounted Strike while Riding. Same damage/effect, `8`-stud effective range, `0.65`-second cooldown, target categories, and server validation as on foot. Mounted Strike uses a logical ground/front combat origin so giant mounts can hit nearby ground-level Sprites. No species/rarity/Scale/Speed scaling and no trample/contact damage.
+The player's one survival attack becomes Mounted Strike while Riding. When **not carrying Ice**, it uses the same `8`-stud effective range, `0.65`-second cooldown, server authority, and approved target rules as on foot, including wilderness contest targets. Carrier Commitment disables Mounted Strike while carrying. Mounted Strike uses a logical ground/front combat origin so giant mounts can hit nearby ground-level Sprites/player targets without gaining extra reach. No species/rarity/Scale/Speed/velocity scaling and no trample/contact damage. A validated contest forced-Unride against a mounted non-carrier applies `0.25 * CreatureVitalityMax`; a mounted carrier instead takes the same mount-Vitality fraction without player ragdoll/knockback unless that hit reaches Frosted zero.
 
 
 ## 54. Pen Roaming Presentation
@@ -1912,7 +2064,8 @@ CreatureCopies[CreatureGUID] = {
     WeightMultiplier,
 }
 
-PenSlots[1..4] = CreatureGUID or nil
+PenLevel = 1..7
+PenSlots[1..10] = CreatureGUID or nil
 EquippedCreatureGUID = CreatureGUID or nil
 DiscoveredCreatures[CreatureID] = true
 ThawingIce[]
@@ -1947,7 +2100,7 @@ MaxWarmth = 100
 CurrentWarmth = 100
 HearthLevel = 1
 CreatureCopies = {}
-PenSlots = {nil, nil, nil, nil}
+PenSlots[1..10] = nil
 EquippedCreatureGUID = nil
 DiscoveredCreatures = {}
 ThawingIce = {}
@@ -2188,29 +2341,33 @@ Launch must support all three.
 ## 72. Content Configuration Rule
 
 Each creature should define at minimum:
+
 ```text
-            1 CreatureID
-            2 DisplayName
-            3 Rarity
-            4 ModelName
-            5 SilhouetteProfile
+CreatureID
+DisplayName
+Rarity
+ModelName
+SilhouetteProfile
+ReferenceWeight
+BaseVisualScale
+BaseIncomePerSecond
+BaseWalkSpeed
 ```
 
+Species owns baseline Income and Speed. Do not derive those values from RarityConfig.
 
-Do not duplicate SellValue, PenIncome, or WalkSpeed per species unless an explicit later design change introduces species-specific overrides.
+For the nine new Day-11 species, `ModelName` may point to a functional placeholder mesh. Placeholder `ReferenceWeight`, `BaseVisualScale`, and `SilhouetteProfile` may be provisional until final asset audit; the approved rarity, regional pool, BaseIncomePerSecond, and BaseWalkSpeed remain authoritative.
 
-RarityConfig should define per rarity:
+RarityConfig should define rarity-facing presentation and any explicitly approved low-value Sell baseline, for example:
+
 ```text
-            1 WalkSpeed
-            2 SellValue
-            3 PenIncomePerTick
-            4 RevealPresentationProfile
-            5 RarityUI
-            6 EffectsProfile
+SellValue
+RevealPresentationProfile
+RarityUI
+EffectsProfile
 ```
 
-
-Economy and Speed derive from RarityConfig by default.
+SellValue is intentionally secondary to Pen income and must not be inferred as a major progression reward.
 
 ## 73. Ice Configuration Rule
 
@@ -2227,7 +2384,7 @@ Each Ice Type defines:
 
 Initial carry multiplier for all Ice:
 
-1.75x
+2.00x
 Do not introduce different carry weights merely for flavor.
 
 
@@ -2308,7 +2465,10 @@ It may define only values required by the approved retrieval-pressure system:
 - tool range/cooldown/damage;
 - Frost Sprite health/radius/telegraph/cooldown/projectile speed;
 - regional player Warmth damage;
-- temporary Equipped-creature Vitality and creature damage;
+- temporary Equipped-creature Vitality and Frosted state;
+- player-contest ragdoll/grace and mounted `CreatureVitality` damage fraction;
+- Grab Hold duration/Scale endpoints and interpolation;
+- DropIce self-regrab lock;
 - authored guard-profile metadata/counts;
 - breakable hit counts.
 
@@ -2323,16 +2483,18 @@ Always preserve:
 MaxWarmth >= StartingMaxWarmth
 0 <= carried Ice count <= 1
 0 <= Equipped creature count <= 1
-0 <= active Pen creatures <= 4
+0 <= active Pen creatures <= PenCapacity(PenLevel) <= 10
 ```
 
 Shared Ice:
 - one IceInstanceID = one server-wide opportunity;
 - at most one owner/carrier;
 - carrier failure releases the exact Ice and clears owner;
-- no reroll across release/rescue;
+- intentional DropIce releases the exact Ice and clears owner;
+- no reroll across Drop/release/rescue;
 - no private wilderness Ice copies;
-- no intentional DropIce request.
+- an Ice remains unowned/Available while Grab Hold is in progress; only completion may atomically assign carrier;
+- while carrying, Carrier Commitment is server-enforced.
 
 Survival:
 
@@ -2344,6 +2506,9 @@ Survival:
 - Frosted/Downed never changes creature ownership;
 - Frosted/Downed forces Unride, blocks Ride, and removes mounted Speed until own-Hearth/failure recovery;
 - Frost Sprite player hits reduce CurrentWarmth only;
+- validated PvP forced-Unride of a mounted non-carrier removes exactly the configured fraction of `CreatureVitalityMax`;
+- validated PvP hit on a mounted carrier removes the configured mount-Vitality fraction but never directly ragdolls/knocks back the carrier or forces Ice drop;
+- Carrier Commitment disables player survival attacks while carrying;
 - no Player HP;
 - Sprite Warmth damage comes from region configuration.
 
@@ -2384,7 +2549,7 @@ one-Ice carry;
 uncapped MaxWarmth;
 Hearth = training rate;
 Equipped creature = Following/Riding traversal; Riding applies copy FinalWalkSpeed;
-4 active Pen positions;
+PenLevel-based active capacity `4 -> 10`;
 unlimited logical thawing;
 3-hit reveal;
 Great Frost world refresh;
@@ -2492,35 +2657,44 @@ Retrieve -> Thaw -> Reveal -> Progress -> Retrieve again.
 Current canonical first-pass production baseline includes:
 - Starting MaxWarmth `100`;
 - Base wilderness drain `4/sec`;
-- Carry multiplier `2.00x` -> `8/sec` in Snowfield while carrying;
+- Carry multiplier `2.00x`;
 - Hearth refill `50% of MaxWarmth/sec`;
 - Low/Critical thresholds `35% / 15%`;
 - uncapped MaxWarmth training;
-- 4 active Pen creatures;
+- 10 Hearth levels with rates `3 / 5 / 30 / 50 / 500 / 1,000 / 5,000 / 10,000 / 50,000 / 100,000` per second;
+- Hearth upgrade costs `Start / 5K / 100K / 500K / 2M / 10M / 50M / 250M / 2B / 10B`;
+- 7 Pen levels with `4 -> 10` active Pen creatures;
 - 1-second aggregate Pen income;
 - unlimited logical thawing Ice;
 - 5 geographic Ice tiers;
 - one shared Ice field per server;
 - exact-Ice carrier-failure release/rescue;
-- 11 validated current creature species with 16-species launch quantity target;
+- 20 approved launch creature species / four signature creatures per region;
+- nine new species may use placeholder meshes until final art audit;
+- region-exclusive normal Ice families;
 - five rarities: Common / Uncommon / Rare / Epic / Legendary;
 - per-copy CreatureGUID ownership;
 - one inherited Ice WeightMultiplier;
 - `0.75x-5.0x` supported visual Scale;
 - `FinalIncome = max(1, round(BaseIncomePerSecond * Scale^2))`;
 - `FinalWalkSpeed = BaseWalkSpeed * (1 + 0.15*(Scale-1))`;
-- regional Frost Sprite Warmth damage `10 / 100 / 1,000 / 10,000 / 100,000`;
+- Recommended Warmth `100 / 1,000 / 40,000 / 2,500,000 / 80,000,000`;
+- regional Cold Multipliers `1 / 5 / 125 / 6,250 / 150,000`;
+- regional Frost Sprite Warmth damage `10 / 100 / 4,000 / 250,000 / 8,000,000`;
+- Special Ice Rare/Legendary split `90% / 10%` for Ancient/Black/Meteor;
 - universal survival tool;
 - stationary Frost Sprites;
 - Guarded Ice across all tiers;
 - session-only Equipped-creature Vitality/Frosted;
 - breakable route obstacles;
 - one currency;
+- low-value Sell cleanup path;
+- Frozen Archive `X / 20`;
 - 3-hit CRACK -> CRACK -> SMASH reveal.
 
 Launch Great Frost cadence/thaw behavior and production thaw durations remain defined in their dedicated sections and may differ from Week-1 validation overrides.
 
-## 85A. v1.1 Revised Canonical Progression Summary
+## 85A. v1.4 Revised Canonical Progression Summary
 
 ```text
 Per-copy CreatureGUID ownership
@@ -2529,19 +2703,38 @@ One inherited Ice WeightMultiplier per creature copy
 Scale = cbrt(WeightMultiplier)
 IncomeMultiplier = Scale^2
 SpeedMultiplier = 1 + 0.15 * (Scale - 1)
+20 launch species / 4 signature creatures per region
+Normal Ice pools are region-exclusive
+Region = fantasy/economic band
+Rarity = exceptional species result within region
+Size = exceptional individual-copy jackpot
+Pen levels 1-7: capacity 4-10, width 32, depth 24-48
+Pen upgrade costs: Start / 150K / 2.5M / 10M / 40M / 150M / 750M
 1-second aggregate Pen income
+Home Camp/Lobby: zero Warmth drain; own WarmZone only for refill/training/recovery
 100 starting MaxWarmth
 50% MaxWarmth/sec Hearth refill
-Recommended Warmth: 100 / 1,000 / 10,000 / 100,000 / 1,000,000
-Region Cold Multipliers: 1 / 10 / 100 / 1,000 / 10,000
-Frost Sprite Warmth Damage: 10 / 100 / 1,000 / 10,000 / 100,000
-Prototype Hearth training: 10 / 50 / 250 / 1,250 / 6,250 / 31,250 per second
+Recommended Warmth: 100 / 1,000 / 40,000 / 2,500,000 / 80,000,000
+Region Cold Multipliers: 1 / 5 / 125 / 6,250 / 150,000
+Frost Sprite Warmth Damage: 10 / 100 / 4,000 / 250,000 / 8,000,000
+Hearth training: 3 / 5 / 30 / 50 / 500 / 1,000 / 5,000 / 10,000 / 50,000 / 100,000 per second
+Hearth costs: Start / 5K / 100K / 500K / 2M / 10M / 50M / 250M / 2B / 10B
+Special Ice: 90% Rare / 10% Legendary in Ancient, Black, Meteor
+Sell = cleanup + small consolation payout
+Archive = X / 20
 One shared server Ice field
 Failure releases exact Ice for multiplayer rescue with no reroll
 Survival Pressure promoted; no generic combat progression
 Every creature mountable: Following <-> Riding
 Riding applies copy FinalWalkSpeed; Following uses WalkSpeed 16
 Mounted Strike = same universal survival attack values
+Frosted creature presentation = floating Frosted Companion Orb until own-WarmZone/failure recovery
+Grab Hold = 1.00 sec at 0.75x -> 2.00 sec at 5.00x, linear first pass, no reservation on hold start
+Carrier Commitment = move / jump / Ride-Unride / DropIce / own-Pen deposit-placement only
+DropIce = exact shared Ice release, no reroll, 0.75 sec original-dropper regrab lock, fresh full Grab Hold required
+Wilderness contest = pre-Grab ragdoll/knockback; mounted non-carrier forced knock-off also deals 25% Max creature Vitality
+Mounted carrier contest = rider stays protected; mount loses 25% Max Vitality per valid separated hit; Frosted at 0 forces Unride but Ice remains carried
+Home Camp/Lobby = PvP safe + zero Warmth drain
 ```
 
 Balance values may change through explicit tuning without reverting the underlying architecture.

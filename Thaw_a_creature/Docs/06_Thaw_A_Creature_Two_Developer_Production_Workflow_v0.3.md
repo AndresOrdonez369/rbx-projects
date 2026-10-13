@@ -1,27 +1,27 @@
 # THAW A CREATURE
 
-## Two-Developer Production Workflow — v0.2
+## Two-Developer Production Workflow — v0.3
 
 **Purpose:** Define how the remaining *Thaw A Creature* work is split, coordinated, reviewed, and merged once a second engineer joins the project.  
-**Current checkpoint:** `D7-R07 - Regional Cold Severity` complete  
-**Next implementation task:** `D7-R08 - Ancient Ice`  
-**Current progress:** `D7-R01` through `D7-R07` are complete. The two-developer workflow now applies to the remaining Day-7 work and all later production.  
+**Current checkpoint:** Day 8 persistence complete; Day 9 multiplayer + personal bases in progress / engineer-owned  
+**Next implementation boundary:** Systems Engineer finishes Day 9; Design/Content Lead may begin safe Day-11 content work in parallel  
+**Current progress:** Week 1 complete/PASS; Day 8 complete; Day 9 in progress. The workflow now coordinates Day-9/Day-10 systems work with parallel Day-11 creature/content production.  
 **Team size:** 2 developers  
 **Primary goal:** Increase parallel throughput without creating conflicting implementations, design drift, or unstable shared systems.
 
 > This is an **operational production document**, not a new design authority. It does not supersede the canonical GDD, Technical Specifications, Constants, or Development Plan.
 
 
-## v0.2 Progress Update
+## v0.3 Progress Update
 
-- `D7-R01` through `D7-R07` are complete.
-- The Project Owner completed the Day-7 sequence through `D7-R07 - Regional Cold Severity`.
-- The next canonical task is `D7-R08 - Ancient Ice`.
-- The remaining Day-7 implementation is now `D7-R08` through `D7-R13`.
-- The ownership plan has been re-baselined from the actual current checkpoint rather than the earlier post-`D7-R03` assumption.
-- Week 2 and Week 3 role ownership remain unchanged unless the End-of-Week-1 gate produces a new canonical revision.
-
----
+- Week 1 prototype and D7-R13 progression gates are complete/PASS.
+- Day 8 persistence is complete.
+- Day 9 multiplayer + personal bases is in progress and engineer-owned.
+- Launch creature target is now 20 species / four signature creatures per region.
+- Nine new species may use placeholder meshes until final production models are available.
+- Day 11 content work may begin in parallel only where it does not edit engineer-owned Day-9 systems.
+- The Systems Engineer remains focused on Day 9 -> Day 10 -> coordinated ownership/integration work.
+- The Design / Content Lead owns roster/content mapping, placeholder creature production, regional pool intent, progression tuning, and presentation acceptance.
 
 ---
 
@@ -29,11 +29,11 @@
 
 When implementation questions arise, continue using the established authority order:
 
-1. `01_Thaw_A_Creature_Concise_GDD_Canonical_v0.5`
-2. `03_Thaw_A_Creature_Bare_Minimum_Prototype_Technical_v0.9` for Week-1 prototype behavior
-3. `02_Thaw_A_Creature_Technical_Implementation_3Week_v0.5` for launch architecture
-4. `05_Thaw_A_Creature_Implementation_Constants_Canonical_v0.9` for exact values and configuration
-5. `04_Thaw_A_Creature_Development_Plan_Canonical_v0.9` for task order and gates
+1. `01_Thaw_A_Creature_Concise_GDD_Canonical_v0.8`
+2. `02_Thaw_A_Creature_Technical_Implementation_3Week_v0.8` for launch architecture/behavior
+3. `05_Thaw_A_Creature_Implementation_Constants_Canonical_v1.2` for exact values/content configuration
+4. `04_Thaw_A_Creature_Development_Plan_Canonical_v1.2` for task order/gates
+5. `03_Thaw_A_Creature_Bare_Minimum_Prototype_Technical_v1.0_FINAL` for historical Week-1 evidence
 6. This workflow document for **ownership, coordination, branching, integration, and review**
 
 If this workflow appears to conflict with a canonical design or technical document, the canonical document wins.
@@ -298,86 +298,55 @@ The other developer avoids those files until merge unless both explicitly coordi
 
 ---
 
-# 6. Current Split — Day 7 After D7-R07
+# 6. Current Split — Day 9 Systems + Parallel Day 11 Content
 
-The following Day-7 tasks are already complete:
+Current state:
 
 ```text
-D7-R01 - Big-Number Warmth Rebalance
-D7-R02 - Scalable Hearth Refill
-D7-R03 - Hearth Progression Expansion
-D7-R04 - Hearth Prominence Pass
-D7-R05 - Expanded Progression Regions
-D7-R06 - Recommended Warmth Signs
-D7-R07 - Regional Cold Severity
+Week 1 COMPLETE / PASS
+Day 8 persistence COMPLETE
+Day 9 multiplayer + personal bases IN PROGRESS / engineer-owned
+Day 10 systems work waits behind Day-9 stability
+Day 11 content design is locked and may proceed in safe parallel lanes
 ```
 
-The remaining Day-7 tasks are:
-
-| Task | Primary | Support / Review | Dependency Notes |
-|---|---|---|---|
-| `D7-R08 - Ancient Ice` | Systems Engineer | Design Lead provides/approves authored points, pool, presentation, and region intent | Next canonical task |
-| `D7-R09 - Black Ice` | Systems Engineer | Design review | Only after R08 is stable |
-| `D7-R10 - Meteor Ice` | Systems Engineer | Design review | Optional if time/stability permits; do not force it |
-| `D7-R11 - 11-Creature Pool Expansion` | Design / Content Lead for explicit mapping; Engineer for integration support | Shared | Do not fabricate assignments |
-| `D7-R12 - Low-Warmth Feedback` | Systems Engineer for state/hooks; Design Lead for presentation acceptance | Shared | Percentage-based `Safe -> Low -> Critical` |
-| `D7-R13 - Progression Validation Gate` | Design / Content Lead | Engineer participates | Final Day-7 / Week-1 validation |
-
-## 6.1 Recommended Parallel Sequence From the Current Checkpoint
+## 6.1 Recommended Parallel Sequence
 
 ```text
-D7-R07 MERGED
-      |
-      +--------------------------------------+
-      |                                      |
-Design / Content Lead                    Systems Engineer
-prepare/approve R11 mapping              D7-R08 Ancient Ice
-review Ancient presentation              D7-R09 Black Ice
-prepare R13 test plan                    D7-R10 Meteor if stable/time permits
-continue creature/content work           D7-R12 Low-Warmth Feedback
-      |                                      |
-      +--------------- integration ----------+
-                      |
-                 D7-R11 Pool Expansion
-                      |
-                 regression sanity pass
-                      |
-                 D7-R13 Validation Gate
+Systems Engineer                         Design / Content Lead
+Day 9 multiplayer/bases/shared Ice       D11 five-rarity presentation audit
+exact-Ice failure drop/rescue            20-species config/content preparation
+base isolation / remote validation       nine placeholder creature meshes
+shared onboarding guidance               provisional silhouette/scale/Seat prep
+        |                                           |
+        +------------- coordination ----------------+
+                            |
+                     Day 9 stable
+                            |
+Systems Engineer -> Day 10 world cycle + Survival + mounts
+Design Lead      -> continue safe D11 content/presentation
+                            |
+                     Day 10 stable
+                            |
+             coordinated D11 runtime integration
 ```
 
 ### Practical rule
 
-The Design / Content Lead may prepare `D7-R11` mappings while the engineer builds `D7-R08` through `D7-R10`, but final pool integration should use the actual stable Ice/config state that exists after those tasks. Do not pre-implement speculative pool structures.
+The Design / Content Lead may create/prepare placeholder creature assets, content tables, region/pool mappings, and presentation work while Day 9 is active.
 
-`D7-R12` can proceed as a separate systems task as long as it does not conflict with active Warmth/UI edits.
+Do **not** independently edit `ServerBootstrap`, `BaseService`, `DataService`, `CreatureService`, `IceService`, shared remotes, or persistent schema to force D11 integration early. Those changes wait for coordination with the Systems Engineer.
 
-`D7-R13` remains a hard validation point. Do not automatically begin launch persistence because one developer becomes free early.
+# 7. End-of-Week-1 Gate — ACHIEVED
 
----
+Week 1 and D7-R13 are complete/PASS.
+The Survival Pressure experiment also passed and its approved subset is promoted into launch scope.
 
-# 7. End-of-Week-1 Gate
-
-Before Week 2 begins, the team must explicitly decide whether the prototype has credible evidence for the core experience.
-
-Verify:
-- visible Ice creates desire;
-- retrieval creates tension;
-- near-failure creates retry desire;
-- thawing creates anticipation;
-- waiting has productive activity;
-- Warmth training feels valuable;
-- creature progression changes traversal;
-- Great Frost refreshes interest;
-- reveal creates another-Ice desire;
-- later content creates aspiration.
-
-Only after the gate is accepted should launch-production tasks begin.
-
----
+This gate is historical evidence now. Do not reopen Week 1 or delay current production to re-run already accepted prototype scope unless a regression specifically requires it.
 
 # 8. Week 2 Ownership — Mechanical Launch Build
 
-## Day 8 — Persistence Foundation
+## Day 8 — Persistence Foundation — COMPLETE
 
 **Systems Engineer — Primary**
 - `L-D8-T01 - DataService`
@@ -395,62 +364,69 @@ Only after the gate is accepted should launch-production tasks begin.
 - continue remaining creature/content preparation;
 - prepare content decisions for Days 11-12.
 
-## Day 9 — Multiplayer + Personal Bases
+## Day 9 — Multiplayer + Personal Bases — IN PROGRESS / ENGINEER-OWNED
 
 **Systems Engineer — Primary**
-- server-size conversion;
+- raise initial server target to 4 players;
 - `BaseService`;
-- base ownership;
-- shared wilderness;
-- Ice contention;
-- disconnect cleanup;
-- remote validation;
-- base isolation;
-- private onboarding-Ice logic;
-- depleted-field onboarding test.
+- base ownership/isolation;
+- one universal shared wilderness Ice field;
+- first-valid Grab contention;
+- exact-Ice failure drop/rescue on Freeze/death/reset/disconnect;
+- remote validation and race safety;
+- own-Hearth-only Warmth training/refill and creature recovery;
+- shared onboarding guidance with no private Ice copies;
+- depleted-field onboarding behavior.
 
 **Design / Content Lead**
 - base layout;
 - shared-camp readability;
-- `OnboardingIceSpawnPoint` placement;
 - visual ownership readability;
 - multiplayer gameplay validation;
-- onboarding acceptance.
+- shared onboarding acceptance;
+- avoid editing engineer-owned Day-9 core services.
 
-## Day 10 — Production World Cycle
+## Day 10 — Production World Cycle + Survival + Mount Integration
 
 **Systems Engineer — Primary**
-- wall-clock cycle;
-- server synchronization;
-- boot behavior;
-- online-only Thaw Surge;
-- production field reset;
-- Special-Ice cadence;
-- Special-Ice lifecycle;
-- server-wide event hooks.
+- wall-clock Great Frost cycle / server synchronization;
+- boot behavior and online-only Thaw Surge;
+- production shared Ice/guardian/breakable field reset;
+- Special-Ice cadence/lifecycle/server-wide event hooks;
+- production SurvivalConfig and regional Sprite damage;
+- Guarded Ice across all five tiers;
+- session creature Vitality/Frosted production behavior;
+- Following/Riding runtime state;
+- Ride/Unride while carrying Ice;
+- universal Mounted Strike;
+- multiplayer survival/mount regression.
 
 **Design / Content Lead**
 - Special-Ice visual identity;
 - Great Frost presentation;
-- player-facing readability;
-- reward-mystery acceptance.
+- player-facing survival readability;
+- reward-mystery acceptance;
+- mount readability / placeholder-seat readiness support.
 
-## Day 11 — 16 Creatures + Legendary
+## Day 11 — 20 Creatures + Five Rarities
 
 **Design / Content Lead — Content Owner**
-- final roster decisions;
-- remaining five launch creature assets;
+- approved 20-species roster and four-creatures-per-region mapping;
+- nine functional placeholder launch creature assets;
 - species presentation;
-- silhouette mapping approval;
+- provisional silhouette/scale decisions for placeholders;
 - content/rarity/pool approval;
-- visual distinction.
+- visual distinction;
+- preserve the rule that final ReferenceWeight/BaseVisualScale/SilhouetteProfile come from actual production assets.
 
-**Systems Engineer — Integration Owner**
-- Legendary technical/config support;
-- all-16 ownership integration;
+**Systems Engineer — Integration Owner (after Day-9/Day-10 boundary is stable)**
+- all-20 ownership integration;
 - Pen/Equip/Sell/Archive compatibility;
 - Speed/stat integration;
-- state consistency.
+- persistence/state consistency;
+- mount/follower/runtime compatibility.
+
+Do not parallel-edit engineer-owned Day-9 core services from the content track.
 
 ## Day 12 — Five Ice Types
 
@@ -496,7 +472,9 @@ Only after the gate is accepted should launch-production tasks begin.
 
 **Design / Content Lead**
 - economy feel review;
+- verify Sell remains a low-value cleanup bonus rather than a progression strategy;
 - collection UX acceptance;
+- `X / 20` Archive acceptance;
 - discovery behavior acceptance;
 - final launch-scope review.
 
@@ -513,10 +491,10 @@ After Feature Lock:
 After the Week-1 gate, creature production becomes an explicit parallel track.
 
 While the Systems Engineer works primarily on Days 8-10, the Design / Content Lead continues:
-- remaining five launch creatures;
+- nine new launch creatures using functional placeholders until final art;
 - cleanup of existing creatures;
 - silhouette mapping;
-- BaseVisualScale decisions;
+- provisional BaseVisualScale decisions for placeholders, finalized from production assets;
 - content mapping;
 - visual polish;
 - simple reusable animation setup where useful.
@@ -678,18 +656,17 @@ Launch Candidate is declared only after both sign-offs.
 
 # 12. Task Tracker Template
 
-| ID | Task | Owner | Status | Branch | Depends On | Shared Files | Runtime Tested | Reviewer | Merge |
-|---|---|---|---|---|---|---|---|---|---|
-| D7-R04 | Hearth Prominence | Project Owner | MERGED | completed | D7-R03 | presentation/world | Yes | — | Complete |
-| D7-R05 | Expanded Regions | Project Owner | MERGED | completed | D7-R04 | world/regions | Yes | — | Complete |
-| D7-R06 | Recommended Warmth Signs | Project Owner | MERGED | completed | D7-R05 | region signage/config | Yes | — | Complete |
-| D7-R07 | Regional Cold Severity | Project Owner | MERGED | completed | D7-R05/R06 | WarmthService, RegionConfig | Yes | — | Complete |
-| D7-R08 | Ancient Ice | Engineer | NOT STARTED |  | D7-R07 | IceService, IceConfig, authored points | No | Project Owner |  |
-| D7-R09 | Black Ice | Engineer | BLOCKED |  | D7-R08 stable | IceService, IceConfig | No | Project Owner |  |
-| D7-R10 | Meteor Ice | Engineer | BLOCKED / OPTIONAL |  | D7-R09 stable + time | IceService, IceConfig | No | Project Owner |  |
-| D7-R11 | 11-Creature Pool Expansion | Project Owner / Shared | PREP |  | stable Ice types + approved mapping | CreatureConfig, IceConfig/pools | No | Engineer |  |
-| D7-R12 | Low-Warmth Feedback | Engineer | NOT STARTED |  | D7-R07 | Warmth state/UI hooks | No | Project Owner |  |
-| D7-R13 | Progression Validation Gate | Project Owner | BLOCKED |  | R08-R12 integration | full progression loop | No | Engineer |  |
+| ID | Task | Owner | Status | Depends On | Shared / High-Risk Systems | Runtime Tested | Reviewer |
+|---|---|---|---|---|---|---|---|
+| L-D8 | Persistence Foundation | Engineer | MERGED / COMPLETE | Week-1 PASS | DataService/schema | Yes | Project Owner |
+| L-D9 | Multiplayer + Personal Bases | Engineer | IN PROGRESS | Day 8 | BaseService, IceService, DataService, remotes | Pending | Project Owner |
+| L-D10 | World Cycle + Survival + Mounts | Engineer | BLOCKED by Day-9 stability | Day 9 stable | WorldCycle/Survival/Creature/Ice | No | Project Owner |
+| L-D11-T01 | Five-Rarity Presentation | Project Owner | READY TO START | content baseline v1.2 | presentation/config only | No | Engineer |
+| L-D11-T02 | 20-Species Content Mapping | Project Owner | READY TO START | v1.2 roster | config preparation; coordinate shared records | No | Engineer |
+| L-D11-T03 | Nine Placeholder Creature Assets | Project Owner | READY TO START | approved roster | creature assets only | No | Engineer |
+| L-D11-T04 | Region / Pool Contract Audit | Project Owner | READY TO START | T02 | config/content review | No | Engineer |
+| L-D11-T05 | Full Ownership Support | Engineer / Shared | BLOCKED | Day 9 + Day 10 stable | CreatureService/Data/persistence | No | Project Owner |
+| L-D11-T06 | Full Speed / Income Progression | Shared | BLOCKED | D11 integration | creature config + runtime | No | Shared |
 
 Recommended statuses:
 
@@ -703,8 +680,6 @@ READY TO MERGE
 MERGED
 FAILED / REWORK
 ```
-
----
 
 # 13. Dependency / Blocking Protocol
 
@@ -838,7 +813,7 @@ Protect:
 - persistence;
 - multiplayer authority;
 - five-Ice progression;
-- 16-creature launch target.
+- 20-creature launch target.
 
 Simplify first:
 - environmental decoration;
@@ -900,60 +875,44 @@ Day-21 launch decision
 
 # 19. Immediate Action From Current Checkpoint
 
-Completed:
+Current production state:
 
 ```text
-D7-R01
-D7-R02
-D7-R03
-D7-R04
-D7-R05
-D7-R06
-D7-R07
-```
-
-Current next task:
-
-```text
-D7-R08 - Ancient Ice
+Week 1 COMPLETE / PASS
+Day 8 COMPLETE
+Day 9 IN PROGRESS / engineer-owned
+Day 10 pending behind Day 9 systems stability
+Day 11 content design locked; safe parallel content work may begin
 ```
 
 Recommended split now:
 
 ```text
 Systems Engineer:
-D7-R08 -> D7-R09 -> D7-R10 if stable/time permits
-D7-R12
+finish Day 9 multiplayer/bases/shared-Ice
+-> Day 10 production world-cycle/Special Ice/Survival/mounts
+-> coordinate Day 11 ownership/system integration
 
 Design / Content Lead in parallel:
-prepare and approve D7-R11 creature-pool mapping
-review Ice presentation / authored spawn decisions
-prepare D7-R13 progression validation test
-continue safe creature/content production that does not conflict with active systems work
-
-Integration:
-D7-R11
--> regression sanity pass
--> D7-R13
--> End-of-Week-1 Gate
+D11 five-rarity presentation audit
+-> 20-species content mapping/config preparation
+-> build/integrate nine placeholder creature meshes
+-> provisional silhouette / scale / Seat readiness
+-> region/pool presentation preparation
+-> avoid engineer-owned core services
 ```
 
-After the Week-1 gate passes:
+Integration boundary:
 
 ```text
-Systems Engineer:
-Day 8 persistence
--> Day 9 multiplayer/bases
--> Day 10 production world-cycle/Special Ice
-
-Design / Content Lead in parallel:
-remaining creature production
--> content mapping
--> spawn/world preparation
--> presentation work
+Day 9 stable
+-> Day 10 stable
+-> merge/coordinate D11 ownership + full 20-species runtime support
+-> regression sanity
+-> continue Day 12/13/14 feature-lock path
 ```
 
-The immediate objective is no longer to establish the big-number region framework; that work is complete through `D7-R07`. The team should now finish the deeper functional Ice/content layer and validate the complete Week-1 progression loop.
+The purpose of parallelism is to remove content bottlenecks without creating competing implementations in shared gameplay systems.
 
 ---
 

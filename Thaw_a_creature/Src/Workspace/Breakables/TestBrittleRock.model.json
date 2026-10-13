@@ -1,0 +1,14 @@
+{
+  "className": "Part",
+  "attributes": {
+    "BreakableType": "BrittleRock"
+  },
+  "properties": {
+    "Anchored": true,
+    "CanCollide": true,
+    "Color": [0.55, 0.63, 0.7],
+    "Material": "Slate",
+    "Position": [15, 4, 250],
+    "Size": [8, 8, 8]
+  }
+}

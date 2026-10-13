@@ -4,6 +4,7 @@ local Workspace = game:GetService("Workspace")
 
 local shared = ReplicatedStorage:WaitForChild("Shared")
 local GameConfig = require(shared:WaitForChild("GameConfig"))
+local PenConfig = require(shared:WaitForChild("PenConfig"))
 
 export type Base = {
     Index: number,
@@ -15,7 +16,11 @@ export type Base = {
     HearthBase: BasePart,
     Pen: Model,
     PenFloor: BasePart,
+    -- Presentation origin: front-center of the Pen, local +Z pointing away from the lobby.
+    PenOrigin: BasePart,
     PenSlotPositions: { BasePart },
+    -- Thaw display origin: front-center of the thaw grid, which grows along its local +Z.
+    ThawArea: BasePart,
     ThawVisuals: Folder,
 }
 
@@ -25,6 +30,8 @@ local BASES_FOLDER_NAME = "Bases"
 local BASE_NAME_PREFIX = "Base"
 -- Replicated so clients can find their own plot; gameplay authority stays in this service.
 local OWNER_USER_ID_ATTRIBUTE = "OwnerUserId"
+-- Replicated so every client can present each visible Pen at its owner's level.
+local PEN_LEVEL_ATTRIBUTE = "PenLevel"
 
 local hasStarted = false
 local bases: { Base } = {}
@@ -43,12 +50,12 @@ local function loadBase(folder: Folder, index: number): Base
     local positionFolder = getChild(pen, "CreaturePositions", "Folder")
 
     local penSlotPositions = {}
-    for slotIndex = 1, GameConfig.ActivePenCreatureSlots do
+    for slotIndex = 1, PenConfig.MaxSlots do
         penSlotPositions[slotIndex] = getChild(positionFolder, "Slot" .. slotIndex, "BasePart")
     end
     assert(
-        #positionFolder:GetChildren() == GameConfig.ActivePenCreatureSlots,
-        string.format("%s must have exactly four creature positions", positionFolder:GetFullName())
+        #positionFolder:GetChildren() == PenConfig.MaxSlots,
+        string.format("%s must have exactly %d creature positions", positionFolder:GetFullName(), PenConfig.MaxSlots)
     )
 
     return {
@@ -61,7 +68,9 @@ local function loadBase(folder: Folder, index: number): Base
         HearthBase = getChild(hearth, "HearthBase", "BasePart"),
         Pen = pen,
         PenFloor = getChild(pen, "PenFloor", "BasePart"),
+        PenOrigin = getChild(pen, "PenOrigin", "BasePart"),
         PenSlotPositions = penSlotPositions,
+        ThawArea = getChild(folder, "ThawArea", "BasePart"),
         ThawVisuals = getChild(folder, "ThawVisuals", "Folder"),
     }
 end
@@ -73,6 +82,14 @@ end
 
 function BaseService.GetBase(player: Player): Base?
     return baseByPlayer[player]
+end
+
+function BaseService.SetPenLevel(player: Player, penLevel: number): ()
+    local base = baseByPlayer[player]
+    assert(PenConfig.IsValidLevel(penLevel), string.format("Unsupported PenLevel %s", tostring(penLevel)))
+    if base then
+        base.Folder:SetAttribute(PEN_LEVEL_ATTRIBUTE, penLevel)
+    end
 end
 
 -- Assigns the first free plot. Returns nil when every plot is taken.
@@ -104,6 +121,7 @@ function BaseService.ReleaseBase(player: Player): ()
 
     baseByPlayer[player] = nil
     base.Folder:SetAttribute(OWNER_USER_ID_ATTRIBUTE, nil)
+    base.Folder:SetAttribute(PEN_LEVEL_ATTRIBUTE, nil)
 end
 
 function BaseService.Start(): ()
@@ -122,6 +140,7 @@ function BaseService.Start(): ()
         assert(folder:IsA("Folder"), string.format("%s must be a Folder", folder:GetFullName()))
 
         folder:SetAttribute(OWNER_USER_ID_ATTRIBUTE, nil)
+        folder:SetAttribute(PEN_LEVEL_ATTRIBUTE, nil)
         table.insert(bases, loadBase(folder, index))
         index += 1
     end

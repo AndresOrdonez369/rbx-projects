@@ -1,8 +1,10 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local shared = ReplicatedStorage:WaitForChild("Shared")
+local CreatureConfig = require(shared:WaitForChild("CreatureConfig"))
 local IceConfig = require(shared:WaitForChild("IceConfig"))
 local SizeConfig = require(shared:WaitForChild("SizeConfig"))
+local SpecialIceConfig = require(shared:WaitForChild("SpecialIceConfig"))
 
 local IceVisualFactory = {}
 
@@ -41,6 +43,14 @@ local CRACK_COLOR = Color3.fromRGB(91, 164, 255)
 local CRACK_NAME = "ThawCrack"
 local INTERACTION_PART_NAME = "IceInteraction"
 local THAW_VISUAL_STAGE_ATTRIBUTE = "ThawVisualStage"
+local SPECIAL_COLOR = Color3.fromRGB(255, 214, 120)
+local SPECIAL_BEAM_NAME = "SpecialBeam"
+local SPECIAL_BEAM_WIDTH = 0.8
+local SPECIAL_BEAM_HEIGHT = 40
+local SPECIAL_BEAM_TRANSPARENCY = 0.35
+local SPECIAL_LIGHT_NAME = "SpecialGlow"
+local SPECIAL_LIGHT_BRIGHTNESS = 4
+local SPECIAL_LIGHT_RANGE = 24
 local FIRST_CRACK_VISIBLE_PARTS = 2
 local FIRST_CRACK_TRANSPARENCY = 0.05
 local SECOND_CRACK_TRANSPARENCY = 0
@@ -394,6 +404,24 @@ local function addCracks(visualIce: BasePart)
     end
 end
 
+-- The silhouette shown before the reveal, in the wild and in the Pen. Special Ice may share one profile
+-- per Ice type so its outline never tells the Rare result from the Legendary one.
+function IceVisualFactory.GetPreRevealSilhouetteProfile(creatureID: string, iceType: string, isSpecial: boolean): string
+    local silhouetteProfile = if isSpecial then SpecialIceConfig.SilhouetteProfileByIceType[iceType] else nil
+    if silhouetteProfile == nil then
+        local creature = CreatureConfig[creatureID]
+        assert(creature, string.format("Unknown creature %s", creatureID))
+        silhouetteProfile = creature.SilhouetteProfile
+    end
+
+    assert(
+        type(silhouetteProfile) == "string" and SILHOUETTE_PROFILES[silhouetteProfile],
+        string.format("Unsupported SilhouetteProfile %s for %s", tostring(silhouetteProfile), creatureID)
+    )
+
+    return silhouetteProfile
+end
+
 function IceVisualFactory.GetBaseSize(iceType: string): Vector3
     local visualProfile, iceTypeConfig = getVisualProfile(iceType)
     local baseVisualScale = iceTypeConfig.BaseVisualScale or iceTypeConfig.PresentationScale
@@ -544,6 +572,32 @@ function IceVisualFactory.SetCFrame(visualIce: BasePart, cframe: CFrame)
             descendant.CFrame = transform * descendant.CFrame
         end
     end
+end
+
+-- Readable from a distance without revealing the reward: a light column and a strong glow.
+function IceVisualFactory.ApplySpecialPresentation(visualIce: BasePart)
+    visualIce:SetAttribute("IsSpecial", true)
+
+    local beam = Instance.new("Part")
+    beam.Name = SPECIAL_BEAM_NAME
+    beam.Anchored = true
+    beam.CanCollide = false
+    beam.CanQuery = false
+    beam.CanTouch = false
+    beam.CastShadow = false
+    beam.Color = SPECIAL_COLOR
+    beam.Material = Enum.Material.Neon
+    beam.Transparency = SPECIAL_BEAM_TRANSPARENCY
+    beam.Size = Vector3.new(SPECIAL_BEAM_WIDTH, SPECIAL_BEAM_HEIGHT, SPECIAL_BEAM_WIDTH)
+    beam.CFrame = visualIce.CFrame * CFrame.new(0, visualIce.Size.Y * 0.5 + SPECIAL_BEAM_HEIGHT * 0.5, 0)
+    beam.Parent = visualIce
+
+    local light = Instance.new("PointLight")
+    light.Name = SPECIAL_LIGHT_NAME
+    light.Color = SPECIAL_COLOR
+    light.Brightness = SPECIAL_LIGHT_BRIGHTNESS
+    light.Range = SPECIAL_LIGHT_RANGE
+    light.Parent = visualIce
 end
 
 return IceVisualFactory

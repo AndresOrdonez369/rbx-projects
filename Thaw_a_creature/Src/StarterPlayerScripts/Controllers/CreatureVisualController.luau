@@ -8,12 +8,27 @@ local CreatureConfig = require(shared:WaitForChild("CreatureConfig"))
 local CreatureStatPresentation = require(shared:WaitForChild("CreatureStatPresentation"))
 local CreatureSurvivalConfig = require(shared:WaitForChild("CreatureSurvivalConfig"))
 
+-- Presents every player's Equipped creature: following behind them, or under them while Riding.
+-- Driven by the mount attributes the server replicates on each Player; purely cosmetic.
 local CreatureVisualController = {}
 
 local FOLLOW_SMOOTHING_RATE = 8
 local SNAP_DISTANCE = 30
 local CREATURE_VISUALS_FOLDER_NAME = "CreatureVisuals"
 local FOLLOWER_NAME = "EquippedFollower"
+local RIDER_ANCHOR_ATTRIBUTE = "RiderAnchorOffset"
+local MOUNT_CREATURE_ID_ATTRIBUTE = "MountCreatureID"
+local MOUNT_SCALE_ATTRIBUTE = "MountScale"
+local MOUNT_STATE_ATTRIBUTE = "MountState"
+local MOUNT_FROSTED_ATTRIBUTE = "MountFrosted"
+local RIDING_STATE = "Riding"
+
+type Presentation = {
+    Model: Model,
+    Character: Model,
+    RootPart: BasePart,
+    RiderAnchor: Vector3,
+}
 
 local localPlayer = Players.LocalPlayer
 local remotes = ReplicatedStorage:WaitForChild("Remotes")
@@ -24,19 +39,15 @@ assert(gameplayEvent:IsA("RemoteEvent"), "ReplicatedStorage.Remotes.GameplayEven
 assert(creatureVisuals:IsA("Folder"), "ReplicatedStorage.CreatureVisuals must be a Folder")
 
 local started = false
-local equippedCreatureID: string? = nil
-local equippedCreatureGUID: string? = nil
-local equippedStats: CreatureStatPresentation.DisplayStats? = nil
-local creatureFrosted = false
-local follower: Model? = nil
-local activeCharacter: Model? = nil
-local activeRootPart: BasePart? = nil
-local rebuildRevision = 0
+local presentationsByPlayer: { [Player]: Presentation } = {}
+local rebuildRevisionByPlayer: { [Player]: number } = {}
+local localStats: CreatureStatPresentation.DisplayStats? = nil
 
-local function destroyFollower(): ()
-    if follower then
-        follower:Destroy()
-        follower = nil
+local function destroyPresentation(player: Player): ()
+    local presentation = presentationsByPlayer[player]
+    presentationsByPlayer[player] = nil
+    if presentation then
+        presentation.Model:Destroy()
     end
 end
 
@@ -51,21 +62,22 @@ local function makeFollowerSafe(model: Model): ()
     end
 end
 
-local function getTargetCFrame(rootPart: BasePart, model: Model): CFrame
-    local behindPosition = rootPart.CFrame:PointToWorldSpace(
-        Vector3.new(0, 0, CreatureSurvivalConfig.LogicalTargetFollowDistance)
-    )
+local function getTargetCFrame(player: Player, presentation: Presentation): CFrame
+    local rootPart = presentation.RootPart
+    local isRiding = player:GetAttribute(MOUNT_STATE_ATTRIBUTE) == RIDING_STATE
+    local riderAnchor = presentation.RiderAnchor
+    local anchorPosition = if isRiding
+        then rootPart.Position
+        else rootPart.CFrame:PointToWorldSpace(Vector3.new(0, 0, CreatureSurvivalConfig.LogicalTargetFollowDistance))
+
     local raycastParams = RaycastParams.new()
     raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-    raycastParams.FilterDescendantsInstances = { activeCharacter :: Model, model }
+    raycastParams.FilterDescendantsInstances = { presentation.Character, presentation.Model }
 
-    local rayOrigin = behindPosition + Vector3.new(0, CreatureSurvivalConfig.LogicalTargetGroundRayHeight, 0)
-    local groundResult = Workspace:Raycast(
-        rayOrigin,
-        Vector3.new(0, -CreatureSurvivalConfig.LogicalTargetGroundRayDepth, 0),
-        raycastParams
-    )
-    local targetPosition = if groundResult then groundResult.Position else behindPosition
+    local rayOrigin = anchorPosition + Vector3.new(0, CreatureSurvivalConfig.LogicalTargetGroundRayHeight, 0)
+    local rayDepth = CreatureSurvivalConfig.LogicalTargetGroundRayDepth + if isRiding then math.max(riderAnchor.Y, 0) else 0
+    local groundResult = Workspace:Raycast(rayOrigin, Vector3.new(0, -rayDepth, 0), raycastParams)
+    local targetPosition = if groundResult then groundResult.Position else anchorPosition
     local lookVector = rootPart.CFrame.LookVector
     local horizontalLook = Vector3.new(lookVector.X, 0, lookVector.Z)
 
@@ -75,32 +87,35 @@ local function getTargetCFrame(rootPart: BasePart, model: Model): CFrame
         horizontalLook = horizontalLook.Unit
     end
 
-    return CFrame.lookAt(targetPosition, targetPosition + horizontalLook)
+    local groundCFrame = CFrame.lookAt(targetPosition, targetPosition + horizontalLook)
+    if not isRiding then
+        return groundCFrame
+    end
+
+    -- Match the server's logical mount pivot: the scaled rider anchor sits beneath the rider.
+    return groundCFrame * CFrame.new(-riderAnchor.X, 0, -riderAnchor.Z)
 end
 
-local function rebuildFollower(character: Model?): ()
-    rebuildRevision += 1
-    local revision = rebuildRevision
+local function rebuildPresentation(player: Player): ()
+    local revision = (rebuildRevisionByPlayer[player] or 0) + 1
+    rebuildRevisionByPlayer[player] = revision
+    destroyPresentation(player)
 
-    destroyFollower()
-    activeCharacter = character
-    activeRootPart = nil
-
-    local creatureID = equippedCreatureID
-    local creatureGUID = equippedCreatureGUID
-    local stats = equippedStats
-    if not character
-        or type(creatureID) ~= "string"
-        or type(creatureGUID) ~= "string"
-        or not stats
-        or creatureFrosted
+    local creatureID = player:GetAttribute(MOUNT_CREATURE_ID_ATTRIBUTE)
+    local scale = player:GetAttribute(MOUNT_SCALE_ATTRIBUTE)
+    local character = player.Character
+    if type(creatureID) ~= "string"
+        or type(scale) ~= "number"
+        or scale <= 0
+        or player:GetAttribute(MOUNT_FROSTED_ATTRIBUTE) == true
+        or not character
     then
         return
     end
 
     local rootPart = character:FindFirstChild("HumanoidRootPart") or character:WaitForChild("HumanoidRootPart", 10)
-    if revision ~= rebuildRevision
-        or localPlayer.Character ~= character
+    if rebuildRevisionByPlayer[player] ~= revision
+        or player.Character ~= character
         or not rootPart
         or not rootPart:IsA("BasePart")
     then
@@ -108,53 +123,77 @@ local function rebuildFollower(character: Model?): ()
     end
 
     local creature = CreatureConfig[creatureID]
-    if not creature or type(creature.ModelName) ~= "string" then
-        return
-    end
-
-    local source = creatureVisuals:FindFirstChild(creature.ModelName)
+    local source = creature and creatureVisuals:FindFirstChild(creature.ModelName)
     if not source or not source:IsA("Model") then
         return
     end
 
+    local templateAnchor = source:GetAttribute(RIDER_ANCHOR_ATTRIBUTE)
     local model = source:Clone()
     makeFollowerSafe(model)
-    local authoredTemplateScale = model:GetScale()
-    model:ScaleTo(authoredTemplateScale * stats.Scale)
+    model:ScaleTo(model:GetScale() * scale)
     model.Name = FOLLOWER_NAME
     model:SetAttribute("CreatureID", creatureID)
-    model:SetAttribute("CreatureGUID", creatureGUID)
-    model:SetAttribute("SizeScale", stats.Scale)
-    CreatureStatPresentation.Attach(model, stats)
+    model:SetAttribute("SizeScale", scale)
 
-    activeCharacter = character
-    activeRootPart = rootPart
-    model:PivotTo(getTargetCFrame(rootPart, model))
+    -- Only the local player sees their own copy's stat card.
+    local stats = localStats
+    if player == localPlayer and stats and stats.Scale == scale then
+        CreatureStatPresentation.Attach(model, stats)
+    end
+
+    local presentation: Presentation = {
+        Model = model,
+        Character = character,
+        RootPart = rootPart,
+        RiderAnchor = (if typeof(templateAnchor) == "Vector3" then templateAnchor else Vector3.zero) * scale,
+    }
+    model:PivotTo(getTargetCFrame(player, presentation))
     model.Parent = Workspace
-    follower = model
+    presentationsByPlayer[player] = presentation
 end
 
-local function updateFollower(deltaTime: number): ()
-    local model = follower
-    local character = activeCharacter
-    local rootPart = activeRootPart
-    if not model or not character or not rootPart
-        or localPlayer.Character ~= character
-        or not rootPart:IsDescendantOf(character)
-    then
-        return
-    end
-
-    local targetCFrame = getTargetCFrame(rootPart, model)
-    local currentCFrame = model:GetPivot()
-
-    if (currentCFrame.Position - targetCFrame.Position).Magnitude > SNAP_DISTANCE then
-        model:PivotTo(targetCFrame)
-        return
-    end
-
+local function updatePresentations(deltaTime: number): ()
     local interpolationAlpha = 1 - math.exp(-FOLLOW_SMOOTHING_RATE * deltaTime)
-    model:PivotTo(currentCFrame:Lerp(targetCFrame, interpolationAlpha))
+
+    for player, presentation in presentationsByPlayer do
+        if player.Character ~= presentation.Character or not presentation.RootPart:IsDescendantOf(presentation.Character) then
+            continue
+        end
+
+        local targetCFrame = getTargetCFrame(player, presentation)
+        local currentCFrame = presentation.Model:GetPivot()
+
+        -- A mount stays locked under its rider; a follower trails smoothly and snaps when far behind.
+        if player:GetAttribute(MOUNT_STATE_ATTRIBUTE) == RIDING_STATE
+            or (currentCFrame.Position - targetCFrame.Position).Magnitude > SNAP_DISTANCE
+        then
+            presentation.Model:PivotTo(targetCFrame)
+        else
+            presentation.Model:PivotTo(currentCFrame:Lerp(targetCFrame, interpolationAlpha))
+        end
+    end
+end
+
+local function watchPlayer(player: Player): ()
+    for _, attributeName in { MOUNT_CREATURE_ID_ATTRIBUTE, MOUNT_SCALE_ATTRIBUTE, MOUNT_FROSTED_ATTRIBUTE } do
+        player:GetAttributeChangedSignal(attributeName):Connect(function()
+            rebuildPresentation(player)
+        end)
+    end
+
+    player.CharacterAdded:Connect(function()
+        rebuildPresentation(player)
+    end)
+
+    player.CharacterRemoving:Connect(function(character)
+        local presentation = presentationsByPlayer[player]
+        if presentation and presentation.Character == character then
+            destroyPresentation(player)
+        end
+    end)
+
+    task.spawn(rebuildPresentation, player)
 end
 
 function CreatureVisualController.Start(): ()
@@ -163,60 +202,43 @@ function CreatureVisualController.Start(): ()
     end
     started = true
 
+    -- The server's private equip update carries the local copy's display stats.
     gameplayEvent.OnClientEvent:Connect(function(eventName, data)
-        if eventName ~= "EquippedCreatureChanged" then
+        if eventName ~= "EquippedCreatureChanged" or type(data) ~= "table" then
             return
         end
 
-        if type(data) ~= "table" then
-            return
-        end
-
-        local creatureID = data.EquippedCreature
-        if creatureID ~= nil and type(creatureID) ~= "string" then
-            return
-        end
-        local creatureGUID = data.EquippedCreatureGUID
         local stats = {
             Scale = data.Scale,
             FinalIncome = data.FinalIncome,
             FinalWalkSpeed = data.FinalWalkSpeed,
         }
-        if creatureID == nil then
-            if creatureGUID ~= nil
-                or data.Scale ~= nil
-                or data.FinalIncome ~= nil
-                or data.FinalWalkSpeed ~= nil
-            then
-                return
-            end
-        elseif type(creatureGUID) ~= "string"
-            or not CreatureStatPresentation.IsValidDisplayStats(stats)
-        then
-            return
-        end
-        if type(data.CreatureFrosted) ~= "boolean" then
-            return
-        end
+        local nextStats = if CreatureStatPresentation.IsValidDisplayStats(stats) then stats else nil
+        local previousStats = localStats
+        local statsChanged = (nextStats == nil) ~= (previousStats == nil)
+            or (nextStats ~= nil and previousStats ~= nil and (
+                nextStats.Scale ~= previousStats.Scale
+                or nextStats.FinalIncome ~= previousStats.FinalIncome
+                or nextStats.FinalWalkSpeed ~= previousStats.FinalWalkSpeed
+            ))
+        localStats = nextStats
 
-        equippedCreatureID = creatureID
-        equippedCreatureGUID = creatureGUID
-        equippedStats = if creatureID then stats else nil
-        creatureFrosted = data.CreatureFrosted
-        rebuildFollower(localPlayer.Character)
-    end)
-
-    localPlayer.CharacterAdded:Connect(function(character)
-        rebuildFollower(character)
-    end)
-
-    localPlayer.CharacterRemoving:Connect(function(character)
-        if character == activeCharacter then
-            rebuildFollower(nil)
+        -- Vitality and mount-state updates reuse this event; only new copy stats need a new card.
+        if statsChanged then
+            rebuildPresentation(localPlayer)
         end
     end)
 
-    RunService.Heartbeat:Connect(updateFollower)
+    for _, player in Players:GetPlayers() do
+        watchPlayer(player)
+    end
+    Players.PlayerAdded:Connect(watchPlayer)
+    Players.PlayerRemoving:Connect(function(player)
+        destroyPresentation(player)
+        rebuildRevisionByPlayer[player] = nil
+    end)
+
+    RunService.Heartbeat:Connect(updatePresentations)
 end
 
 return CreatureVisualController

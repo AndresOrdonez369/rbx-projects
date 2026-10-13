@@ -5,6 +5,7 @@ local Workspace = game:GetService("Workspace")
 local shared = ReplicatedStorage:WaitForChild("Shared")
 local SurvivalToolConfig = require(shared:WaitForChild("SurvivalToolConfig"))
 
+local CreatureService = require(script.Parent.CreatureService)
 local PlayerStateService = require(script.Parent.PlayerStateService)
 
 local SurvivalToolService = {}
@@ -121,9 +122,9 @@ local function isTargetHittable(target: Instance): boolean
         and target:IsDescendantOf(Workspace)
 end
 
-local function findNearestApprovedTarget(rootPart: BasePart, character: Model, tool: Tool): Instance?
+local function findNearestApprovedTarget(attackOrigin: CFrame, character: Model, tool: Tool): Instance?
     local hitboxDepth = SurvivalToolConfig.HitboxDepth
-    local hitboxCFrame = rootPart.CFrame * CFrame.new(0, 0, -hitboxDepth * 0.5)
+    local hitboxCFrame = attackOrigin * CFrame.new(0, 0, -hitboxDepth * 0.5)
     local hitboxSize = Vector3.new(
         SurvivalToolConfig.HitboxWidth,
         SurvivalToolConfig.HitboxHeight,
@@ -149,12 +150,12 @@ local function findNearestApprovedTarget(rootPart: BasePart, character: Model, t
             continue
         end
 
-        local targetLocalPosition = rootPart.CFrame:PointToObjectSpace(targetPosition)
+        local targetLocalPosition = attackOrigin:PointToObjectSpace(targetPosition)
         if targetLocalPosition.Z >= 0 then
             continue
         end
 
-        local distance = (rootPart.Position - targetPosition).Magnitude
+        local distance = (attackOrigin.Position - targetPosition).Magnitude
         if distance <= SurvivalToolConfig.ToolServerHitRange and distance < nearestDistance then
             nearestTarget = target
             nearestDistance = distance
@@ -192,7 +193,11 @@ function SurvivalToolService.TrySwing(player: Player): boolean
     end
     lastSwingAtByPlayer[player] = now
 
-    local target = findNearestApprovedTarget(rootPart, character, tool)
+    -- One attack, two presentations: on foot it swings from the player; Riding it becomes
+    -- Mounted Strike from the mount's ground/front origin with identical range, damage and cooldown.
+    local attackOrigin = CreatureService.GetMountedCombatOrigin(player) or rootPart.CFrame
+
+    local target = findNearestApprovedTarget(attackOrigin, character, tool)
     if not target then
         return false
     end
@@ -202,7 +207,7 @@ function SurvivalToolService.TrySwing(player: Player): boolean
         return false
     end
 
-    if (rootPart.Position - targetPosition).Magnitude > SurvivalToolConfig.ToolServerHitRange then
+    if (attackOrigin.Position - targetPosition).Magnitude > SurvivalToolConfig.ToolServerHitRange then
         return false
     end
 

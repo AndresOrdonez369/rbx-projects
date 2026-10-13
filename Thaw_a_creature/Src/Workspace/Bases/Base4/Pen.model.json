@@ -125,8 +125,100 @@
             "Size": [0.5, 0.5, 0.5],
             "Transparency": 1
           }
+        },
+        {
+          "name": "Slot5",
+          "className": "Part",
+          "properties": {
+            "Anchored": true,
+            "CanCollide": false,
+            "CanQuery": false,
+            "CanTouch": false,
+            "Position": [82, 0.5, 16],
+            "Size": [0.5, 0.5, 0.5],
+            "Transparency": 1
+          }
+        },
+        {
+          "name": "Slot6",
+          "className": "Part",
+          "properties": {
+            "Anchored": true,
+            "CanCollide": false,
+            "CanQuery": false,
+            "CanTouch": false,
+            "Position": [88, 0.5, 16],
+            "Size": [0.5, 0.5, 0.5],
+            "Transparency": 1
+          }
+        },
+        {
+          "name": "Slot7",
+          "className": "Part",
+          "properties": {
+            "Anchored": true,
+            "CanCollide": false,
+            "CanQuery": false,
+            "CanTouch": false,
+            "Position": [82, 0.5, 24],
+            "Size": [0.5, 0.5, 0.5],
+            "Transparency": 1
+          }
+        },
+        {
+          "name": "Slot8",
+          "className": "Part",
+          "properties": {
+            "Anchored": true,
+            "CanCollide": false,
+            "CanQuery": false,
+            "CanTouch": false,
+            "Position": [88, 0.5, 24],
+            "Size": [0.5, 0.5, 0.5],
+            "Transparency": 1
+          }
+        },
+        {
+          "name": "Slot9",
+          "className": "Part",
+          "properties": {
+            "Anchored": true,
+            "CanCollide": false,
+            "CanQuery": false,
+            "CanTouch": false,
+            "Position": [82, 0.5, 32],
+            "Size": [0.5, 0.5, 0.5],
+            "Transparency": 1
+          }
+        },
+        {
+          "name": "Slot10",
+          "className": "Part",
+          "properties": {
+            "Anchored": true,
+            "CanCollide": false,
+            "CanQuery": false,
+            "CanTouch": false,
+            "Position": [88, 0.5, 32],
+            "Size": [0.5, 0.5, 0.5],
+            "Transparency": 1
+          }
         }
       ]
+    },
+    {
+      "name": "PenOrigin",
+      "className": "Part",
+      "properties": {
+        "Anchored": true,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "CastShadow": false,
+        "Position": [85, 0.5, -10],
+        "Size": [1, 0.2, 1],
+        "Transparency": 1
+      }
     }
   ]
 }

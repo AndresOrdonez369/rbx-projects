@@ -1,0 +1,14 @@
+{
+  "className": "Part",
+  "attributes": {
+    "BreakableType": "FrozenBranch"
+  },
+  "properties": {
+    "Anchored": true,
+    "CanCollide": true,
+    "Color": [0.42, 0.36, 0.3],
+    "Material": "Wood",
+    "Position": [-15, 3, 150],
+    "Size": [12, 6, 2]
+  }
+}

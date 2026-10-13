@@ -58,7 +58,7 @@ local function freezeAndReturnHome(
     end
 
     state.IsFrozen = true
-    IceService.DiscardCarriedIce(player)
+    IceService.ReleaseCarriedIce(player)
 
     local verticalOffset = spawn.Size.Y * 0.5 + humanoid.HipHeight + rootPart.Size.Y * 0.5
     character:PivotTo(spawn.CFrame * CFrame.new(0, verticalOffset, 0))

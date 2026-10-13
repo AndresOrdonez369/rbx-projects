@@ -2,6 +2,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local BaseService = require(script.Parent.Services.BaseService)
+local BreakableService = require(script.Parent.Services.BreakableService)
 local CreatureService = require(script.Parent.Services.CreatureService)
 local CreatureRevealService = require(script.Parent.Services.CreatureRevealService)
 local DataService = require(script.Parent.Services.DataService)
@@ -9,6 +10,8 @@ local FrostSpriteService = require(script.Parent.Services.FrostSpriteService)
 local GuardedIceService = require(script.Parent.Services.GuardedIceService)
 local HearthService = require(script.Parent.Services.HearthService)
 local IceService = require(script.Parent.Services.IceService)
+local OnboardingService = require(script.Parent.Services.OnboardingService)
+local PenService = require(script.Parent.Services.PenService)
 local PlayerStateService = require(script.Parent.Services.PlayerStateService)
 local RegionService = require(script.Parent.Services.RegionService)
 local SurvivalToolService = require(script.Parent.Services.SurvivalToolService)
@@ -23,24 +26,19 @@ local gameplayEvent = remotes:WaitForChild("GameplayEvent")
 local servicesStarted = false
 local clientReadyPlayers: { [Player]: boolean } = {}
 
-local function getWorldCycleClientState(): { [string]: string | number }?
+local function getWorldCycleClientState(): { [string]: string | number }
     local state = WorldCycleService.GetState()
-    if not state then
-        return nil
-    end
 
     return {
         CurrentPhase = state.CurrentPhase,
         CycleIndex = state.CycleIndex,
-        PhaseEndsAtTime = state.PhaseEndsAtTime,
+        NextTransitionUnix = state.NextTransitionUnix,
+        TimeRemaining = state.TimeRemaining,
     }
 end
 
 local function sendWorldCycleUpdate(player: Player): ()
-    local state = getWorldCycleClientState()
-    if state then
-        gameplayEvent:FireClient(player, "WorldCycleUpdated", state)
-    end
+    gameplayEvent:FireClient(player, "WorldCycleUpdated", getWorldCycleClientState())
 end
 
 local function sendInitialState(player: Player): ()
@@ -58,6 +56,7 @@ local function sendInitialState(player: Player): ()
     CreatureService.SendEquippedCreatureUpdate(player)
     CreatureService.SendCreatureStateUpdate(player)
     sendWorldCycleUpdate(player)
+    OnboardingService.SendOnboardingUpdate(player)
     gameplayEvent:FireClient(player, "RemoteTestAcknowledged")
     print(string.format("[SharedRemotes] Server sent RemoteTestAcknowledged via GameplayEvent to %s", player.Name))
 end
@@ -76,6 +75,7 @@ local function initializePlayer(player: Player): ()
     end
 
     PlayerStateService.CreateState(player, persistentData)
+    BaseService.SetPenLevel(player, persistentData.PenLevel)
 
     -- Before services start, their Start() presents every player that already has state.
     if servicesStarted then
@@ -120,7 +120,9 @@ gameplayRequest.OnServerEvent:Connect(function(player, action, ...)
     end
 
     if action == "DepositCarriedIce" then
-        IceService.TryDepositCarriedIce(player, ...)
+        if IceService.TryDepositCarriedIce(player, ...) then
+            OnboardingService.SendOnboardingUpdate(player)
+        end
         return
     end
 
@@ -144,6 +146,11 @@ gameplayRequest.OnServerEvent:Connect(function(player, action, ...)
         return
     end
 
+    if action == "SellCreature" then
+        CreatureService.TrySellCreature(player, ...)
+        return
+    end
+
     if action == "EquipCreature" then
         CreatureService.TryEquipCreature(player, ...)
         return
@@ -151,6 +158,16 @@ gameplayRequest.OnServerEvent:Connect(function(player, action, ...)
 
     if action == "UnequipCreature" then
         CreatureService.TryUnequipCreature(player, ...)
+        return
+    end
+
+    if action == "RideEquippedCreature" then
+        CreatureService.TryRideEquippedCreature(player, ...)
+        return
+    end
+
+    if action == "UnrideEquippedCreature" then
+        CreatureService.TryUnrideEquippedCreature(player, ...)
         return
     end
 
@@ -163,40 +180,41 @@ gameplayRequest.OnServerEvent:Connect(function(player, action, ...)
         HearthService.TryUpgrade(player, ...)
         return
     end
+
+    if action == "UpgradePen" then
+        PenService.TryUpgrade(player, ...)
+        return
+    end
 end)
 
 WorldCycleService.ConnectPhaseChanged(function(worldCycleState)
-    if worldCycleState.CurrentPhase == "GreatFrost" then
-        GuardedIceService.Clear()
-    end
-
-    IceService.HandleWorldCyclePhaseChanged(worldCycleState.CurrentPhase, worldCycleState.CycleIndex)
-
-    if worldCycleState.CurrentPhase == "GreatFrost" then
-        GuardedIceService.Rebuild()
-    end
-
-    ThawService.HandleWorldCyclePhaseChanged(
+    local fieldRefreshed = IceService.HandleWorldCyclePhaseChanged(
         worldCycleState.CurrentPhase,
-        worldCycleState.CycleIndex,
-        worldCycleState.PhaseStartedAtTime,
-        worldCycleState.PhaseEndsAtTime
+        worldCycleState.CycleIndex
     )
 
-    local state = getWorldCycleClientState()
-    if state then
-        gameplayEvent:FireAllClients("WorldCycleUpdated", state)
+    -- Guardians and route obstacles belong to the field: rebuild them whenever a new field was populated.
+    if fieldRefreshed then
+        GuardedIceService.Clear()
+        GuardedIceService.Rebuild()
+        BreakableService.ResetAll()
     end
+
+    ThawService.HandleWorldCyclePhaseChanged(worldCycleState.CurrentPhase, worldCycleState.CycleIndex)
+
+    gameplayEvent:FireAllClients("WorldCycleUpdated", getWorldCycleClientState())
 end)
 
 CreatureRevealService.Start()
 CreatureService.Start()
 HearthService.Start()
+PenService.Start()
 ThawService.Start()
 IceService.Start()
 RegionService.Start()
 WarmthService.Start()
 SurvivalToolService.Start()
+BreakableService.Start()
 FrostSpriteService.Start()
 GuardedIceService.Start()
 WorldCycleService.Start()

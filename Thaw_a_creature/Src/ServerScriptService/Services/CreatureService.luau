@@ -8,7 +8,9 @@ local CreatureConfig = require(shared:WaitForChild("CreatureConfig"))
 local CreatureSurvivalConfig = require(shared:WaitForChild("CreatureSurvivalConfig"))
 local CreatureStatCalculator = require(shared:WaitForChild("CreatureStatCalculator"))
 local GameConfig = require(shared:WaitForChild("GameConfig"))
+local PenConfig = require(shared:WaitForChild("PenConfig"))
 local SizeConfig = require(shared:WaitForChild("SizeConfig"))
+local SurvivalToolConfig = require(shared:WaitForChild("SurvivalToolConfig"))
 
 local BaseService = require(script.Parent.BaseService)
 local CreatureRevealService = require(script.Parent.CreatureRevealService)
@@ -37,9 +39,18 @@ assert(
 local PEN_VISUALS_FOLDER_NAME = "CreatureVisuals"
 local REPLICATED_CREATURE_VISUALS_FOLDER_NAME = "CreatureVisuals"
 local PLAYER_FOLDER_PREFIX = "Player_"
+local RIDER_ANCHOR_ATTRIBUTE = "RiderAnchorOffset"
+local MOUNT_STATE_NONE = "None"
+local MOUNT_STATE_FOLLOWING = "Following"
+local MOUNT_STATE_RIDING = "Riding"
+local MOUNT_CREATURE_ID_ATTRIBUTE = "MountCreatureID"
+local MOUNT_SCALE_ATTRIBUTE = "MountScale"
+local MOUNT_STATE_ATTRIBUTE = "MountState"
+local MOUNT_FROSTED_ATTRIBUTE = "MountFrosted"
 
 local hasStarted = false
 local lastEquipRequestAtByPlayer: { [Player]: number } = {}
+local lastRideRequestAtByPlayer: { [Player]: number } = {}
 local lastPenManagementRequestAtByPlayer: { [Player]: number } = {}
 local logicalTargetBoundsByCreatureID: { [string]: LogicalTargetBounds } = {}
 local issuedCreatureGUIDs: { [string]: boolean } = {}
@@ -52,13 +63,25 @@ local function getCreatureIDForGUID(
     return if copy then copy.CreatureID else nil
 end
 
+-- Only slots 1..capacity are unlocked: they alone accept creatures and earn income.
+local function getPenCapacity(playerState: PlayerStateService.PlayerState): number
+    return PenConfig.GetCapacity(playerState.PenLevel)
+end
+
+-- Sell is a small cleanup payout from the species baseline only; copy size never scales it.
+local function getSellValue(creatureID: string): number
+    return math.round(CreatureConfig[creatureID].BaseIncomePerSecond * GameConfig.SellValueBaseIncomeSeconds)
+end
+
 local function assertOwnershipInvariants(playerState: PlayerStateService.PlayerState): ()
     local allocatedGUIDs = {}
     local occupiedPenCount = 0
+    local penCapacity = getPenCapacity(playerState)
 
-    for slotIndex = 1, GameConfig.ActivePenCreatureSlots do
+    for slotIndex = 1, PenConfig.MaxSlots do
         local creatureGUID = playerState.PenSlots[slotIndex]
         if creatureGUID ~= nil then
+            assert(slotIndex <= penCapacity, string.format("Locked Pen slot %d must be empty", slotIndex))
             assert(type(creatureGUID) == "string", string.format("Pen slot %d must contain a CreatureGUID or nil", slotIndex))
             assert(playerState.CreatureCopies[creatureGUID], string.format("Pen slot %d references missing CreatureGUID %s", slotIndex, creatureGUID))
             assert(not allocatedGUIDs[creatureGUID], string.format("CreatureGUID %s occupies multiple Pen slots", creatureGUID))
@@ -108,7 +131,7 @@ local function getPenIncome(playerState: PlayerStateService.PlayerState): number
     local totalIncome = 0
     local contributingGUIDs = {}
 
-    for slotIndex = 1, GameConfig.ActivePenCreatureSlots do
+    for slotIndex = 1, getPenCapacity(playerState) do
         local creatureGUID = playerState.PenSlots[slotIndex]
         if type(creatureGUID) == "string" then
             if contributingGUIDs[creatureGUID] then
@@ -275,7 +298,7 @@ function CreatureService.SendCreatureStateUpdate(player: Player): ()
     assertOwnershipInvariants(playerState)
 
     local penSlotByGUID = {}
-    for slotIndex = 1, GameConfig.ActivePenCreatureSlots do
+    for slotIndex = 1, getPenCapacity(playerState) do
         local creatureGUID = playerState.PenSlots[slotIndex]
         if type(creatureGUID) == "string" then
             penSlotByGUID[creatureGUID] = slotIndex
@@ -304,6 +327,7 @@ function CreatureService.SendCreatureStateUpdate(player: Player): ()
             Scale = stats.Scale,
             FinalIncome = stats.FinalIncome,
             FinalWalkSpeed = stats.FinalWalkSpeed,
+            SellValue = getSellValue(copy.CreatureID),
             AllocationState = allocationState,
             PenSlotIndex = penSlotIndex,
             AllocationOrder = allocationOrder,
@@ -328,8 +352,19 @@ function CreatureService.SendCreatureStateUpdate(player: Player): ()
         record.AllocationOrder = nil
     end
 
+    local discoveredCreatureIDs = {}
+    for creatureID, isDiscovered in playerState.DiscoveredCreatures do
+        if isDiscovered then
+            table.insert(discoveredCreatureIDs, creatureID)
+        end
+    end
+    table.sort(discoveredCreatureIDs)
+
     gameplayEvent:FireClient(player, "CreatureStateUpdated", {
         Creatures = creatureRecords,
+        DiscoveredCreatureIDs = discoveredCreatureIDs,
+        PenLevel = playerState.PenLevel,
+        PenCapacity = getPenCapacity(playerState),
     })
 end
 
@@ -421,13 +456,13 @@ function CreatureService.AssignRevealedCreatureToFirstEmptyPenSlot(player: Playe
     if playerState.EquippedCreatureGUID == creatureGUID then
         return nil
     end
-    for slotIndex = 1, GameConfig.ActivePenCreatureSlots do
+    for slotIndex = 1, getPenCapacity(playerState) do
         if playerState.PenSlots[slotIndex] == creatureGUID then
             return nil
         end
     end
 
-    for slotIndex = 1, GameConfig.ActivePenCreatureSlots do
+    for slotIndex = 1, getPenCapacity(playerState) do
         if playerState.PenSlots[slotIndex] == nil then
             playerState.PenSlots[slotIndex] = creatureGUID
             assertOwnershipInvariants(playerState)
@@ -466,7 +501,41 @@ function CreatureService.GetEquippedWalkSpeed(playerState: PlayerStateService.Pl
         return GameConfig.BaseWalkSpeed
     end
 
+    -- A Following creature gives no Speed; only Riding moves the player at the copy's FinalWalkSpeed.
+    if playerState.IsRiding ~= true then
+        return GameConfig.BaseWalkSpeed
+    end
+
     return stats.FinalWalkSpeed
+end
+
+local function getMountState(playerState: PlayerStateService.PlayerState): string
+    if type(playerState.EquippedCreatureGUID) ~= "string" then
+        return MOUNT_STATE_NONE
+    end
+
+    return if playerState.IsRiding then MOUNT_STATE_RIDING else MOUNT_STATE_FOLLOWING
+end
+
+-- Replicated on the Player so every client can present everyone's follower or mount.
+local function publishMountPresentation(
+    player: Player,
+    playerState: PlayerStateService.PlayerState,
+    creatureID: string?,
+    scale: number?
+): ()
+    player:SetAttribute(MOUNT_CREATURE_ID_ATTRIBUTE, creatureID)
+    player:SetAttribute(MOUNT_SCALE_ATTRIBUTE, scale)
+    player:SetAttribute(MOUNT_STATE_ATTRIBUTE, getMountState(playerState))
+    player:SetAttribute(MOUNT_FROSTED_ATTRIBUTE, playerState.CreatureFrosted == true)
+end
+
+local function getRiderAnchorOffset(creatureID: string): Vector3
+    local creatureVisuals = ReplicatedStorage:FindFirstChild(REPLICATED_CREATURE_VISUALS_FOLDER_NAME)
+    local visual = creatureVisuals and creatureVisuals:FindFirstChild(creatureID)
+    local offset = visual and visual:GetAttribute(RIDER_ANCHOR_ATTRIBUTE)
+
+    return if typeof(offset) == "Vector3" then offset else Vector3.zero
 end
 
 function CreatureService.ApplyEquippedWalkSpeed(player: Player): boolean
@@ -499,7 +568,14 @@ function CreatureService.SendEquippedCreatureUpdate(player: Player): ()
         then CreatureService.GetCreatureCopyStats(playerState, equippedCreatureGUID)
         else nil
     assert(equippedCreatureGUID == nil or equippedStats, "Equipped creature copy must have valid derived stats")
+    publishMountPresentation(
+        player,
+        playerState,
+        equippedCreatureID,
+        if equippedStats then equippedStats.Scale else nil
+    )
     gameplayEvent:FireClient(player, "EquippedCreatureChanged", {
+        MountState = getMountState(playerState),
         EquippedCreature = equippedCreatureID,
         EquippedCreatureGUID = equippedCreatureGUID,
         Scale = if equippedStats then equippedStats.Scale else nil,
@@ -538,21 +614,34 @@ function CreatureService.GetLogicalEquippedCreatureTargetCFrame(
         return nil
     end
 
-    local behindPosition = rootPart.CFrame:PointToWorldSpace(
-        Vector3.new(0, 0, CreatureSurvivalConfig.LogicalTargetFollowDistance)
-    )
+    -- Following stands behind the player; Riding stands under the player, whose root is raised
+    -- to the mount's scaled rider anchor.
+    local isRiding = playerState.IsRiding == true
+    local riderAnchor = Vector3.zero
+    if isRiding then
+        local copy = playerState.CreatureCopies[expectedCreatureGUID]
+        local creatureID = getCreatureIDForGUID(playerState, expectedCreatureGUID)
+        if not copy or not creatureID then
+            return nil
+        end
+        riderAnchor = getRiderAnchorOffset(creatureID) * SizeConfig.GetVisualScale(copy.WeightMultiplier)
+    end
+
+    local anchorPosition = if isRiding
+        then rootPart.Position
+        else rootPart.CFrame:PointToWorldSpace(Vector3.new(0, 0, CreatureSurvivalConfig.LogicalTargetFollowDistance))
     local raycastParams = RaycastParams.new()
     raycastParams.FilterType = Enum.RaycastFilterType.Exclude
     raycastParams.FilterDescendantsInstances = { character }
 
-    local rayOrigin = behindPosition + Vector3.new(0, CreatureSurvivalConfig.LogicalTargetGroundRayHeight, 0)
+    local rayOrigin = anchorPosition + Vector3.new(0, CreatureSurvivalConfig.LogicalTargetGroundRayHeight, 0)
     local groundResult = Workspace:Raycast(
         rayOrigin,
-        Vector3.new(0, -CreatureSurvivalConfig.LogicalTargetGroundRayDepth, 0),
+        Vector3.new(0, -CreatureSurvivalConfig.LogicalTargetGroundRayDepth - math.max(riderAnchor.Y, 0), 0),
         raycastParams
     )
 
-    local targetPosition = if groundResult then groundResult.Position else behindPosition
+    local targetPosition = if groundResult then groundResult.Position else anchorPosition
     local lookVector = rootPart.CFrame.LookVector
     local horizontalLook = Vector3.new(lookVector.X, 0, lookVector.Z)
 
@@ -562,7 +651,10 @@ function CreatureService.GetLogicalEquippedCreatureTargetCFrame(
         horizontalLook = horizontalLook.Unit
     end
 
-    return CFrame.lookAt(targetPosition, targetPosition + horizontalLook)
+    -- When Riding, the mount pivot sits so its scaled rider anchor is directly beneath the rider.
+    local groundCFrame = CFrame.lookAt(targetPosition, targetPosition + horizontalLook)
+
+    return groundCFrame * CFrame.new(-riderAnchor.X, 0, -riderAnchor.Z)
 end
 
 function CreatureService.GetLogicalEquippedCreatureTargetPosition(
@@ -619,11 +711,10 @@ function CreatureService.ApplyEquippedCreatureDamage(
     )
 
     if playerState.CreatureVitality <= CreatureSurvivalConfig.FrostedAtVitality then
+        -- Frosted forces an immediate Unride; the creature stays logically Equipped.
         playerState.CreatureFrosted = true
-
-        if not CreatureSurvivalConfig.FrostedSpeedBonusEnabled then
-            CreatureService.ApplyEquippedWalkSpeed(player)
-        end
+        playerState.IsRiding = false
+        CreatureService.ApplyEquippedWalkSpeed(player)
     end
 
     CreatureService.SendEquippedCreatureUpdate(player)
@@ -691,7 +782,7 @@ function CreatureService.TryEquipCreature(player: Player, creatureGUID: any, ...
 
     local previouslyEquippedCreatureGUID = playerState.EquippedCreatureGUID
     local sourcePenSlotIndex: number? = nil
-    for slotIndex = 1, GameConfig.ActivePenCreatureSlots do
+    for slotIndex = 1, getPenCapacity(playerState) do
         if playerState.PenSlots[slotIndex] == creatureGUID then
             if sourcePenSlotIndex then
                 return false
@@ -719,15 +810,18 @@ function CreatureService.TryEquipCreature(player: Player, creatureGUID: any, ...
 
     local previousCreatureVitality = playerState.CreatureVitality
     local previousCreatureFrosted = playerState.CreatureFrosted
+    local previousIsRiding = playerState.IsRiding
     playerState.EquippedCreatureGUID = creatureGUID
     playerState.CreatureVitality = CreatureSurvivalConfig.CreatureVitalityMax
     playerState.CreatureFrosted = false
+    playerState.IsRiding = false
     assertOwnershipInvariants(playerState)
 
     if not CreatureService.ApplyEquippedWalkSpeed(player) then
         playerState.EquippedCreatureGUID = previouslyEquippedCreatureGUID
         playerState.CreatureVitality = previousCreatureVitality
         playerState.CreatureFrosted = previousCreatureFrosted
+        playerState.IsRiding = previousIsRiding
         if sourcePenSlotIndex then
             playerState.PenSlots[sourcePenSlotIndex] = creatureGUID
         end
@@ -741,6 +835,7 @@ function CreatureService.TryEquipCreature(player: Player, creatureGUID: any, ...
             playerState.EquippedCreatureGUID = previouslyEquippedCreatureGUID
             playerState.CreatureVitality = previousCreatureVitality
             playerState.CreatureFrosted = previousCreatureFrosted
+            playerState.IsRiding = previousIsRiding
             playerState.PenSlots[sourcePenSlotIndex] = creatureGUID
             assertOwnershipInvariants(playerState)
             CreatureService.ApplyEquippedWalkSpeed(player)
@@ -796,15 +891,18 @@ function CreatureService.TryUnequipCreature(player: Player, expectedCreatureGUID
 
     local previousCreatureVitality = playerState.CreatureVitality
     local previousCreatureFrosted = playerState.CreatureFrosted
+    local previousIsRiding = playerState.IsRiding
     playerState.EquippedCreatureGUID = nil
     playerState.CreatureVitality = nil
     playerState.CreatureFrosted = nil
+    playerState.IsRiding = false
     assertOwnershipInvariants(playerState)
 
     if not CreatureService.ApplyEquippedWalkSpeed(player) then
         playerState.EquippedCreatureGUID = expectedCreatureGUID
         playerState.CreatureVitality = previousCreatureVitality
         playerState.CreatureFrosted = previousCreatureFrosted
+        playerState.IsRiding = previousIsRiding
         assertOwnershipInvariants(playerState)
         return false
     end
@@ -812,6 +910,76 @@ function CreatureService.TryUnequipCreature(player: Player, expectedCreatureGUID
     CreatureService.SendEquippedCreatureUpdate(player)
     CreatureService.SendCreatureStateUpdate(player)
     return true
+end
+
+local function isRideRateLimited(player: Player): boolean
+    local now = os.clock()
+    local lastRequestAt = lastRideRequestAtByPlayer[player]
+    lastRideRequestAtByPlayer[player] = now
+
+    return lastRequestAt ~= nil and now - lastRequestAt < GameConfig.EquipRequestMinInterval
+end
+
+-- Ride/Unride is an exploration action: allowed anywhere, including while carrying Ice.
+-- It never changes ownership, Pen allocation, income, or carried-Ice state.
+local function trySetRiding(player: Player, isRiding: boolean, extraArgumentCount: number): boolean
+    if extraArgumentCount ~= 0 or isRideRateLimited(player) then
+        return false
+    end
+
+    local playerState = PlayerStateService.GetState(player)
+    if not playerState
+        or playerState.IsFrozen
+        or type(playerState.EquippedCreatureGUID) ~= "string"
+        or playerState.IsRiding == isRiding
+    then
+        return false
+    end
+
+    -- Frosted blocks Ride until own-Hearth or failure recovery.
+    if isRiding and playerState.CreatureFrosted ~= false then
+        return false
+    end
+
+    local character = player.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if not humanoid or humanoid.Health <= 0 then
+        return false
+    end
+
+    playerState.IsRiding = isRiding
+    CreatureService.ApplyEquippedWalkSpeed(player)
+    CreatureService.SendEquippedCreatureUpdate(player)
+
+    return true
+end
+
+function CreatureService.TryRideEquippedCreature(player: Player, ...): boolean
+    return trySetRiding(player, true, select("#", ...))
+end
+
+function CreatureService.TryUnrideEquippedCreature(player: Player, ...): boolean
+    return trySetRiding(player, false, select("#", ...))
+end
+
+-- Server-authoritative Mounted Strike origin: on the ground at the mount's front, raised to
+-- on-foot attack height, so giant mounts reach nearby ground threats without extra range.
+function CreatureService.GetMountedCombatOrigin(player: Player): CFrame?
+    local playerState = PlayerStateService.GetState(player)
+    local creatureGUID = playerState and playerState.EquippedCreatureGUID
+    if not playerState or playerState.IsRiding ~= true or type(creatureGUID) ~= "string" then
+        return nil
+    end
+
+    local mountCFrame, mountSize = CreatureService.GetLogicalEquippedCreatureTargetBounds(player, creatureGUID)
+    local mountPivot = CreatureService.GetLogicalEquippedCreatureTargetCFrame(player, creatureGUID)
+    if not mountCFrame or not mountSize or not mountPivot then
+        return nil
+    end
+
+    local frontOffset = mountPivot:PointToObjectSpace(mountCFrame.Position).Z - mountSize.Z * 0.5
+
+    return mountPivot * CFrame.new(0, SurvivalToolConfig.MountedCombatOriginHeight, frontOffset)
 end
 
 local function getValidPenManagementState(
@@ -860,14 +1028,14 @@ function CreatureService.TryPlaceInPen(player: Player, creatureGUID: any, ...): 
         return false
     end
 
-    for slotIndex = 1, GameConfig.ActivePenCreatureSlots do
+    for slotIndex = 1, getPenCapacity(playerState) do
         if playerState.PenSlots[slotIndex] == creatureGUID then
             return false
         end
     end
 
     local emptySlotIndex: number? = nil
-    for slotIndex = 1, GameConfig.ActivePenCreatureSlots do
+    for slotIndex = 1, getPenCapacity(playerState) do
         if playerState.PenSlots[slotIndex] == nil then
             emptySlotIndex = slotIndex
             break
@@ -904,7 +1072,7 @@ function CreatureService.TryRemoveFromPen(player: Player, creatureGUID: any, ...
     end
 
     local matchingSlotIndex: number? = nil
-    for slotIndex = 1, GameConfig.ActivePenCreatureSlots do
+    for slotIndex = 1, getPenCapacity(playerState) do
         if playerState.PenSlots[slotIndex] == creatureGUID then
             if matchingSlotIndex then
                 return false
@@ -934,6 +1102,63 @@ function CreatureService.TryRemoveFromPen(player: Player, creatureGUID: any, ...
     return true
 end
 
+-- Sells one exact copy at the player's own base from Inventory, Pen or Equipped.
+-- Discovery is species-based and is never removed, even when the last copy is sold.
+function CreatureService.TrySellCreature(player: Player, creatureGUID: any, ...): boolean
+    local playerState = getValidPenManagementState(player, creatureGUID, select("#", ...))
+    if not playerState then
+        return false
+    end
+
+    local copy = playerState.CreatureCopies[creatureGUID]
+    local sellValue = getSellValue(copy.CreatureID)
+    if sellValue <= 0 or sellValue >= math.huge or sellValue % 1 ~= 0 then
+        return false
+    end
+
+    local penSlotIndex: number? = nil
+    for slotIndex = 1, getPenCapacity(playerState) do
+        if playerState.PenSlots[slotIndex] == creatureGUID then
+            penSlotIndex = slotIndex
+        end
+    end
+    local wasEquipped = playerState.EquippedCreatureGUID == creatureGUID
+
+    if penSlotIndex then
+        playerState.PenSlots[penSlotIndex] = nil
+    end
+    if wasEquipped then
+        playerState.EquippedCreatureGUID = nil
+        playerState.CreatureVitality = nil
+        playerState.CreatureFrosted = nil
+        playerState.IsRiding = false
+    end
+    playerState.CreatureCopies[creatureGUID] = nil
+    assertOwnershipInvariants(playerState)
+    PlayerStateService.AddCash(player, sellValue)
+
+    if penSlotIndex then
+        local refreshed, refreshError = pcall(refreshPenSlotVisual, player, penSlotIndex)
+        if not refreshed then
+            warn(string.format(
+                "[CreatureService] Sold %s (%s) from Pen slot %d but presentation failed: %s",
+                copy.CreatureID,
+                creatureGUID,
+                penSlotIndex,
+                tostring(refreshError)
+            ))
+        end
+    end
+
+    if wasEquipped then
+        CreatureService.ApplyEquippedWalkSpeed(player)
+        CreatureService.SendEquippedCreatureUpdate(player)
+    end
+
+    CreatureService.SendCreatureStateUpdate(player)
+    return true
+end
+
 -- Re-applies Equipped Speed and rebuilds Pen visuals from the player's current state,
 -- e.g. once a saved profile has been restored after join.
 function CreatureService.RefreshPlayerPresentation(player: Player): ()
@@ -941,7 +1166,7 @@ function CreatureService.RefreshPlayerPresentation(player: Player): ()
         task.spawn(CreatureService.ApplyEquippedWalkSpeed, player)
     end
 
-    for slotIndex = 1, GameConfig.ActivePenCreatureSlots do
+    for slotIndex = 1, PenConfig.MaxSlots do
         local presented, presentationError = pcall(refreshPenSlotVisual, player, slotIndex)
         if not presented then
             warn(string.format(
@@ -980,6 +1205,13 @@ function CreatureService.Start(): ()
 
     local function connectPlayer(player: Player)
         player.CharacterAdded:Connect(function()
+            -- Every new character starts Following, never restoring an old Riding state.
+            local playerState = PlayerStateService.GetState(player)
+            if playerState and playerState.IsRiding then
+                playerState.IsRiding = false
+                CreatureService.SendEquippedCreatureUpdate(player)
+            end
+
             CreatureService.ApplyEquippedWalkSpeed(player)
         end)
 
@@ -990,6 +1222,7 @@ function CreatureService.Start(): ()
 
     Players.PlayerRemoving:Connect(function(player)
         lastEquipRequestAtByPlayer[player] = nil
+        lastRideRequestAtByPlayer[player] = nil
         lastPenManagementRequestAtByPlayer[player] = nil
         removePlayerPenVisuals(player)
     end)

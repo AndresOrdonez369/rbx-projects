@@ -12,13 +12,19 @@ local IceConfig = require(shared:WaitForChild("IceConfig"))
 local RarityConfig = require(shared:WaitForChild("RarityConfig"))
 local RegionConfig = require(shared:WaitForChild("RegionConfig"))
 local SizeConfig = require(shared:WaitForChild("SizeConfig"))
+local SpecialIceConfig = require(shared:WaitForChild("SpecialIceConfig"))
 local WorldCycleConfig = require(shared:WaitForChild("WorldCycleConfig"))
 local StudioTestConfig = require(script.Parent.Parent:WaitForChild("StudioTestConfig"))
+local remotes = ReplicatedStorage:WaitForChild("Remotes")
+local gameplayEvent = remotes:WaitForChild("GameplayEvent")
+
+assert(gameplayEvent:IsA("RemoteEvent"), "ReplicatedStorage.Remotes.GameplayEvent must be a RemoteEvent")
 
 local BaseService = require(script.Parent.BaseService)
 local PlayerStateService = require(script.Parent.PlayerStateService)
 local ThawService = require(script.Parent.ThawService)
 local IceVisualFactory = require(script.Parent.IceVisualFactory)
+local WorldCycleService = require(script.Parent.WorldCycleService)
 
 export type IceRecord = {
     IceInstanceID: string,
@@ -29,6 +35,10 @@ export type IceRecord = {
     Rarity: string,
     SilhouetteProfile: string,
     WeightMultiplier: number,
+
+    -- Special metadata; SpawnPointID doubles as the OriginSpawnPointID and never changes on release.
+    IsSpecial: boolean,
+    OriginCycleIndex: number?,
 
     State: string,
     OwnerUserID: number?,
@@ -44,21 +54,34 @@ local CARRY_BOTTOM_OFFSET_FROM_ROOT = -2
 local CARRY_MIN_CENTER_DISTANCE_FROM_ROOT = 5
 local CARRY_MIN_CLEARANCE_FROM_ROOT = 2
 local CARRY_WELD_NAME = "CarryWeld"
+-- While Riding, carried Ice sits above the rider so it never covers the mount's head or the forward view.
+local CARRY_RIDING_CLEARANCE_ABOVE_ROOT = 4
+local MOUNT_STATE_ATTRIBUTE = "MountState"
+local RIDING_MOUNT_STATE = "Riding"
 local GRAB_PROMPT_NAME = "GrabPrompt"
 local PRESENTATION_WELD_NAME = "PresentationWeld"
 local ICE_TYPE_ORDER = { "Regular", "Thick", "Ancient", "Black", "Meteor" }
 local JACKPOT_ICE_TYPE = "Thick"
 local JACKPOT_CREATURE_ID = "Nidhogg"
 local JACKPOT_WEIGHT_MULTIPLIER = 125
+local SAFE_GROUND_RAYCAST_DISTANCE = 50
 
 local recordsByID: { [string]: IceRecord } = {}
 local visualIceByID: { [string]: BasePart } = {}
+-- Ground point under each Ice's authored spawn marker; final fallback for carrier-failure release.
+local originCFrameByID: { [string]: CFrame } = {}
+-- Owned here rather than read from PlayerState so release still works after state removal on leave.
+local carriedIceIDByPlayer: { [Player]: string } = {}
+-- The character that grabbed the Ice; on respawn Player.Character already points at the new one.
+local carrierCharacterByPlayer: { [Player]: Model } = {}
+local lastSafeRootPositionByPlayer: { [Player]: Vector3 } = {}
 local lastGrabRequestAtByPlayer: { [Player]: number } = {}
 local lastDepositRequestAtByPlayer: { [Player]: number } = {}
 local random = Random.new()
 local hasStarted = false
 local grabLockedDuringGreatFrost = false
 local lastResetCycleIndex: number? = nil
+local hasPopulatedField = false
 local jackpotHarnessConsumed = false
 
 local function isJackpotHarnessEnabled(): boolean
@@ -300,11 +323,11 @@ end
 
 local function createVisualIce(
     record: IceRecord,
-    marker: BasePart,
+    groundCFrame: CFrame,
     activeIceFolder: Folder
 ): BasePart
     local visualSize = IceVisualFactory.GetScaledSize(record.IceType, record.WeightMultiplier)
-    local cframe = marker.CFrame * CFrame.new(0, marker.Size.Y * 0.5 + visualSize.Y * 0.5, 0)
+    local cframe = groundCFrame * CFrame.new(0, visualSize.Y * 0.5, 0)
     local visualIce = IceVisualFactory.Create(
         record.IceType,
         record.SilhouetteProfile,
@@ -315,6 +338,9 @@ local function createVisualIce(
     visualIce:SetAttribute("IceInstanceID", record.IceInstanceID)
     local interactionPart = IceVisualFactory.GetInteractionPart(visualIce)
     interactionPart:SetAttribute("IceInstanceID", record.IceInstanceID)
+    if record.IsSpecial then
+        IceVisualFactory.ApplySpecialPresentation(visualIce)
+    end
 
     local prompt = Instance.new("ProximityPrompt")
     prompt.Name = GRAB_PROMPT_NAME
@@ -326,7 +352,6 @@ local function createVisualIce(
     prompt.Enabled = not grabLockedDuringGreatFrost
     prompt.Parent = interactionPart
 
-    marker.Transparency = 1
     return visualIce
 end
 
@@ -337,7 +362,11 @@ local function makeCarriedPartPhysicsSafe(part: BasePart)
     part.Massless = true
 end
 
-local function getCarryOffsetFromRoot(visualIce: BasePart): CFrame
+local function getCarryOffsetFromRoot(visualIce: BasePart, isRiding: boolean): CFrame
+    if isRiding then
+        return CFrame.new(0, CARRY_RIDING_CLEARANCE_ABOVE_ROOT + visualIce.Size.Y * 0.5, 0)
+    end
+
     local centerDistance = math.max(
         CARRY_MIN_CENTER_DISTANCE_FROM_ROOT,
         visualIce.Size.Z * 0.5 + CARRY_MIN_CLEARANCE_FROM_ROOT
@@ -347,7 +376,16 @@ local function getCarryOffsetFromRoot(visualIce: BasePart): CFrame
     return CFrame.new(0, verticalOffset, -centerDistance)
 end
 
-local function attachVisualIceToCharacter(visualIce: BasePart, rootPart: BasePart, character: Model)
+local function isPlayerRiding(player: Player): boolean
+    return player:GetAttribute(MOUNT_STATE_ATTRIBUTE) == RIDING_MOUNT_STATE
+end
+
+local function attachVisualIceToCharacter(
+    visualIce: BasePart,
+    rootPart: BasePart,
+    character: Model,
+    isRiding: boolean
+)
     makeCarriedPartPhysicsSafe(visualIce)
 
     for _, descendant in visualIce:GetDescendants() do
@@ -364,7 +402,7 @@ local function attachVisualIceToCharacter(visualIce: BasePart, rootPart: BasePar
         end
     end
 
-    visualIce.CFrame = rootPart.CFrame * getCarryOffsetFromRoot(visualIce)
+    visualIce.CFrame = rootPart.CFrame * getCarryOffsetFromRoot(visualIce, isRiding)
     visualIce.Parent = character
 
     local carryWeld = Instance.new("WeldConstraint")
@@ -378,6 +416,7 @@ end
 
 local function discardIceByID(iceInstanceID: string)
     recordsByID[iceInstanceID] = nil
+    originCFrameByID[iceInstanceID] = nil
 
     local visualIce = visualIceByID[iceInstanceID]
     visualIceByID[iceInstanceID] = nil
@@ -387,33 +426,160 @@ local function discardIceByID(iceInstanceID: string)
     end
 end
 
+local function clearCarry(player: Player)
+    carriedIceIDByPlayer[player] = nil
+    carrierCharacterByPlayer[player] = nil
+    lastSafeRootPositionByPlayer[player] = nil
+
+    local playerState = PlayerStateService.GetState(player)
+    if playerState then
+        playerState.CurrentlyCarryingIceID = nil
+    end
+end
+
+local function findGroundCFrame(rootPosition: Vector3): CFrame?
+    if not (isFiniteNumber(rootPosition.X) and isFiniteNumber(rootPosition.Y) and isFiniteNumber(rootPosition.Z)) then
+        return nil
+    end
+
+    local excludedCharacters = {}
+    for _, otherPlayer in Players:GetPlayers() do
+        if otherPlayer.Character then
+            table.insert(excludedCharacters, otherPlayer.Character)
+        end
+    end
+
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+    raycastParams.FilterDescendantsInstances = excludedCharacters
+    -- Ignore trigger volumes such as WarmZones and RegionBounds; only walkable geometry counts.
+    raycastParams.RespectCanCollide = true
+
+    local result = Workspace:Raycast(
+        rootPosition,
+        Vector3.new(0, -SAFE_GROUND_RAYCAST_DISTANCE, 0),
+        raycastParams
+    )
+
+    return if result then CFrame.new(result.Position) else nil
+end
+
+-- Grounded means standing on something solid this frame; airborne or void positions are not safe.
+local function getGroundedRootPosition(character: Model?): Vector3?
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+    if not humanoid or not rootPart or not rootPart:IsA("BasePart") then
+        return nil
+    end
+
+    if humanoid.FloorMaterial == Enum.Material.Air then
+        return nil
+    end
+
+    return rootPart.Position
+end
+
+local function getReleaseGroundCFrame(player: Player, iceInstanceID: string): CFrame
+    local groundedRootPosition = getGroundedRootPosition(carrierCharacterByPlayer[player])
+    local groundCFrame = groundedRootPosition and findGroundCFrame(groundedRootPosition)
+    if groundCFrame then
+        return groundCFrame
+    end
+
+    local lastSafeRootPosition = lastSafeRootPositionByPlayer[player]
+    groundCFrame = lastSafeRootPosition and findGroundCFrame(lastSafeRootPosition)
+    if groundCFrame then
+        return groundCFrame
+    end
+
+    local originCFrame = originCFrameByID[iceInstanceID]
+    assert(originCFrame, string.format("Ice %s has no authored origin", iceInstanceID))
+
+    return originCFrame
+end
+
+local function trackSafeCarrierPositions()
+    for player, character in carrierCharacterByPlayer do
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        local groundedRootPosition = getGroundedRootPosition(character)
+
+        if humanoid and humanoid.Health > 0 and groundedRootPosition then
+            lastSafeRootPositionByPlayer[player] = groundedRootPosition
+        end
+    end
+end
+
 local function connectCharacterFailure(player: Player, character: Model)
     local humanoid = character:FindFirstChildOfClass("Humanoid") or character:WaitForChild("Humanoid")
     assert(humanoid:IsA("Humanoid"), "Player character Humanoid must be a Humanoid")
 
     humanoid.Died:Connect(function()
-        IceService.DiscardCarriedIce(player)
+        IceService.ReleaseCarriedIce(player)
     end)
 end
 
-local function spawnAtMarker(iceType: string, marker: BasePart, activeIceFolder: Folder)
+-- Special Ice keeps its type's creature pool but rolls rarity from the dedicated Special profile.
+local function getSpecialRewardProfile(iceType: string)
+    local config = IceConfig[iceType]
+    local rarityWeights = SpecialIceConfig.RarityWeightsByIceType[iceType]
+    assert(config and rarityWeights, string.format("Special Ice is not configured for %s", iceType))
+
+    return {
+        IceType = iceType,
+        RarityWeights = rarityWeights,
+        CreaturePoolsByRarity = config.CreaturePoolsByRarity,
+    }
+end
+
+-- Every reward a Special Ice can hold must show the same pre-reveal silhouette.
+local function validateSpecialSilhouettes(iceType: string): ()
+    local rewardProfile = getSpecialRewardProfile(iceType)
+    local sharedSilhouette: string? = nil
+
+    for _, rarity in CreatureRosterConfig.RarityOrder do
+        if rewardProfile.RarityWeights[rarity] > 0 then
+            for _, creatureID in rewardProfile.CreaturePoolsByRarity[rarity] do
+                local silhouette = IceVisualFactory.GetPreRevealSilhouetteProfile(creatureID, iceType, true)
+                sharedSilhouette = sharedSilhouette or silhouette
+                assert(silhouette == sharedSilhouette, string.format(
+                    "Special %s Ice silhouettes must not identify the reward (%s vs %s)",
+                    iceType,
+                    tostring(sharedSilhouette),
+                    silhouette
+                ))
+            end
+        end
+    end
+end
+
+local function spawnAtMarker(
+    iceType: string,
+    marker: BasePart,
+    activeIceFolder: Folder,
+    specialCycleIndex: number?
+)
     local config = IceConfig[iceType]
     assert(config, string.format("Missing IceConfig for %s", iceType))
 
+    local isSpecial = specialCycleIndex ~= nil
     local iceInstanceID = HttpService:GenerateGUID(false)
     local spawnPointID = string.format("%s/%s", iceType, marker.Name)
     local weightMultiplier = rollWeightMultiplier(random)
-    local creatureID, rarity, silhouetteProfile = rollReward(config, random)
+    local rewardProfile = if isSpecial then getSpecialRewardProfile(iceType) else config
+    local creatureID, rarity = rollReward(rewardProfile, random)
     local isJackpotIce = false
 
-    if isJackpotHarnessEnabled() and not jackpotHarnessConsumed and iceType == JACKPOT_ICE_TYPE then
+    if isJackpotHarnessEnabled()
+        and not isSpecial
+        and not jackpotHarnessConsumed
+        and iceType == JACKPOT_ICE_TYPE
+    then
         local jackpotCreature = CreatureConfig[JACKPOT_CREATURE_ID]
         assert(jackpotCreature, string.format("Missing jackpot CreatureConfig for %s", JACKPOT_CREATURE_ID))
 
         weightMultiplier = JACKPOT_WEIGHT_MULTIPLIER
         creatureID = jackpotCreature.CreatureID
         rarity = jackpotCreature.Rarity
-        silhouetteProfile = jackpotCreature.SilhouetteProfile
         jackpotHarnessConsumed = true
         isJackpotIce = true
     end
@@ -425,8 +591,11 @@ local function spawnAtMarker(iceType: string, marker: BasePart, activeIceFolder:
 
         CreatureID = creatureID,
         Rarity = rarity,
-        SilhouetteProfile = silhouetteProfile,
+        SilhouetteProfile = IceVisualFactory.GetPreRevealSilhouetteProfile(creatureID, iceType, isSpecial),
         WeightMultiplier = weightMultiplier,
+
+        IsSpecial = isSpecial,
+        OriginCycleIndex = specialCycleIndex,
 
         State = AVAILABLE_STATE,
         OwnerUserID = nil,
@@ -434,8 +603,10 @@ local function spawnAtMarker(iceType: string, marker: BasePart, activeIceFolder:
 
     assert(recordsByID[iceInstanceID] == nil, string.format("Duplicate IceInstanceID %s", iceInstanceID))
 
+    local originCFrame = marker.CFrame * CFrame.new(0, marker.Size.Y * 0.5, 0)
     recordsByID[iceInstanceID] = record
-    visualIceByID[iceInstanceID] = createVisualIce(record, marker, activeIceFolder)
+    originCFrameByID[iceInstanceID] = originCFrame
+    visualIceByID[iceInstanceID] = createVisualIce(record, originCFrame, activeIceFolder)
 
     if isJackpotIce then
         local scale = SizeConfig.GetVisualScale(record.WeightMultiplier)
@@ -511,6 +682,47 @@ local function populateField(): { [string]: number }
     return spawnedByType
 end
 
+local function rollSpecialIceType(): string
+    local totalWeight = 0
+    for _, entry in SpecialIceConfig.TypeWeights do
+        totalWeight += entry.Weight
+    end
+
+    local result = random:NextNumber(0, totalWeight)
+    local cumulativeWeight = 0
+    for _, entry in SpecialIceConfig.TypeWeights do
+        cumulativeWeight += entry.Weight
+        if result <= cumulativeWeight and entry.Weight > 0 then
+            return entry.IceType
+        end
+    end
+
+    error("Failed to roll a Special Ice type")
+end
+
+-- Adds one Special Ice on an authored marker the new field left free. Returns its type, or nil if none fit.
+local function spawnSpecialIce(cycleIndex: number): string?
+    local iceType = rollSpecialIceType()
+    local occupiedSpawnPointIDs = IceService.GetActiveAvailableSpawnPointIDs()
+    local freeMarkers = {}
+
+    for _, marker in getSortedMarkers(getSpawnFolder(iceType)) do
+        if not occupiedSpawnPointIDs[string.format("%s/%s", iceType, marker.Name)] then
+            table.insert(freeMarkers, marker)
+        end
+    end
+
+    if #freeMarkers == 0 then
+        warn(string.format("[IceService] No free %s spawn point for cycle %d Special Ice", iceType, cycleIndex))
+        return nil
+    end
+
+    local marker = freeMarkers[random:NextInteger(1, #freeMarkers)]
+    spawnAtMarker(iceType, marker, getOrCreateActiveIceFolder(), cycleIndex)
+
+    return iceType
+end
+
 local function setAvailablePromptsEnabled(enabled: boolean): ()
     for iceInstanceID, record in recordsByID do
         if record.State == AVAILABLE_STATE and record.OwnerUserID == nil then
@@ -556,41 +768,73 @@ function IceService.GetActiveAvailableSpawnPointIDs(): { [string]: boolean }
     return activeSpawnPointIDs
 end
 
-function IceService.HandleWorldCyclePhaseChanged(currentPhase: string, cycleIndex: number): ()
+-- Returns true when a new shared field was populated, so field-bound guardians can be rebuilt.
+function IceService.HandleWorldCyclePhaseChanged(currentPhase: string, cycleIndex: number): boolean
     if currentPhase == "GreatFrost" then
         grabLockedDuringGreatFrost = WorldCycleConfig.GrabLockedDuringGreatFrost
         setAvailablePromptsEnabled(false)
 
         if lastResetCycleIndex == cycleIndex then
-            return
+            return false
         end
         lastResetCycleIndex = cycleIndex
 
         resetAvailableField()
         populateField()
-        return
+        hasPopulatedField = true
+
+        if cycleIndex % WorldCycleConfig.SpecialIceEveryNCycles == 0 then
+            local specialIceType = spawnSpecialIce(cycleIndex)
+            if specialIceType then
+                -- Server-wide attention only; the reward stays hidden.
+                gameplayEvent:FireAllClients("SpecialIceAwakened", {
+                    IceType = specialIceType,
+                })
+            end
+        end
+
+        return true
     end
 
     if currentPhase == "Day" then
         grabLockedDuringGreatFrost = false
         setAvailablePromptsEnabled(true)
 
+        -- A server that booted mid-Frost has no field yet; it populates at its first Day.
+        if not hasPopulatedField then
+            populateField()
+            hasPopulatedField = true
+            return true
+        end
     end
+
+    return false
 end
 
-function IceService.DiscardCarriedIce(player: Player): boolean
-    local playerState = PlayerStateService.GetState(player)
-    if not playerState then
-        return false
-    end
-
-    local carriedIceID = playerState.CurrentlyCarryingIceID
+-- Carrier failure (Freeze, death, reset/respawn, disconnect): the exact same Ice returns to the
+-- shared world as Available with its reward and WeightMultiplier untouched, so anyone can rescue it.
+function IceService.ReleaseCarriedIce(player: Player): boolean
+    local carriedIceID = carriedIceIDByPlayer[player]
     if carriedIceID == nil then
         return false
     end
 
-    playerState.CurrentlyCarryingIceID = nil
-    discardIceByID(carriedIceID)
+    local groundCFrame = getReleaseGroundCFrame(player, carriedIceID)
+    clearCarry(player)
+
+    local record = recordsByID[carriedIceID]
+    if not record or record.State ~= CARRIED_STATE or record.OwnerUserID ~= player.UserId then
+        return false
+    end
+
+    local carriedVisualIce = visualIceByID[carriedIceID]
+    if carriedVisualIce then
+        carriedVisualIce:Destroy()
+    end
+
+    record.State = AVAILABLE_STATE
+    record.OwnerUserID = nil
+    visualIceByID[carriedIceID] = createVisualIce(record, groundCFrame, getOrCreateActiveIceFolder())
 
     return true
 end
@@ -641,7 +885,7 @@ function IceService.TryGrabIce(player: Player, iceInstanceID: any): boolean
         return false
     end
 
-    if playerState.CurrentlyCarryingIceID ~= nil then
+    if playerState.CurrentlyCarryingIceID ~= nil or carriedIceIDByPlayer[player] ~= nil then
         return false
     end
 
@@ -659,13 +903,16 @@ function IceService.TryGrabIce(player: Player, iceInstanceID: any): boolean
     record.State = CARRIED_STATE
     record.OwnerUserID = player.UserId
     playerState.CurrentlyCarryingIceID = iceInstanceID
+    carriedIceIDByPlayer[player] = iceInstanceID
+    carrierCharacterByPlayer[player] = character
+    lastSafeRootPositionByPlayer[player] = getGroundedRootPosition(character)
 
     local prompt = visualIce:FindFirstChild(GRAB_PROMPT_NAME, true)
     if prompt and prompt:IsA("ProximityPrompt") then
         prompt.Enabled = false
     end
 
-    attachVisualIceToCharacter(visualIce, rootPart, character)
+    attachVisualIceToCharacter(visualIce, rootPart, character, isPlayerRiding(player))
 
     return true
 end
@@ -725,6 +972,7 @@ function IceService.TryDepositCarriedIce(player: Player, requestedPen: any): boo
 
     local thawItem = ThawService.CreateFromDepositedIce(player, {
         IceType = record.IceType,
+        IsSpecial = record.IsSpecial,
         CreatureID = record.CreatureID,
         Rarity = record.Rarity,
         WeightMultiplier = record.WeightMultiplier,
@@ -738,7 +986,7 @@ function IceService.TryDepositCarriedIce(player: Player, requestedPen: any): boo
     )
 
     record.State = DEPOSITED_STATE
-    playerState.CurrentlyCarryingIceID = nil
+    clearCarry(player)
     discardIceByID(carriedIceID)
 
     return true
@@ -751,13 +999,33 @@ function IceService.Start()
 
     hasStarted = true
 
+    -- Ride/Unride while carrying moves the same welded Ice between the walking and riding offsets.
+    local function refreshCarryOffset(player: Player)
+        local iceInstanceID = carriedIceIDByPlayer[player]
+        local visualIce = if iceInstanceID then visualIceByID[iceInstanceID] else nil
+        local character = carrierCharacterByPlayer[player]
+        local rootPart = if character then character:FindFirstChild("HumanoidRootPart") else nil
+        local carryWeld = if visualIce then visualIce:FindFirstChild(CARRY_WELD_NAME) else nil
+        if not visualIce or not rootPart or not rootPart:IsA("BasePart") or not carryWeld then
+            return
+        end
+
+        carryWeld.Enabled = false
+        visualIce.CFrame = rootPart.CFrame * getCarryOffsetFromRoot(visualIce, isPlayerRiding(player))
+        carryWeld.Enabled = true
+    end
+
     local function connectPlayer(player: Player)
+        player:GetAttributeChangedSignal(MOUNT_STATE_ATTRIBUTE):Connect(function()
+            refreshCarryOffset(player)
+        end)
+
         player.CharacterAdded:Connect(function(character)
             connectCharacterFailure(player, character)
         end)
 
         player.CharacterRemoving:Connect(function()
-            IceService.DiscardCarriedIce(player)
+            IceService.ReleaseCarriedIce(player)
         end)
 
         if player.Character then
@@ -768,9 +1036,12 @@ function IceService.Start()
     Players.PlayerAdded:Connect(connectPlayer)
 
     Players.PlayerRemoving:Connect(function(player)
+        IceService.ReleaseCarriedIce(player)
         lastGrabRequestAtByPlayer[player] = nil
         lastDepositRequestAtByPlayer[player] = nil
     end)
+
+    RunService.Heartbeat:Connect(trackSafeCarrierPositions)
 
     for _, player in Players:GetPlayers() do
         connectPlayer(player)
@@ -785,7 +1056,25 @@ function IceService.Start()
         validateRewardConfiguration(config)
     end
 
-    populateField()
+    assert(
+        type(WorldCycleConfig.SpecialIceEveryNCycles) == "number"
+            and WorldCycleConfig.SpecialIceEveryNCycles >= 1
+            and WorldCycleConfig.SpecialIceEveryNCycles % 1 == 0,
+        "WorldCycleConfig.SpecialIceEveryNCycles must be a positive integer"
+    )
+    for _, entry in SpecialIceConfig.TypeWeights do
+        assert(isFiniteNumber(entry.Weight) and entry.Weight >= 0, "Special Ice type weights must be non-negative")
+        validateRewardConfiguration(getSpecialRewardProfile(entry.IceType))
+        validateSpecialSilhouettes(entry.IceType)
+    end
+
+    -- Boot during Day populates the current field; boot during Great Frost waits for the next Day.
+    if WorldCycleService.GetState().CurrentPhase == "GreatFrost" then
+        grabLockedDuringGreatFrost = WorldCycleConfig.GrabLockedDuringGreatFrost
+    else
+        populateField()
+        hasPopulatedField = true
+    end
 end
 
 return IceService

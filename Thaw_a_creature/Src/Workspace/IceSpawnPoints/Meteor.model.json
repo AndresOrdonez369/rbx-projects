@@ -3,8 +3,9 @@
   "children": [
     { "name": "Spawn01", "className": "Part", "properties": { "Anchored": true, "CanCollide": false, "CanQuery": false, "CanTouch": false, "Position": [-35, 0.25, 930], "Size": [2, 0.5, 2], "Transparency": 1 } },
     { "name": "Spawn02", "className": "Part", "properties": { "Anchored": true, "CanCollide": false, "CanQuery": false, "CanTouch": false, "Position": [35, 0.25, 950], "Size": [2, 0.5, 2], "Transparency": 1 } },
-    { "name": "Spawn03", "className": "Part", "properties": { "Anchored": true, "CanCollide": false, "CanQuery": false, "CanTouch": false, "Position": [0, 0.25, 990], "Size": [2, 0.5, 2], "Transparency": 1 } },
+    { "name": "Spawn03", "className": "Part", "properties": { "Anchored": true, "CanCollide": false, "CanQuery": false, "CanTouch": false, "Position": [0, 0.25, 990], "Size": [2, 0.5, 2], "Transparency": 1 }, "children": [ { "name": "GuardianMarkers", "className": "Folder", "children": [ { "name": "Guardian01", "className": "Part", "properties": { "Anchored": true, "CanCollide": false, "CanQuery": false, "CanTouch": false, "Position": [16, 3.5, 990], "Size": [1, 1, 1], "Transparency": 1 } } ] } ] },
     { "name": "Spawn04", "className": "Part", "properties": { "Anchored": true, "CanCollide": false, "CanQuery": false, "CanTouch": false, "Position": [-36, 0.25, 1030], "Size": [2, 0.5, 2], "Transparency": 1 } },
-    { "name": "Spawn05", "className": "Part", "properties": { "Anchored": true, "CanCollide": false, "CanQuery": false, "CanTouch": false, "Position": [34, 0.25, 1055], "Size": [2, 0.5, 2], "Transparency": 1 } }
+    { "name": "Spawn05", "className": "Part", "properties": { "Anchored": true, "CanCollide": false, "CanQuery": false, "CanTouch": false, "Position": [34, 0.25, 1055], "Size": [2, 0.5, 2], "Transparency": 1 } },
+    { "name": "Spawn06", "className": "Part", "properties": { "Anchored": true, "CanCollide": false, "CanQuery": false, "CanTouch": false, "Position": [42, 0.25, 1005], "Size": [2, 0.5, 2], "Transparency": 1 } }
   ]
 }

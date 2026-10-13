@@ -8,9 +8,10 @@ export type Phase = "Day" | "GreatFrost"
 
 export type WorldCycleState = {
     CurrentPhase: Phase,
-    PhaseStartedAtTime: number,
-    PhaseEndsAtTime: number,
     CycleIndex: number,
+    PhaseStartedAtUnix: number,
+    NextTransitionUnix: number,
+    TimeRemaining: number,
 }
 
 local WorldCycleService = {}
@@ -20,7 +21,8 @@ local GREAT_FROST_PHASE: Phase = "GreatFrost"
 local DAY_DURATION = WorldCycleConfig.CycleLength - WorldCycleConfig.GreatFrostDuration
 
 local hasStarted = false
-local currentState: WorldCycleState? = nil
+-- Runtime only: a Frost transition is processed at most once and never retroactively on boot.
+local lastProcessedFrostCycle: number? = nil
 local phaseChanged = Instance.new("BindableEvent")
 
 assert(WorldCycleConfig.CycleLength > 0, "WorldCycleConfig.CycleLength must be greater than zero")
@@ -33,59 +35,63 @@ assert(
     "WorldCycleConfig.GreatFrostDuration must be shorter than WorldCycleConfig.CycleLength"
 )
 
-local function copyState(state: WorldCycleState): WorldCycleState
+-- Every server derives the same rhythm from the shared wall-clock epoch.
+local function computeState(nowUnix: number): WorldCycleState
+    local cycleIndex = math.floor((nowUnix - WorldCycleConfig.CycleEpochUnix) / WorldCycleConfig.CycleLength)
+    local cycleStartUnix = WorldCycleConfig.CycleEpochUnix + cycleIndex * WorldCycleConfig.CycleLength
+    local frostStartUnix = cycleStartUnix + DAY_DURATION
+
+    if nowUnix < frostStartUnix then
+        return {
+            CurrentPhase = DAY_PHASE,
+            CycleIndex = cycleIndex,
+            PhaseStartedAtUnix = cycleStartUnix,
+            NextTransitionUnix = frostStartUnix,
+            TimeRemaining = frostStartUnix - nowUnix,
+        }
+    end
+
+    local nextCycleStartUnix = cycleStartUnix + WorldCycleConfig.CycleLength
     return {
-        CurrentPhase = state.CurrentPhase,
-        PhaseStartedAtTime = state.PhaseStartedAtTime,
-        PhaseEndsAtTime = state.PhaseEndsAtTime,
-        CycleIndex = state.CycleIndex,
-    }
-end
-
-local function setPhase(phase: Phase, cycleIndex: number, phaseStartedAtTime: number, duration: number): ()
-    local state: WorldCycleState = {
-        CurrentPhase = phase,
-        PhaseStartedAtTime = phaseStartedAtTime,
-        PhaseEndsAtTime = phaseStartedAtTime + duration,
+        CurrentPhase = GREAT_FROST_PHASE,
         CycleIndex = cycleIndex,
+        PhaseStartedAtUnix = frostStartUnix,
+        NextTransitionUnix = nextCycleStartUnix,
+        TimeRemaining = nextCycleStartUnix - nowUnix,
     }
-    currentState = state
-
-    phaseChanged:Fire(copyState(state))
 end
 
 local function runCycle(): ()
-    while true do
-        local state = currentState
-        assert(state, "WorldCycleService must have state while running")
+    local observedState = computeState(Workspace:GetServerTimeNow())
 
-        local timeRemaining = state.PhaseEndsAtTime - Workspace:GetServerTimeNow()
+    while true do
+        local timeRemaining = observedState.NextTransitionUnix - Workspace:GetServerTimeNow()
         if timeRemaining > 0 then
             task.wait(timeRemaining)
         end
 
-        state = currentState
-        assert(state, "WorldCycleService must have state while transitioning")
+        local nextState = computeState(Workspace:GetServerTimeNow())
+        if nextState.CurrentPhase ~= observedState.CurrentPhase or nextState.CycleIndex ~= observedState.CycleIndex then
+            observedState = nextState
 
-        if Workspace:GetServerTimeNow() >= state.PhaseEndsAtTime then
-            if state.CurrentPhase == DAY_PHASE then
-                setPhase(GREAT_FROST_PHASE, state.CycleIndex, state.PhaseEndsAtTime, WorldCycleConfig.GreatFrostDuration)
-            else
-                setPhase(DAY_PHASE, state.CycleIndex + 1, state.PhaseEndsAtTime, DAY_DURATION)
+            local isDuplicateFrost = nextState.CurrentPhase == GREAT_FROST_PHASE
+                and lastProcessedFrostCycle == nextState.CycleIndex
+            if not isDuplicateFrost then
+                if nextState.CurrentPhase == GREAT_FROST_PHASE then
+                    lastProcessedFrostCycle = nextState.CycleIndex
+                end
+                phaseChanged:Fire(nextState)
             end
         end
     end
 end
 
-function WorldCycleService.GetState(): WorldCycleState?
-    local state = currentState
-    if not state then
-        return nil
-    end
-
-    return copyState(state)
+-- Pure wall-clock read; valid before Start so other services can boot into the current phase.
+function WorldCycleService.GetState(): WorldCycleState
+    return computeState(Workspace:GetServerTimeNow())
 end
 
+-- Fires only for transitions this server observes while running, never for the phase it booted into.
 function WorldCycleService.ConnectPhaseChanged(
     callback: (WorldCycleState) -> ()
 ): RBXScriptConnection
@@ -98,9 +104,6 @@ function WorldCycleService.Start(): ()
     end
 
     hasStarted = true
-
-    local startedAtTime = Workspace:GetServerTimeNow()
-    setPhase(DAY_PHASE, 0, startedAtTime, DAY_DURATION)
     task.spawn(runCycle)
 end
 

@@ -1,6 +1,6 @@
 # THAW A CREATURE
 
-## Development Plan - Prototype to 3-Week Public Launch - Canonical v1.1
+## Development Plan - Prototype to 3-Week Public Launch - Canonical v1.4
 
 **Production Window:** 3 weeks  
 **Week 1:** Bare-Minimum Validation Prototype  
@@ -8,6 +8,18 @@
 **Week 3:** Content Presentation + Hero Moments + QA + Launch Candidate  
 
 ### Revision notes
+
+- Expands the approved post-Day-14 narrow scope revision to include **Home Camp Warmth Safety**, **Frosted Companion Orb readability**, **size-scaled Grab Hold**, **Carrier Commitment + intentional DropIce**, and **Wilderness Contest Knockback with mounted Vitality consequences**. These are explicit exceptions to feature lock and must not expand into generic PvP/combat progression.
+- Updates Pen production to the approved seven-level `4 -> 10` active-creature capacity model with fixed 32-stud width and `24 -> 48` Z depth.
+- Records player-chosen session thaw-Ice placement inside the Pen as presentation/interaction scope while keeping logical thaw capacity unlimited and thaw placement coordinates non-persistent.
+- Re-baselines Day 11 around an approved 20-creature launch roster (four signature creatures per region) instead of the previous 16-creature target.
+- Adds a placeholder-asset production path for the nine new creatures while final ReferenceWeight/BaseVisualScale/SilhouetteProfile remain asset-audit decisions.
+- Locks region-exclusive normal Ice pools, overlapping species Income bands, and controlled species Speed progression.
+- Replaces the old six-level prototype Hearth values with the approved 10-level launch cost/training curve.
+- Updates Recommended Warmth, regional cold multipliers, and Frost Sprite damage for the longer minutes-to-hours progression.
+- Keeps Special Ice but standardizes Ancient/Black/Meteor Special rarity to 90% Rare / 10% Legendary.
+- Expands Archive completion to X / 20 and narrows selling to a low-value inventory-cleanup role.
+
 
 - Adds rideable Equipped creatures as launch scope: every creature supports Following/Riding states.
 - Keeps Equip/Unequip as base allocation while Ride/Unride becomes an exploration action available while carrying Ice.
@@ -20,7 +32,7 @@
 - Locks Frost Sprite guardian availability across all five geographic Ice tiers and region-scaled Warmth damage.
 - Locks every spawned Ice as one shared server opportunity; removes private onboarding-Ice tasks.
 - Adds exact-Ice failure drop/rescue on Freeze, death, reset/respawn, and disconnect.
-- Allows multiplayer rescue/relay without adding an intentional DropIce/transfer action.
+- Preserves multiplayer rescue/relay and adds canonical intentional DropIce as a voluntary shared-world release action; DropIce is not direct trading.
 - Marks Day 8 persistence foundation **COMPLETE** and Day 9 multiplayer/personal bases **IN PROGRESS**.
 - Integrates new multiplayer/survival requirements into Day 9 and Day 10 rather than restarting completed work.
 - Changes post-Week-1 document authority so the finalized prototype spec is historical evidence, not the production-behavior authority.
@@ -30,10 +42,10 @@
 Week 1 is complete, so production authority now differs from the original prototype-development phase.
 
 For launch production, use this order:
-1. Concise GDD v0.7 - player-facing design intent.
-2. Launch Technical Implementation Specification v0.7 - production behavior and architecture.
-3. Implementation Constants & Content Configuration v1.1 - exact values/content/AI guardrails.
-4. This Development Plan v1.1 - implementation sequence, ownership, and gates.
+1. Concise GDD v1.0 - player-facing design intent.
+2. Launch Technical Implementation Specification v1.0 - production behavior and architecture.
+3. Implementation Constants & Content Configuration v1.4 - exact values/content/AI guardrails.
+4. This Development Plan v1.4 - implementation sequence, ownership, and gates.
 5. Bare-Minimum Prototype Technical Specification v1.0 FINAL - historical Week-1 behavior and validation evidence.
 
 The finalized Prototype Spec remains authoritative for what Week 1 proved, but it must not override an explicitly promoted launch rule in the newer production documents.
@@ -50,7 +62,7 @@ uncapped MaxWarmth
 + one shared server Ice field
 ```
 
-Implementation must use current Constants v1.1 immediately. Do not use obsolete Warmth-Level, private-Ice, or experiment-only rules.
+Implementation must use current Constants v1.4 immediately. Do not use obsolete Warmth-Level, private-Ice, or experiment-only rules.
 
 ### Promoted Survival Scope - Retrieval Pressure
 
@@ -92,8 +104,8 @@ Every task should be implemented independently.
 For each task:
 1. read the exact task;
 2. identify its priority and completion condition;
-3. consult Launch Technical v0.7 for production behavior;
-4. consult Implementation Constants v1.1 for exact values/content configuration;
+3. consult Launch Technical v1.0 for production behavior;
+4. consult Implementation Constants v1.4 for exact values/content configuration;
 5. consult the GDD only when player-facing intent needs clarification;
 6. implement only the current task and strictly necessary dependencies;
 7. test it;
@@ -131,7 +143,7 @@ Feature lock. All launch gameplay systems must exist. Week 3 should not invent m
 Current production position:
 - Day 8: complete;
 - Day 9: in progress;
-- new v1.1 multiplayer/survival/mount requirements must be integrated without unnecessary rewrites of verified systems.
+- new v1.2 multiplayer/survival/mount/content requirements must be integrated without unnecessary rewrites of verified systems.
 
 ## WEEK 1 - BARE-MINIMUM VALIDATION PROTOTYPE
 
@@ -389,7 +401,7 @@ Enforce:
 
 0 or 1 Ice carried.
 No raw Ice Inventory.
-No intentional DropIce action.
+Historical Week-1 prototype rule: no intentional DropIce action. **Launch supersession:** D14.5 adds canonical intentional DropIce.
 
 
 ### P0-D2-T08 - Carry Presentation
@@ -1041,7 +1053,7 @@ Do this before persistence work.
 
 ### D6-R02 - Authoritative Ice Weight + Scale Roll
 
-At Ice spawn, server rolls exactly one WeightMultiplier using Constants v0.9.
+Historical Day-6 implementation used the then-current Constants v0.9; current production must use the latest Constants v1.4 values while preserving the same one-roll architecture.
 Derive:
 
 ```text
@@ -1142,7 +1154,7 @@ Continue using the established per-task workflow: implement -> Studio sanity tes
 
 ### D7-R01 - Big-Number Warmth Rebalance
 
-Adopt Constants v0.9 first-pass big-number values.
+Historical Day-7 implementation adopted the then-current Constants v0.9 big-number values; current production uses the latest Constants v1.4 values.
 Warmth should visibly climb in satisfying whole-number quantities.
 No cap.
 
@@ -1153,7 +1165,7 @@ Use the configured fraction-of-MaxWarmth refill rule.
 
 ### D7-R03 - Hearth Progression Expansion
 
-Expand the prototype beyond the initial three levels using the v0.9 cost/rate curve.
+Historical Day-7 implementation expanded the prototype using the then-current v0.9 cost/rate curve; current production uses the latest Constants v1.4 Hearth table.
 Keep the same mechanic: Cash -> faster automatic MaxWarmth training.
 No direct fixed MaxWarmth purchase.
 
@@ -1271,7 +1283,7 @@ Promoted mechanics:
 8. Minimal survival feedback.
 9. Breakable route obstacles using the same universal tool.
 10. Regional guardian presence across all five Ice/region tiers.
-11. Regional Warmth damage: `10 / 100 / 1,000 / 10,000 / 100,000` from Snowfield through Meteor Reach.
+11. Regional Warmth damage: `10 / 100 / 4,000 / 250,000 / 8,000,000` from Snowfield through Meteor Reach.
 
 Promotion boundaries remain strict:
 - no material currencies/crafting;
@@ -1293,10 +1305,12 @@ Rules:
 - use standardized Root/scale/orientation from the asset contract;
 - prioritize readability and reuse simple animation/rig solutions;
 - do not add creature-specific gameplay abilities;
-- the current 11 validated species remain mechanically valid;
-- the remaining five species required to reach the 16-species launch quantity need explicit content approval before implementation.
+- preserve Week-1 evidence for the 11 integrated assets, but use the newer v1.2 launch Income/pool values rather than the historical Week-1 baselines;
+- launch target is 20 species / four signature creatures per region;
+- White Stag, Sabertooth, Tyrannosaurus, Giant Spider, Dreadmare, Manticore, Griffin, Kirin, and Phoenix may use functional placeholder meshes until final art is available;
+- placeholder ReferenceWeight/BaseVisualScale/SilhouetteProfile values are provisional and must be finalized from the real assets.
 
-If creature production slips, simplify environment/animation before cutting the 16-species quantity target.
+If creature production slips, simplify environment/animation before cutting the 20-species quantity target.
 
 ## WEEK 2 - PRODUCTION CONVERSION + FULL LAUNCH SYSTEMS
 
@@ -1309,7 +1323,7 @@ Art may still be unfinished.
 
 ## 13. Day 8 - Persistence Foundation - COMPLETE
 
-**Status:** implemented and runtime-operational before this v1.1 documentation revision.
+**Status:** implemented and runtime-operational before this v1.2 documentation revision.
 
 Do not restart Day 8 merely because Survival Pressure was promoted.
 Audit only the new non-persistence boundaries below.
@@ -1328,7 +1342,8 @@ Cash
 MaxWarmth
 HearthLevel
 CreatureCopies[CreatureGUID] = { CreatureID, WeightMultiplier }
-PenSlots[1..4] = CreatureGUID or nil
+PenLevel = 1..7
+PenSlots[1..10] = CreatureGUID or nil
 EquippedCreatureGUID = CreatureGUID or nil
 DiscoveredCreatures[CreatureID] = true
 ThawingIce[]
@@ -1366,7 +1381,7 @@ Calculate elapsed real time for deposited Ice. Ready Ice remains Ready and is ne
 
 Persistent progression has been runtime-tested.
 
-### v1.1 Survival + Mount Persistence Audit
+### v1.2 Survival + Mount Persistence Audit
 
 Confirm D8 does **not** persist:
 - CurrentWarmth;
@@ -1386,7 +1401,7 @@ If D8 already ignores these runtime fields, no implementation change is required
 
 **Status:** engineer-owned/in progress at the time of this revision.
 
-Do not discard working D9 infrastructure. Integrate the v1.1 shared-Ice and Survival Pressure requirements into the existing implementation; mount productionization is scheduled in Day 10.
+Do not discard working D9 infrastructure. Integrate the current v1.2 shared-Ice and Survival Pressure requirements into the existing implementation; mount productionization is scheduled in Day 10.
 
 ### L-D9-T01 - Raise Server Target
 
@@ -1418,7 +1433,7 @@ Onboarding may guide players to shared Regular Ice but may not create private Ic
 
 ### L-D9-T05 - Shared Ice Contention
 
-First valid server-side Grab wins.
+Launch supersession: first valid **completed size-scaled Grab Hold** accepted by the server wins.
 One IceInstanceID may have only one carrier.
 All clients observe the same ownership state.
 
@@ -1434,8 +1449,8 @@ On Freeze, character death, Reset Character/respawn, or disconnect before Pen de
 If the failure position is invalid, fall back to last valid grounded/safe position, then authored origin.
 
 No reroll.
-No intentional DropIce request.
-Rescue/relay is valid gameplay.
+Launch supersession: D14.5 adds intentional DropIce through the canonical identity-preserving shared release path.
+Rescue/relay remains valid gameplay.
 
 ### L-D9-T07 - Multiplayer Remote Validation
 
@@ -1538,9 +1553,9 @@ Lock first-pass values:
 ```text
 Snowfield          10
 Frozen Pass        100
-Ancient Expanse    1,000
-Black Ice Hollow   10,000
-Meteor Reach       100,000
+Ancient Expanse    4,000
+Black Ice Hollow   250,000
+Meteor Reach       8,000,000
 ```
 
 Damage comes from the Sprite's region/location, not player MaxWarmth or Ice reward.
@@ -1611,139 +1626,185 @@ Test at minimum:
 - reconnect/respawn starts Following, not Riding;
 - equipped copy still earns zero Pen income in both states.
 
-## 16. Day 11 - 16-Creature Target + Five Rarities
+## 16. Day 11 - 20-Creature Target + Five Rarities
 
-The current build already supports five rarity tiers and 11 validated species.
-Do not re-add Legendary or overwrite the approved 11-species baseline.
+### D11-R00 - Canonical Content / Progression Rebaseline - COMPLETE
+
+The v1.2 documentation revision approves the 20-creature launch roster, regional pools, launch BaseIncome/BaseWalkSpeed values, 10-level Hearth curve, new regional Warmth/cold/Sprite values, Special-Ice rarity update, placeholder-asset policy, and X / 20 Archive target.
+
+Do not implement from the old 16-creature/remaining-five assumptions.
 
 ### L-D11-T01 - Productionize Five-Rarity Presentation
 
 Verify Common / Uncommon / Rare / Epic / Legendary presentation, reveal treatment, UI, and pool support are production-ready.
 
-### L-D11-T02 - Preserve the Locked 11-Species Baseline
+### L-D11-T02 - Implement the Approved 20-Species Content Mapping
 
-Current approved species:
+Configure the approved launch roster and exact region/rarity/BaseIncome/BaseWalkSpeed mapping from current Constants v1.4.
+
+Do not derive Income or Speed from rarity.
+Do not make later geographic pools cumulatively inherit earlier-region creatures.
+
+### L-D11-T03 - Integrate Nine Placeholder Creature Assets
+
+Until final models exist, use functional placeholder meshes for:
+- White Stag;
+- Sabertooth;
+- Tyrannosaurus;
+- Giant Spider;
+- Dreadmare;
+- Manticore;
+- Griffin;
+- Kirin;
+- Phoenix.
+
+Placeholders must be sufficient to test:
+- CreatureID/ModelName routing;
+- approximate silhouette/readability;
+- orientation/root behavior;
+- Pen/follower presentation;
+- authored/configured Seat or temporary rider anchor;
+- Scale compatibility.
+
+Do not pretend placeholder ReferenceWeight/BaseVisualScale/SilhouetteProfile are final production art values.
+
+### L-D11-T04 - Region / Pool Contract Audit
+
+Verify exactly four signature creatures per region and the canonical normal-Ice probabilities:
 
 ```text
-Common      Penguin, Rabbit, Seal
-Uncommon    Wolf, Bear
-Rare        Mammoth, Sleipnir
-Epic        Troll, IceSerpent
-Legendary   Hraesvlgr, Nidhogg
+Regular  80 C / 20 U
+Thick    60 C / 25 U / 11 R / 4 E
+Ancient  60 C / 25 R / 11 E / 4 L
+Black    60 C / 25 U / 11 R / 4 L
+Meteor   60 C / 25 R / 11 E / 4 L
 ```
 
-Do not change their approved base stats/pools during roster expansion unless separately approved.
+Regular Common selects uniformly among Penguin/Rabbit/Seal.
+All other non-zero slots map to the single approved species for that region/rarity.
 
-### L-D11-T03 - Add Remaining 5 Launch Species - Requires Explicit Content Approval
+### L-D11-T05 - Full Ownership Support
 
-The 16-species launch quantity target remains, but the remaining five species are not defined by this v1.1 revision.
-Before implementation, explicitly approve for each new species:
-- CreatureID/name;
-- rarity;
-- model/asset;
-- ReferenceWeight;
-- BaseVisualScale;
-- BaseIncomePerSecond;
-- BaseWalkSpeed;
-- eligible Ice pools;
-- SilhouetteProfile.
+After the Day-9/Day-10 integration boundary is stable, verify all 20 configured launch species support Inventory, Pen, Equip, Sell, Archive, persistence, inherited Scale, Following/Riding mount presentation, and Frosted-session behavior where applicable.
 
-Do not resurrect stale placeholder species lists automatically.
+Do not parallel-edit engineer-owned Day-9 systems merely to get ahead on this task.
 
-### L-D11-T04 - Full Ownership Support
+### L-D11-T06 - Full Speed / Income Progression
 
-Verify all configured launch species support Inventory, Pen, Equip, Sell, Archive, persistence, inherited Scale, Following/Riding mount presentation, and Frosted-session behavior where applicable.
+Verify species baselines + inherited size Scale create clearly different copy values across the full content progression.
 
-### L-D11-T05 - Full Speed / Income Progression
-
-Verify species baselines + inherited size Scale create clearly different copy values across the full content progression without making rarity itself a hidden second stat formula.
+Required design behavior:
+- new regions create large expected economic jumps;
+- adjacent region value bands overlap;
+- previous-region jackpots can beat the next region's early results;
+- size jackpots can sequence-break expected economic ordering;
+- Speed remains controlled and does not inflate at the same rate as Income;
+- rarity is not a hidden second stat formula.
 
 ## 17. Day 12 - Five Ice Types
 
-### L-D12-T01 - Ancient Ice
+### L-D12-T01 - Ancient Ice Productionization
 
-Add config, spawn points, pool and presentation profile.
+Finalize config, spawn points, presentation profile, and the approved Ancient family:
+Sabertooth / Mammoth / IceSerpent / Tyrannosaurus.
 
+### L-D12-T02 - Black Ice Productionization
 
-### L-D12-T02 - Black Ice
+Finalize config, spawn points, presentation profile, and the approved Black family:
+Giant Spider / Dreadmare / Manticore / Hraesvlgr.
 
-Add config, spawn points, pool and presentation profile.
+### L-D12-T03 - Meteor Ice Productionization
 
+Finalize config, spawn points, presentation profile, and the approved Meteor family:
+Griffin / Kirin / Phoenix / Nidhogg.
 
-### L-D12-T03 - Meteor Ice
+### L-D12-T04 - Full Region-Exclusive Ice Pools
 
-Add config, spawn points, pool and presentation profile.
-
-
-### L-D12-T04 - Full Ice Pools
-
-Configure all five Ice types according to canonical creature pools.
+Configure all five normal geographic Ice pools exactly from current Constants v1.4.
+Do not cumulatively inherit earlier-region species.
 
 ### L-D12-T05 - Full Rarity Weights
 
-Keep them configuration-driven.
-
+Keep all normal-Ice weights configuration-driven.
+Preserve the `60 / 25 / 11 / 4` advanced-region opportunity shape while allowing intentional rarity-label asymmetry by region.
+Regular remains the onboarding exception at `80% Common / 20% Uncommon`.
 
 ### L-D12-T06 - Thaw Durations by Ice Type
 
-Use Ice Type-not rolled rarity-to determine duration.
+Use Ice Type - not rolled rarity - to determine duration.
 Protect reward mystery.
-
 
 ### L-D12-T07 - Long-Distance Silhouette Support
 
 Ensure later Ice can visually advertise mystery without revealing exact species.
-
+Placeholder creatures may use provisional silhouettes until final production models are available.
 
 ## 18. Day 13 - Warmth / Hearth Progression
 
 ### L-D13-T01 - 10 Hearth Levels
 
-Implement complete launch progression.
-Each level defines:
-cost;
-training rate;
-visual stage reference.
+Implement the complete first-pass launch progression:
 
+```text
+Lv1   Start             +3/sec
+Lv2   $5,000            +5/sec
+Lv3   $100,000          +30/sec
+Lv4   $500,000          +50/sec
+Lv5   $2,000,000        +500/sec
+Lv6   $10,000,000       +1,000/sec
+Lv7   $50,000,000       +5,000/sec
+Lv8   $250,000,000      +10,000/sec
+Lv9   $2,000,000,000    +50,000/sec
+Lv10  $10,000,000,000   +100,000/sec
+```
+
+Each level still defines a visual-stage reference. Final unique Hearth art is not required for mechanical completion; reusable/provisional visual stages are allowed.
 
 ### L-D13-T02 - Unlimited MaxWarmth
 
 Verify there is no hidden maximum.
 
-
-### L-D13-T03 - Recommended Warmth
+### L-D13-T03 - Recommended Warmth / Cold / Sprite Values
 
 Configure:
-Regular;
-Thick;
-Ancient;
-Black;
-Meteor.
-Recommendations must not become hard gates.
 
+```text
+Snowfield          Recommended 100          Cold 1x        Sprite 10
+Frozen Pass        Recommended 1,000        Cold 5x        Sprite 100
+Ancient Expanse    Recommended 40,000       Cold 125x      Sprite 4,000
+Black Ice Hollow   Recommended 2,500,000    Cold 6,250x    Sprite 250,000
+Meteor Reach       Recommended 80,000,000   Cold 150,000x  Sprite 8,000,000
+```
+
+Recommendations remain guidance only.
 
 ### L-D13-T04 - Region Communication
 
-
-Expose Recommended Warmth through simple UI/signage.
-
+Expose Recommended Warmth through simple UI/signage with readable big-number formatting.
 
 ### L-D13-T05 - Warmth / Speed Interaction Test
 
-Verify faster creatures can meaningfully sequence-break recommendations without trivializing
-the entire world.
+Verify faster creatures can meaningfully sequence-break recommendations without trivializing the entire world.
 
+First-pass pacing target:
+- Snowfield -> Frozen Pass: a few minutes;
+- Frozen Pass -> Ancient: roughly tens of minutes;
+- Ancient -> Black: roughly 40-80 minutes depending on Hearth level;
+- Black -> Meteor: roughly 2-4+ hours depending on Hearth level and sequence-breaking;
+- post-Meteor Warmth growth may extend for 6+ hours at late Hearth levels.
+
+These are tuning targets, not hard unlock timers.
 
 ### L-D13-T06 - Carry Drain Balance Hook
 
-Keep multiplier configurable by Ice if needed, but do not add new endurance systems.
-
+Keep the structural carry multiplier at `2.00x` unless a later explicit balance revision changes it.
+Do not add new endurance systems.
 
 ## 19. Day 14 - Economy + Collection + Feature Lock
 
 ### L-D14-T01 - Final Pen Income
 
-All four slots operate correctly.
+All **unlocked** Pen positions operate correctly for the current `PenLevel` (`4 -> 10` active earning creatures across Lv1-Lv7).
 
 
 ### L-D14-T02 - Full Sell Paths
@@ -1752,6 +1813,8 @@ Support:
 Inventory;
 Pen;
 Equipped.
+
+Balance rule: selling is inventory cleanup plus a small consolation payout. Exact SellValues must stay economically secondary to recurring Pen income and must not become the optimal progression strategy.
 
 
 ### L-D14-T03 - Production Inventory Logic
@@ -1763,7 +1826,7 @@ Finalize count consistency and state validation.
 
 Full:
 
-X / 16
+X / 20
 with discovery persistence.
 
 
@@ -1781,7 +1844,7 @@ creatures -> Cash -> Hearth -> faster Warmth training.
 
 Verify:
 
-4 creature-income positions
+PenLevel-dependent active creature capacity (`4 -> 10`)
 !=
 thaw capacity.
 Thaw remains logically unlimited.
@@ -1791,9 +1854,129 @@ Thaw remains logically unlimited.
 
 At end of Day 14:
 
-No new launch gameplay systems.
-The launch should now mechanically exist.
+No new launch gameplay systems **except the explicit D14.5 scope revision approved below**.
+The launch should otherwise now mechanically exist.
 
+## 19A. D14.5 - Approved Retrieval-Conflict + Safe-Home Scope Revision
+
+This is a narrow owner-approved exception recorded while Day 14 systems work is in progress. Implement **after the current Day-14 task boundary**, not by interrupting unrelated D14 work. It must not become generic PvP/combat scope.
+
+### L-D14.5-T01 - Home Camp / Lobby Warmth Safe Zone
+
+Author and server-validate the shared Home Camp / Lobby Safe Zone.
+
+Inside the zone:
+- `CurrentWarmth` does not decrease, including while carrying Ice;
+- `CurrentWarmth` does not automatically refill;
+- `MaxWarmth` does not train;
+- only the player's own Hearth/WarmZone may refill/train;
+- another player's Hearth remains social-only;
+- player/mount contest effects are disabled.
+
+On leaving the zone, normal regional wilderness drain resumes immediately.
+
+### L-D14.5-T02 - Frosted Companion Orb Readability
+
+At Equipped-creature Vitality `0`:
+- preserve ownership and logical Equipped allocation;
+- force Unride;
+- replace follower/mount presentation with a floating Frosted Orb/Wisp;
+- show concise `FROSTED - RETURN TO YOUR HEARTH` feedback;
+- reject Ride while Frosted;
+- do not allow additional creature Vitality damage while already at zero.
+
+On entry to the owner's own WarmZone:
+- restore full creature Vitality;
+- clear Frosted;
+- rematerialize the exact Equipped creature;
+- restore Ride availability.
+
+Visitor WarmZones do not recover it. Freeze/death/reset recovery remains safe and permanent ownership never changes.
+
+### L-D14.5-T03 - Size-Scaled Grab Hold
+
+Replace instant Ice pickup with a server-authoritative continuous hold.
+
+First-pass:
+- `0.75x Scale -> 1.00 sec`;
+- `5.00x Scale -> 2.00 sec`;
+- linear interpolation, configuration-driven;
+- no hidden rarity/CreatureID/region/Special contribution.
+
+Starting the hold does not reserve the Ice. Multiple players may hold the same Available Ice. First valid completed hold accepted by the server wins.
+
+Cancel/reset hold on input release, range loss, contest ragdoll/knockback, Freeze, death/reset, Ice state change, or invalid world state. Tool Swing/Mounted Strike is unavailable during the active hold.
+
+### L-D14.5-T04 - Carrier Commitment + Intentional DropIce
+
+After successful Grab, enforce server-side Carrier Commitment.
+
+Allowed while carrying:
+- move;
+- jump;
+- Ride/Unride;
+- DropIce;
+- valid own-Pen deposit/placement.
+
+Reject Tool/Mounted Strike, PvE/PvP attacks, breakables, additional Grab, creature management, Sell, Hearth/Pen upgrades, reveal interaction, and unrelated progression/ownership actions.
+
+Implement authoritative `DropIce`:
+- preserve exact Ice identity/reward/size/Special metadata;
+- release at safe grounded carrier position;
+- clear owner and set Available;
+- no reroll / Inventory conversion / forced Unride;
+- first-pass same-player regrab lock `0.75 sec`;
+- all reclaims require a fresh full Grab Hold.
+
+### L-D14.5-T05 - Wilderness Contest Knockback
+
+For eligible **non-carrier** player targets in wilderness:
+- on-foot target -> ragdoll + knockback;
+- mounted target -> `25% of CreatureVitalityMax` damage, force Unride, then player ragdoll + knockback;
+- active Grab Hold cancels and resets;
+- mounted target remains on foot after recovery; no auto-remount.
+
+The `25%` Vitality loss applies only because a validated PvP contest hit forced the mounted target off. Manual/system Unride paths must not damage Vitality.
+
+No Player HP, Warmth, Cash, ownership, Inventory, Pen, or Ice-state damage. No contact/trample damage. Lobby is safe.
+
+### L-D14.5-T06 - Mounted Carrier Interference
+
+A carrier cannot attack because Carrier Commitment is active.
+
+On-foot carrier:
+- immune to player ragdoll/knockback.
+
+Mounted carrier:
+- valid wilderness contest hit does **not** ragdoll/knock back the player or force Unride while Vitality remains above zero;
+- hit deals `25% of CreatureVitalityMax` to the Equipped mount;
+- hit never drops/steals the Ice and never damages Warmth;
+- target receives configured hit grace to prevent dog-pile burst;
+- at zero Vitality -> Frosted -> force Unride -> Frosted Orb; player continues home on foot with the exact Ice.
+
+Do not create separate PvP Mount HP. Use the existing session `CreatureVitality` pool.
+
+### L-D14.5-T07 - Anti-Stunlock + Multiplayer Regression
+
+First-pass:
+- non-carrier contest ragdoll `1.25 sec`;
+- post-recovery contest immunity `1.75 sec`;
+- mounted-carrier successful damage hit grants `1.75 sec` immediate contest grace.
+
+Verify:
+- 2-4 player contest around one Ice;
+- concurrent Grab Holds and first-completed authoritative winner;
+- hit-before-hold-complete cancels the hold;
+- completed-hold-before-hit transitions correctly into carrier rules;
+- mounted/on-foot contest parity;
+- mounted non-carrier receives exactly `25% Max` Vitality loss on validated knock-off only;
+- mounted carrier receives exactly `25% Max` mount Vitality loss without player ragdoll/forced Ice drop;
+- four separated full-health mount hits are normally required to Frost;
+- carrier cannot attack Sprites, breakables, players, or mounts;
+- intentional DropIce preserves exact Ice and enforces self-regrab lock + full new hold;
+- lobby immunity and zero Warmth drain;
+- no stun-lock/dog-pile burst;
+- no interaction with permanent creature ownership/persistence.
 
 ## WEEK 3 - PRESENTATION, HERO MOMENTS, QA, LAUNCH
 
@@ -1999,10 +2182,13 @@ Ensure first session exposes something extraordinary beyond current reach.
 
 ## 24. Day 19 - Mobile + Multiplayer QA
 
-### F-D19-T01 - Mobile Grab Interaction
+### F-D19-T01 - Mobile Grab Hold Interaction
 
+Verify touch-and-hold correctly presents/maintains the configured size-scaled Grab duration, cancels cleanly on release/range loss/contest hit, and cannot be completed through simple tap spam.
 
-### F-D19-T02 - Mobile Deposit
+### F-D19-T02 - Mobile Deposit / Drop Ice
+
+Verify own-Pen deposit/placement and intentional DropIce are both readable and reliable on touch without accidental activation.
 
 
 ### F-D19-T03 - Mobile Crack Inputs
@@ -2040,6 +2226,18 @@ Verify a first-time player can start immediately even when shared nearby Ice is 
 ### F-D19-T13 - Special Ice Failure Test
 
 Verify Special Ice returns/vanishes correctly based on OriginCycleIndex after freeze, reset, death, and disconnect.
+
+### F-D19-T14 - Lobby Warmth Safe-Zone Test
+
+Verify walking between all four home bases/Pens does not reduce `CurrentWarmth`, including while carrying Ice. Verify no passive refill/training occurs outside the owner's own WarmZone.
+
+### F-D19-T15 - Wilderness Contest PvP Test
+
+Verify wilderness-only contest rules, concurrent Grab Holds, mounted non-carrier knock-off + 25% mount Vitality damage, mounted-carrier 25% mount damage without player ragdoll/forced drop, carrier action restrictions, lobby immunity, hit grace/anti-stunlock, and no Player HP/Warmth/Cash/permanent ownership damage.
+
+### F-D19-T16 - Frosted Companion Recovery Test
+
+Verify `Vitality 0 -> Force Unride -> Frosted Orb`, own-WarmZone rematerialization/full restore, visitor WarmZone no recovery, and clean Freeze/death/reset recovery.
 
 ## 25. Day 20 - Persistence + Balance + Exploit QA
 
@@ -2224,7 +2422,7 @@ Special Ice;
 persistence;
 multiplayer authority;
 5 Ice progression structure;
-16-creature launch target.
+20-creature launch target.
 If a protected item becomes impossible, stop and make an explicit design decision rather than
 silently removing it.
 
@@ -2324,7 +2522,7 @@ Required:
 - promoted Survival Pressure productionized for multiplayer;
 - every Equipped creature supports Following/Riding and universal mounted attack;
 - five-rarity support;
-- current 11 species preserved and remaining five approved/implemented if the 16-species target is retained;
+- all 20 approved launch species configured/integrated, with placeholders acceptable for the nine new species until final art;
 - 5 Ice types;
 - 10 Hearth levels;
 - permanent Warmth training;
@@ -2346,7 +2544,7 @@ Week 3 succeeds when:
 players understand the game immediately;
 all five Hero Moments read clearly;
 the Norse-inspired Great Frost fantasy is recognizable;
-16 creatures are visually appealing;
+20 creatures are visually appealing or use clearly temporary placeholders only where final art is still scheduled;
 mobile works;
 multiplayer works;
 saves work;
@@ -2388,7 +2586,7 @@ Day 10
 Production Great Frost + Special Ice + promoted Survival Pressure + Following/Riding mount integration.
 
 Day 11  
-Five-rarity production support + current 11-species preservation + remaining five species only after explicit approval.
+20-species content mapping + five-rarity production support + nine placeholder-creature integrations + full Income/Speed progression checks.
 
 Day 12  
 Productionization/polish of Ancient / Black / Meteor and full five-tier pool integration.
