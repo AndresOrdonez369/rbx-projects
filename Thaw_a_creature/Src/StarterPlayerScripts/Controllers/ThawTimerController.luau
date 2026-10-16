@@ -1,3 +1,4 @@
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
@@ -11,7 +12,7 @@ local OwnBaseController = require(script.Parent.OwnBaseController)
 local ThawTimerController = {}
 
 local THAW_VISUALS_FOLDER_NAME = "ThawVisuals"
-local TIMER_GUI_NAME = "ThawTimerBillboard"
+local TIMER_GUI_NAME = "ThawTimerBillboard" -- template: ReplicatedStorage.UITemplates.ThawTimerBillboard
 local THAW_ID_ATTRIBUTE = "ThawID"
 local ICE_TYPE_ATTRIBUTE = "IceType"
 local THAW_READY_AT_ATTRIBUTE = "ThawReadyAt"
@@ -19,9 +20,10 @@ local THAW_VISUAL_STAGE_ATTRIBUTE = "ThawVisualStage"
 local READY_STAGE = "Ready"
 local NEARLY_READY_STAGE = "NearlyReady"
 local CRACK_PART_NAME = "ThawCrack"
+local ICE_INSTANCE_ID_ATTRIBUTE = "IceInstanceID"
+-- Carrier Commitment: Ice cannot be cracked while carrying Ice, so the Ready card says so instead of inviting a press.
+local CARRYING_READY_TEXT = "PLACE YOUR ICE FIRST"
 local DISPLAY_UPDATE_INTERVAL_SECONDS = 0.1
-local TIMER_GUI_SIZE = UDim2.fromOffset(200, 50)
-local TIMER_GUI_MAX_DISTANCE = 100
 local TIMER_GUI_VERTICAL_PADDING = 1.5
 local BAR_JUMP_TWEEN_THRESHOLD = 0.03
 local BAR_JUMP_TWEEN_INFO = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
@@ -29,23 +31,22 @@ local READY_PULSE_INFO = TweenInfo.new(0.9, Enum.EasingStyle.Sine, Enum.EasingDi
 
 -- Thawing palette (cold, calm) and Ready palette (warm amber on bright neutral).
 -- Ready deliberately avoids the Legendary gold: the creature rarity is still hidden.
-local THAWING_PANEL_COLOR = Color3.fromRGB(24, 39, 50)
-local THAWING_TEXT_COLOR = Color3.fromRGB(235, 249, 255)
-local THAWING_STROKE_COLOR = Color3.fromRGB(150, 205, 235)
-local BAR_BACKGROUND_COLOR = Color3.fromRGB(8, 14, 20)
+local THAWING_STROKE_COLOR = Color3.fromRGB(127, 219, 255)
 local EARLY_BAR_COLOR = Color3.fromRGB(110, 170, 255)
 local MID_BAR_COLOR = Color3.fromRGB(90, 225, 255)
 local NEARLY_READY_BAR_COLOR = Color3.fromRGB(255, 176, 96)
-local READY_PANEL_COLOR = Color3.fromRGB(252, 247, 236)
-local READY_TEXT_COLOR = Color3.fromRGB(70, 30, 10)
 local READY_ACCENT_COLOR = Color3.fromRGB(255, 112, 40)
 
 type TimerUi = {
     Billboard: BillboardGui,
-    Panel: Frame,
     Stroke: UIStroke,
     Title: TextLabel,
     TimeLabel: TextLabel,
+    ReadyFace: GuiObject,
+    ReadyLabel: TextLabel,
+    ReadyText: string,
+    ThawIcon: GuiObject,
+    ReadyIcon: GuiObject,
     BarBackground: Frame,
     Fill: Frame,
     Mode: string,
@@ -58,6 +59,7 @@ local started = false
 local updateElapsed = 0
 local uiByVisual: { [BasePart]: TimerUi } = {}
 local watchedVisuals: { [BasePart]: boolean } = {}
+local timerTemplate: BillboardGui? = nil
 
 local function formatDuration(seconds: number): string
     local wholeSeconds = math.max(1, math.ceil(seconds))
@@ -67,14 +69,28 @@ local function formatDuration(seconds: number): string
     return string.format("%d:%02d", minutes, remainingSeconds)
 end
 
-local function createTimerUi(visualIce: BasePart): TimerUi
-    local billboard = Instance.new("BillboardGui")
+local function isLocalPlayerCarryingIce(): boolean
+    local character = Players.LocalPlayer.Character
+    if not character then
+        return false
+    end
+    for _, child in character:GetChildren() do
+        if child:IsA("BasePart") and child:GetAttribute(ICE_INSTANCE_ID_ATTRIBUTE) ~= nil then
+            return true
+        end
+    end
+    return false
+end
+
+local function createTimerUi(visualIce: BasePart): TimerUi?
+    local template = timerTemplate
+    if not template then
+        return nil
+    end
+
+    local billboard = template:Clone()
     billboard.Name = TIMER_GUI_NAME
     billboard.Adornee = visualIce
-    billboard.AlwaysOnTop = true
-    billboard.LightInfluence = 0
-    billboard.MaxDistance = TIMER_GUI_MAX_DISTANCE
-    billboard.Size = TIMER_GUI_SIZE
     billboard.StudsOffsetWorldSpace = Vector3.new(
         0,
         visualIce.Size.Y * 0.5 + TIMER_GUI_VERTICAL_PADDING,
@@ -82,92 +98,25 @@ local function createTimerUi(visualIce: BasePart): TimerUi
     )
     billboard.Enabled = false
 
-    local panel = Instance.new("Frame")
-    panel.Name = "Panel"
-    panel.Size = UDim2.fromScale(1, 1)
-    panel.BackgroundColor3 = THAWING_PANEL_COLOR
-    panel.BackgroundTransparency = 0.15
-    panel.BorderSizePixel = 0
-    panel.Parent = billboard
-
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 8)
-    corner.Parent = panel
-
-    local stroke = Instance.new("UIStroke")
-    stroke.Name = "Stroke"
-    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-    stroke.Color = THAWING_STROKE_COLOR
-    stroke.Thickness = 1.5
-    stroke.Transparency = 0.5
-    stroke.Parent = panel
-
-    local title = Instance.new("TextLabel")
-    title.Name = "Title"
-    title.Position = UDim2.fromOffset(10, 5)
-    title.Size = UDim2.fromOffset(100, 20)
-    title.BackgroundTransparency = 1
-    title.Font = Enum.Font.GothamBold
-    title.Text = "THAWING"
-    title.TextColor3 = THAWING_TEXT_COLOR
-    title.TextSize = 14
-    title.TextStrokeColor3 = Color3.fromRGB(8, 16, 22)
-    title.TextStrokeTransparency = 0.5
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.Parent = panel
-
-    local timeLabel = Instance.new("TextLabel")
-    timeLabel.Name = "TimeLabel"
-    timeLabel.Position = UDim2.fromOffset(110, 3)
-    timeLabel.Size = UDim2.fromOffset(80, 22)
-    timeLabel.BackgroundTransparency = 1
-    timeLabel.Font = Enum.Font.GothamBold
-    timeLabel.Text = "0:00"
-    timeLabel.TextColor3 = THAWING_TEXT_COLOR
-    timeLabel.TextScaled = true
-    timeLabel.TextStrokeColor3 = Color3.fromRGB(8, 16, 22)
-    timeLabel.TextStrokeTransparency = 0.5
-    timeLabel.TextXAlignment = Enum.TextXAlignment.Right
-    timeLabel.Parent = panel
-
-    local timeConstraint = Instance.new("UITextSizeConstraint")
-    timeConstraint.MinTextSize = 12
-    timeConstraint.MaxTextSize = 18
-    timeConstraint.Parent = timeLabel
-
-    local barBackground = Instance.new("Frame")
-    barBackground.Name = "BarBackground"
-    barBackground.Position = UDim2.fromOffset(10, 31)
-    barBackground.Size = UDim2.new(1, -20, 0, 10)
-    barBackground.BackgroundColor3 = BAR_BACKGROUND_COLOR
-    barBackground.BackgroundTransparency = 0.1
-    barBackground.BorderSizePixel = 0
-    barBackground.ClipsDescendants = true
-    barBackground.Parent = panel
-
-    local barCorner = Instance.new("UICorner")
-    barCorner.CornerRadius = UDim.new(0, 5)
-    barCorner.Parent = barBackground
-
-    local fill = Instance.new("Frame")
-    fill.Name = "Fill"
+    local panel = billboard:WaitForChild("Panel")
+    local barBackground = panel:WaitForChild("BarBackground") :: Frame
+    local fill = barBackground:WaitForChild("Fill") :: Frame
     fill.Size = UDim2.fromScale(0, 1)
     fill.BackgroundColor3 = EARLY_BAR_COLOR
-    fill.BorderSizePixel = 0
-    fill.Parent = barBackground
-
-    local fillCorner = Instance.new("UICorner")
-    fillCorner.CornerRadius = UDim.new(0, 5)
-    fillCorner.Parent = fill
 
     billboard.Parent = visualIce
+    local readyLabel = panel:WaitForChild("ReadyLabel") :: TextLabel
 
     return {
         Billboard = billboard,
-        Panel = panel,
-        Stroke = stroke,
-        Title = title,
-        TimeLabel = timeLabel,
+        Stroke = panel:WaitForChild("Stroke") :: UIStroke,
+        Title = panel:WaitForChild("Title") :: TextLabel,
+        TimeLabel = panel:WaitForChild("TimeLabel") :: TextLabel,
+        ReadyFace = panel:WaitForChild("ReadyFace") :: GuiObject,
+        ReadyLabel = readyLabel,
+        ReadyText = readyLabel.Text,
+        ThawIcon = panel:WaitForChild("ThawIcon") :: GuiObject,
+        ReadyIcon = panel:WaitForChild("ReadyIcon") :: GuiObject,
         BarBackground = barBackground,
         Fill = fill,
         Mode = "Thawing",
@@ -222,21 +171,18 @@ local function applyMode(ui: TimerUi, mode: string)
         ui.PulseTween = nil
     end
 
-    if mode == READY_STAGE then
-        ui.Panel.BackgroundColor3 = READY_PANEL_COLOR
-        ui.Panel.BackgroundTransparency = 0.03
+    local ready = mode == READY_STAGE
+    ui.ReadyFace.Visible = ready
+    ui.ReadyLabel.Visible = ready
+    ui.ReadyIcon.Visible = ready
+    ui.ThawIcon.Visible = not ready
+    ui.Title.Visible = not ready
+    ui.TimeLabel.Visible = not ready
+
+    if ready then
         ui.Stroke.Color = READY_ACCENT_COLOR
         ui.Stroke.Thickness = 3
         ui.Stroke.Transparency = 0.05
-        ui.Title.Text = "READY TO CRACK"
-        ui.Title.TextColor3 = READY_TEXT_COLOR
-        ui.Title.TextStrokeTransparency = 1
-        ui.Title.Font = Enum.Font.GothamBlack
-        ui.Title.TextScaled = true
-        ui.Title.TextXAlignment = Enum.TextXAlignment.Center
-        ui.Title.Position = UDim2.fromOffset(8, 4)
-        ui.Title.Size = UDim2.new(1, -16, 0, 24)
-        ui.TimeLabel.Visible = false
         ui.BarBackground.Visible = true
         ui.Fill.BackgroundColor3 = READY_ACCENT_COLOR
         setFillRatio(ui, 1)
@@ -244,21 +190,9 @@ local function applyMode(ui: TimerUi, mode: string)
         ui.PulseTween = TweenService:Create(ui.Stroke, READY_PULSE_INFO, { Transparency = 0.6 })
         ui.PulseTween:Play()
     else
-        ui.Panel.BackgroundColor3 = THAWING_PANEL_COLOR
-        ui.Panel.BackgroundTransparency = 0.15
         ui.Stroke.Color = THAWING_STROKE_COLOR
-        ui.Stroke.Thickness = 1.5
-        ui.Stroke.Transparency = 0.5
-        ui.Title.Text = "THAWING"
-        ui.Title.TextColor3 = THAWING_TEXT_COLOR
-        ui.Title.TextStrokeTransparency = 0.5
-        ui.Title.Font = Enum.Font.GothamBold
-        ui.Title.TextScaled = false
-        ui.Title.TextSize = 14
-        ui.Title.TextXAlignment = Enum.TextXAlignment.Left
-        ui.Title.Position = UDim2.fromOffset(10, 5)
-        ui.Title.Size = UDim2.fromOffset(100, 20)
-        ui.TimeLabel.Visible = true
+        ui.Stroke.Thickness = 2
+        ui.Stroke.Transparency = 0.45
     end
 end
 
@@ -302,6 +236,7 @@ local function updateTimer(visualIce: BasePart, ui: TimerUi)
 
     if visualIce:GetAttribute(THAW_VISUAL_STAGE_ATTRIBUTE) == READY_STAGE then
         applyMode(ui, READY_STAGE)
+        ui.ReadyLabel.Text = if isLocalPlayerCarryingIce() then CARRYING_READY_TEXT else ui.ReadyText
         billboard.Enabled = true
         return
     end
@@ -351,6 +286,9 @@ local function attachTimer(visualIce: BasePart)
     end
 
     local ui = createTimerUi(visualIce)
+    if not ui then
+        return
+    end
     uiByVisual[visualIce] = ui
     updateTimer(visualIce, ui)
 end
@@ -394,6 +332,7 @@ function ThawTimerController.Start(): ()
         return
     end
     started = true
+    timerTemplate = ReplicatedStorage:WaitForChild("UITemplates"):WaitForChild(TIMER_GUI_NAME) :: BillboardGui
 
     task.spawn(function()
         local thawVisuals = OwnBaseController.WaitForOwnBase():WaitForChild(THAW_VISUALS_FOLDER_NAME)

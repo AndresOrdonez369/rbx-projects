@@ -83,8 +83,11 @@ local function updateWarmth(deltaTime: number)
         local base = BaseService.GetBase(player)
 
         if state and character and base then
-            -- Only the player's own WarmZone refills/trains; other plots count as outside.
+            -- Precedence: own WarmZone (refill/train) > Home Camp Safe Zone (no change) > wilderness drain.
+            -- Another player's WarmZone is never a refill/training source.
             local spawn = base.SpawnLocation
+            local isInsideHomeSafeZone = BaseService.IsPlayerInsideHomeSafeZone(player)
+            state.IsInsideHomeSafeZone = isInsideHomeSafeZone
             local isInside = isCharacterInsideWarmZone(character, base.WarmZone)
             if not state.IsFrozen and isInside ~= nil then
                 local previousPresence = warmZonePresenceByPlayer[player]
@@ -112,6 +115,9 @@ local function updateWarmth(deltaTime: number)
                         state.CurrentWarmth + currentWarmthRefillPerSecond * deltaTime,
                         state.MaxWarmth
                     )
+                elseif isInsideHomeSafeZone then
+                    -- Home Camp / Lobby: CurrentWarmth neither drains (even while carrying) nor refills,
+                    -- and MaxWarmth does not train.
                 else
                     local rootPart = character:FindFirstChild("HumanoidRootPart")
                     assert(rootPart and rootPart:IsA("BasePart"), "Validated character must have a HumanoidRootPart")
@@ -169,6 +175,11 @@ function WarmthService.ApplyDamage(player: Player, amount: number): (boolean, nu
     local base = BaseService.GetBase(player)
     local spawn = if base then base.SpawnLocation else nil
     if not state or state.IsFrozen or not character or not spawn then
+        return false, nil, nil
+    end
+
+    -- Home Camp / Lobby never lowers CurrentWarmth (L-D14.5-T01), e.g. a Sprite projectile that followed the player in.
+    if BaseService.IsPlayerInsideHomeSafeZone(player) then
         return false, nil, nil
     end
 

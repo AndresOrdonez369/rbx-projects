@@ -1,0 +1,3 @@
+# Studio-authored UI prefabs (exported from Studio, synced by Rojo)
+!Src/StarterGui/*.rbxm
+!Src/ReplicatedStorage/UITemplates.rbxm

@@ -27,6 +27,12 @@
       "$ignoreUnknownInstances": true
     },
 
+    "StarterGui": {
+      "$className": "StarterGui",
+      "$path": "Src/StarterGui",
+      "$ignoreUnknownInstances": true
+    },
+
     "StarterPlayer": {
       "$className": "StarterPlayer",
 

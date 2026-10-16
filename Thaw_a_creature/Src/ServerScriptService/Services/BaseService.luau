@@ -4,6 +4,7 @@ local Workspace = game:GetService("Workspace")
 
 local shared = ReplicatedStorage:WaitForChild("Shared")
 local GameConfig = require(shared:WaitForChild("GameConfig"))
+local HearthConfig = require(shared:WaitForChild("HearthConfig"))
 local PenConfig = require(shared:WaitForChild("PenConfig"))
 
 export type Base = {
@@ -32,10 +33,16 @@ local BASE_NAME_PREFIX = "Base"
 local OWNER_USER_ID_ATTRIBUTE = "OwnerUserId"
 -- Replicated so every client can present each visible Pen at its owner's level.
 local PEN_LEVEL_ATTRIBUTE = "PenLevel"
+-- Read-only presentation state on the Hearth model so every client can show each owner's real Hearth tier.
+-- Gameplay (training, upgrades) reads PlayerState only; clients never write it back.
+local HEARTH_LEVEL_ATTRIBUTE = "HearthLevel"
+-- Authored shared Home Camp / Lobby volume (L-D14.5-T01). Server-readable only: never collides or queries.
+local HOME_SAFE_ZONE_NAME = "HomeCampSafeZone"
 
 local hasStarted = false
 local bases: { Base } = {}
 local baseByPlayer: { [Player]: Base } = {}
+local homeSafeZone: BasePart? = nil
 
 local function getChild(parent: Instance, name: string, className: string): any
     local child = parent:WaitForChild(name)
@@ -92,6 +99,43 @@ function BaseService.SetPenLevel(player: Player, penLevel: number): ()
     end
 end
 
+function BaseService.SetHearthLevel(player: Player, hearthLevel: number): ()
+    local base = baseByPlayer[player]
+    local levelConfig = HearthConfig[hearthLevel]
+    assert(
+        levelConfig ~= nil and levelConfig.Level == hearthLevel,
+        string.format("Unsupported HearthLevel %s", tostring(hearthLevel))
+    )
+    if base then
+        base.Hearth:SetAttribute(HEARTH_LEVEL_ATTRIBUTE, hearthLevel)
+    end
+end
+
+-- The single authoritative Home Camp / Lobby membership test. Warmth safety uses it now; player-contest
+-- immunity must reuse it rather than re-deriving geometry. Inclusive point-in-volume, server positions only.
+function BaseService.IsPositionInsideHomeSafeZone(worldPosition: Vector3): boolean
+    local zone = homeSafeZone
+    assert(zone, "BaseService must be started before testing Home Safe Zone membership")
+
+    local localPosition = zone.CFrame:PointToObjectSpace(worldPosition)
+    local halfSize = zone.Size * 0.5
+
+    return math.abs(localPosition.X) <= halfSize.X
+        and math.abs(localPosition.Y) <= halfSize.Y
+        and math.abs(localPosition.Z) <= halfSize.Z
+end
+
+-- Uses the player's authoritative HumanoidRootPart (also the rider's root while Riding). No character = outside.
+function BaseService.IsPlayerInsideHomeSafeZone(player: Player): boolean
+    local character = player.Character
+    local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+    if not rootPart or not rootPart:IsA("BasePart") then
+        return false
+    end
+
+    return BaseService.IsPositionInsideHomeSafeZone(rootPart.Position)
+end
+
 -- Assigns the first free plot. Returns nil when every plot is taken.
 function BaseService.AssignBase(player: Player): Base?
     assert(hasStarted, "BaseService must be started before assigning bases")
@@ -122,6 +166,7 @@ function BaseService.ReleaseBase(player: Player): ()
     baseByPlayer[player] = nil
     base.Folder:SetAttribute(OWNER_USER_ID_ATTRIBUTE, nil)
     base.Folder:SetAttribute(PEN_LEVEL_ATTRIBUTE, nil)
+    base.Hearth:SetAttribute(HEARTH_LEVEL_ATTRIBUTE, nil)
 end
 
 function BaseService.Start(): ()
@@ -130,6 +175,7 @@ function BaseService.Start(): ()
     end
 
     local basesFolder = getChild(Workspace, BASES_FOLDER_NAME, "Folder")
+    homeSafeZone = getChild(Workspace, HOME_SAFE_ZONE_NAME, "BasePart")
 
     local index = 1
     while true do
@@ -141,7 +187,9 @@ function BaseService.Start(): ()
 
         folder:SetAttribute(OWNER_USER_ID_ATTRIBUTE, nil)
         folder:SetAttribute(PEN_LEVEL_ATTRIBUTE, nil)
-        table.insert(bases, loadBase(folder, index))
+        local base = loadBase(folder, index)
+        base.Hearth:SetAttribute(HEARTH_LEVEL_ATTRIBUTE, nil)
+        table.insert(bases, base)
         index += 1
     end
 

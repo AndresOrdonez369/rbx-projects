@@ -1,42 +1,52 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
 
 local CashController = {}
 
-local HUD_NAME = "CashHud"
+-- Prefab: StarterGui.MainHud.BottomLeft.CashPill (authored in Studio).
+local HUD_NAME = "MainHud"
+local GAIN_PUNCH_INFO = TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+local GAIN_PUNCH_SCALE = 1.08
 local started = false
+local lastCash: number? = nil
 
-local function createHud(): TextLabel
+type Hud = {
+    Label: TextLabel,
+    Pill: GuiObject,
+}
+
+local function bindHud(): Hud
     local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
-    local existingHud = playerGui:FindFirstChild(HUD_NAME)
-    if existingHud then
-        existingHud:Destroy()
-    end
+    local pill = playerGui:WaitForChild(HUD_NAME):WaitForChild("BottomLeft"):WaitForChild("CashPill") :: GuiObject
 
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = HUD_NAME
-    screenGui.ResetOnSpawn = false
-    screenGui.DisplayOrder = 10
-    screenGui.Parent = playerGui
-
-    local cashLabel = Instance.new("TextLabel")
-    cashLabel.Name = "CashLabel"
-    cashLabel.Position = UDim2.fromOffset(24, 174)
-    cashLabel.Size = UDim2.fromOffset(180, 60)
-    cashLabel.BackgroundColor3 = Color3.fromRGB(20, 25, 32)
-    cashLabel.BackgroundTransparency = 0.2
-    cashLabel.BorderSizePixel = 0
-    cashLabel.Font = Enum.Font.GothamBold
-    cashLabel.Text = "CASH\n$--"
-    cashLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    cashLabel.TextSize = 22
-    cashLabel.TextStrokeTransparency = 0.75
-    cashLabel.Parent = screenGui
-
-    return cashLabel
+    return {
+        Label = pill:WaitForChild("CashLabel") :: TextLabel,
+        Pill = pill,
+    }
 end
 
-local function updateHud(cashLabel: TextLabel, data: any): ()
+local function formatCash(cash: number): string
+    local digits = string.format("%d", cash)
+    local formatted = digits:reverse():gsub("(%d%d%d)", "%1,"):reverse()
+    if formatted:sub(1, 1) == "," then
+        formatted = formatted:sub(2)
+    end
+
+    return "$" .. formatted
+end
+
+local function punch(pill: GuiObject): ()
+    local scale = pill:FindFirstChild("Punch")
+    if not scale or not scale:IsA("UIScale") then
+        return
+    end
+
+    scale.Scale = GAIN_PUNCH_SCALE
+    TweenService:Create(scale, GAIN_PUNCH_INFO, { Scale = 1 }):Play()
+end
+
+local function updateHud(hud: Hud, data: any): ()
     if type(data) ~= "table" then
         return
     end
@@ -50,7 +60,11 @@ local function updateHud(cashLabel: TextLabel, data: any): ()
         return
     end
 
-    cashLabel.Text = string.format("CASH\n$%d", cash)
+    hud.Label.Text = formatCash(cash)
+    if lastCash ~= nil and cash > lastCash then
+        punch(hud.Pill)
+    end
+    lastCash = cash
 end
 
 function CashController.Start(): ()
@@ -59,7 +73,7 @@ function CashController.Start(): ()
     end
     started = true
 
-    local cashLabel = createHud()
+    local hud = bindHud()
     local remotes = ReplicatedStorage:WaitForChild("Remotes")
     local gameplayEvent = remotes:WaitForChild("GameplayEvent")
 
@@ -67,7 +81,7 @@ function CashController.Start(): ()
 
     gameplayEvent.OnClientEvent:Connect(function(eventName, data)
         if eventName == "CashUpdated" then
-            updateHud(cashLabel, data)
+            updateHud(hud, data)
         end
     end)
 end

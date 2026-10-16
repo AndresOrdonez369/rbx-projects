@@ -23,6 +23,15 @@ local remotes = ReplicatedStorage:WaitForChild("Remotes")
 local gameplayRequest = remotes:WaitForChild("GameplayRequest")
 local gameplayEvent = remotes:WaitForChild("GameplayEvent")
 
+-- Carrier Commitment (L-D14.5-T04): while carrying Ice, only these gameplay requests are accepted. Movement and jump
+-- are not requests. Everything else (survival attacks, Grab, creature management, Sell, upgrades, reveal) is rejected.
+local CARRIER_ALLOWED_ACTIONS = {
+    DepositCarriedIce = true,
+    DropIce = true,
+    RideEquippedCreature = true,
+    UnrideEquippedCreature = true,
+}
+
 local servicesStarted = false
 local clientReadyPlayers: { [Player]: boolean } = {}
 
@@ -48,8 +57,6 @@ local function sendInitialState(player: Player): ()
 
     clientReadyPlayers[player] = nil
 
-    print(string.format("[SharedRemotes] Server received ClientReady via GameplayRequest from %s", player.Name))
-
     PlayerStateService.SendCashUpdate(player)
     HearthService.SendHearthUpdate(player)
     WarmthService.SendWarmthUpdate(player)
@@ -57,8 +64,6 @@ local function sendInitialState(player: Player): ()
     CreatureService.SendCreatureStateUpdate(player)
     sendWorldCycleUpdate(player)
     OnboardingService.SendOnboardingUpdate(player)
-    gameplayEvent:FireClient(player, "RemoteTestAcknowledged")
-    print(string.format("[SharedRemotes] Server sent RemoteTestAcknowledged via GameplayEvent to %s", player.Name))
 end
 
 local function initializePlayer(player: Player): ()
@@ -76,6 +81,7 @@ local function initializePlayer(player: Player): ()
 
     PlayerStateService.CreateState(player, persistentData)
     BaseService.SetPenLevel(player, persistentData.PenLevel)
+    BaseService.SetHearthLevel(player, persistentData.HearthLevel)
 
     -- Before services start, their Start() presents every player that already has state.
     if servicesStarted then
@@ -114,15 +120,30 @@ gameplayRequest.OnServerEvent:Connect(function(player, action, ...)
         return
     end
 
+    if IceService.IsCarryingIce(player) and not CARRIER_ALLOWED_ACTIONS[action] then
+        return
+    end
+
     if action == "GrabIce" then
         IceService.TryGrabIce(player, ...)
         return
     end
 
     if action == "DepositCarriedIce" then
-        if IceService.TryDepositCarriedIce(player, ...) then
+        local deposited, rejectReason = IceService.TryDepositCarriedIce(player, ...)
+        -- Feedback for the placement ghost (F-D15-T05C1); the server decision is already final.
+        gameplayEvent:FireClient(player, "ThawPlacementResult", {
+            Accepted = deposited == true,
+            Reason = if deposited then nil else (rejectReason or "Rejected"),
+        })
+        if deposited then
             OnboardingService.SendOnboardingUpdate(player)
         end
+        return
+    end
+
+    if action == "DropIce" then
+        IceService.TryDropIce(player, ...)
         return
     end
 

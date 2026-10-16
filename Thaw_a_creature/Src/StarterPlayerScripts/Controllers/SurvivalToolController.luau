@@ -9,6 +9,7 @@ local TOOL_ATTRIBUTE = "IsSurvivalTool"
 local SWING_OUT_TIME = 0.09
 local SWING_RETURN_TIME = 0.14
 local FORWARD_SWING_ANGLE = math.rad(75)
+local ICE_INSTANCE_ID_ATTRIBUTE = "IceInstanceID"
 
 local localPlayer = Players.LocalPlayer
 local remotes = ReplicatedStorage:WaitForChild("Remotes")
@@ -24,6 +25,22 @@ local function isSurvivalTool(instance: Instance): boolean
     return instance:IsA("Tool")
         and instance.Name == TOOL_NAME
         and instance:GetAttribute(TOOL_ATTRIBUTE) == true
+end
+
+-- Carrier Commitment: the server rejects every survival attack while carrying, so none is presented or requested.
+local function isCarryingIce(): boolean
+    local character = localPlayer.Character
+    if not character then
+        return false
+    end
+
+    for _, child in character:GetChildren() do
+        if child:IsA("BasePart") and child:GetAttribute(ICE_INSTANCE_ID_ATTRIBUTE) ~= nil then
+            return true
+        end
+    end
+
+    return false
 end
 
 local function presentSwing(tool: Tool): ()
@@ -71,6 +88,10 @@ local function connectTool(instance: Instance): ()
     connectedTools[tool] = true
 
     tool.Activated:Connect(function()
+        if isCarryingIce() then
+            return
+        end
+
         task.spawn(presentSwing, tool)
         gameplayRequest:FireServer("SwingSurvivalTool")
     end)

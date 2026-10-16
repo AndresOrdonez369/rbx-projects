@@ -6,18 +6,12 @@ local RegionConfig = require(ReplicatedStorage.Shared.RegionConfig)
 local RegionSignController = {}
 
 local SIGN_NAME = "RecommendedWarmthSign"
-local SURFACE_GUI_NAME = "RecommendedWarmthSurfaceGui"
+local SURFACE_GUI_NAME = "RecommendedWarmthSurfaceGui" -- template: ReplicatedStorage.UITemplates.RecommendedWarmthSurfaceGui
 local COMPACT_SUFFIXES = { "K", "M", "B", "T", "Qa", "Qi" }
 
--- Cold world signage + Warmth guidance: dark navy backing, icy accent, Warmth orange value.
-local BACKING_COLOR = Color3.fromRGB(12, 22, 32)
-local BORDER_COLOR = Color3.fromRGB(174, 226, 255)
-local NAME_COLOR = Color3.fromRGB(226, 238, 248)
-local LABEL_COLOR = Color3.fromRGB(150, 196, 226)
-local VALUE_COLOR = Color3.fromRGB(255, 160, 56)
+-- Comparison colours for the player's own Max Warmth (the rest of the sign styling lives in the prefab).
 local YOUR_MAX_COLOR_BELOW = Color3.fromRGB(150, 168, 186)
 local YOUR_MAX_COLOR_REACHED = Color3.fromRGB(255, 214, 168)
-local TEXT_STROKE_COLOR = Color3.fromRGB(5, 10, 16)
 
 type SignEntry = {
     Recommended: number,
@@ -72,34 +66,6 @@ local function formatCompact(value: number): string
     return formatScientific(abs)
 end
 
-local function createLabel(
-    name: string,
-    text: string,
-    position: UDim2,
-    size: UDim2,
-    textColor: Color3,
-    font: Enum.Font,
-    maxTextSize: number
-): TextLabel
-    local label = Instance.new("TextLabel")
-    label.Name = name
-    label.Position = position
-    label.Size = size
-    label.BackgroundTransparency = 1
-    label.Font = font
-    label.Text = text
-    label.TextColor3 = textColor
-    label.TextScaled = true
-    label.TextStrokeColor3 = TEXT_STROKE_COLOR
-    label.TextStrokeTransparency = 0.35
-
-    local constraint = Instance.new("UITextSizeConstraint")
-    constraint.MinTextSize = 8
-    constraint.MaxTextSize = maxTextSize
-    constraint.Parent = label
-    return label
-end
-
 -- Comparison only: never a gate, never red, no pass/fail wording.
 local function applyPlayerMax(entry: SignEntry, maxWarmth: number): ()
     entry.YourMaxLabel.Text = "YOUR MAX " .. formatCompact(maxWarmth)
@@ -115,57 +81,18 @@ local function attachSignPresentation(signPart: BasePart, displayName: string, r
         existingGui:Destroy()
     end
 
-    local surfaceGui = Instance.new("SurfaceGui")
+    local surfaceGui = ReplicatedStorage:WaitForChild("UITemplates"):WaitForChild(SURFACE_GUI_NAME):Clone()
     surfaceGui.Name = SURFACE_GUI_NAME
     surfaceGui.Adornee = signPart
-    surfaceGui.Face = Enum.NormalId.Front
-    surfaceGui.AlwaysOnTop = false
-    surfaceGui.LightInfluence = 0
-    surfaceGui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
-    surfaceGui.PixelsPerStud = 20
-    surfaceGui.Parent = signPart
 
-    local background = Instance.new("Frame")
-    background.Name = "Background"
-    background.Size = UDim2.fromScale(1, 1)
-    background.BackgroundColor3 = BACKING_COLOR
-    background.BackgroundTransparency = 0.06
-    background.BorderSizePixel = 0
-    background.Parent = surfaceGui
-
-    local border = Instance.new("UIStroke")
-    border.Color = BORDER_COLOR
-    border.Thickness = 3
-    border.Transparency = 0.2
-    border.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-    border.Parent = background
-
-    -- Hierarchy: value (hero) > region name > RECOMMENDED WARMTH label > your max.
-    createLabel(
-        "RegionName", displayName,
-        UDim2.fromScale(0.05, 0.05), UDim2.fromScale(0.9, 0.19),
-        NAME_COLOR, Enum.Font.GothamBold, 44
-    ).Parent = background
-
-    createLabel(
-        "Guidance", "RECOMMENDED WARMTH",
-        UDim2.fromScale(0.1, 0.26), UDim2.fromScale(0.8, 0.1),
-        LABEL_COLOR, Enum.Font.GothamBold, 24
-    ).Parent = background
-
-    createLabel(
-        "RecommendedWarmth", formatCompact(recommendedWarmth),
-        UDim2.fromScale(0.1, 0.37), UDim2.fromScale(0.8, 0.4),
-        VALUE_COLOR, Enum.Font.GothamBlack, 100
-    ).Parent = background
-
-    local yourMax = createLabel(
-        "YourMax", "",
-        UDim2.fromScale(0.15, 0.81), UDim2.fromScale(0.7, 0.11),
-        YOUR_MAX_COLOR_BELOW, Enum.Font.GothamBold, 20
-    )
+    local background = surfaceGui:WaitForChild("Background")
+    local regionName = background:WaitForChild("RegionName") :: TextLabel
+    local recommended = background:WaitForChild("RecommendedWarmth") :: TextLabel
+    regionName.Text = displayName
+    recommended.Text = formatCompact(recommendedWarmth)
+    local yourMax = background:WaitForChild("YourMax") :: TextLabel
     yourMax.Visible = false -- appears once the replicated MaxWarmth is known
-    yourMax.Parent = background
+    surfaceGui.Parent = signPart
 
     return {
         Recommended = recommendedWarmth,

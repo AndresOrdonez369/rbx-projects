@@ -962,6 +962,21 @@ function CreatureService.TryUnrideEquippedCreature(player: Player, ...): boolean
     return trySetRiding(player, false, select("#", ...))
 end
 
+-- System Unride for a validated player-contest knock-off (L-D14.5-T05). It never touches Vitality itself, and the
+-- creature stays Equipped and Following; the rider must Ride again manually.
+function CreatureService.ForceUnride(player: Player): boolean
+    local playerState = PlayerStateService.GetState(player)
+    if not playerState or playerState.IsRiding ~= true then
+        return false
+    end
+
+    playerState.IsRiding = false
+    CreatureService.ApplyEquippedWalkSpeed(player)
+    CreatureService.SendEquippedCreatureUpdate(player)
+
+    return true
+end
+
 -- Server-authoritative Mounted Strike origin: on the ground at the mount's front, raised to
 -- on-foot attack height, so giant mounts reach nearby ground threats without extra range.
 function CreatureService.GetMountedCombatOrigin(player: Player): CFrame?

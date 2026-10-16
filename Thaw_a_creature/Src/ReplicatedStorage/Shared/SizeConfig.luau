@@ -81,7 +81,39 @@ local SizeConfig = {
         },
     },
     GetVisualScale = getVisualScale,
+    -- L-D14.5-T03 Grab Hold: duration comes only from the Ice's visible Scale (never reward, rarity, type or Special).
+    GrabHold = {
+        MinScale = 0.75,
+        MaxScale = 5.00,
+        MinSeconds = 1.00,
+        MaxSeconds = 2.00,
+        Interpolation = "Linear",
+    },
 }
+
+-- Clamped, so out-of-range debug Ice still lands inside [MinSeconds, MaxSeconds].
+function SizeConfig.GetGrabHoldSeconds(scale: number): number
+    assert(isFiniteNumber(scale), "Grab Hold Scale must be a finite number")
+
+    local grabHold = SizeConfig.GrabHold
+    local normalizedScale = math.clamp(
+        (scale - grabHold.MinScale) / (grabHold.MaxScale - grabHold.MinScale),
+        0,
+        1
+    )
+
+    return grabHold.MinSeconds + (grabHold.MaxSeconds - grabHold.MinSeconds) * normalizedScale
+end
+
+-- Same Scale derivation as GetVisualScale (WeightMultiplier^(1/3)) without its range assert.
+function SizeConfig.GetGrabHoldSecondsForWeight(weightMultiplier: number): number
+    assert(
+        isFiniteNumber(weightMultiplier) and weightMultiplier > 0,
+        "WeightMultiplier must be a finite positive number"
+    )
+
+    return SizeConfig.GetGrabHoldSeconds(weightMultiplier ^ (1 / 3))
+end
 
 local function validateConfig(): ()
     assert(
@@ -96,6 +128,23 @@ local function validateConfig(): ()
         "SizeConfig.WithinBandBiasExponent must be finite and positive"
     )
     assert(#SizeConfig.SizeBands > 0, "SizeConfig must define at least one size band")
+
+    local grabHold = SizeConfig.GrabHold
+    assert(
+        isFiniteNumber(grabHold.MinScale)
+            and isFiniteNumber(grabHold.MaxScale)
+            and grabHold.MinScale > 0
+            and grabHold.MinScale < grabHold.MaxScale,
+        "SizeConfig.GrabHold Scale bounds must be finite, positive, and ordered"
+    )
+    assert(
+        isFiniteNumber(grabHold.MinSeconds)
+            and isFiniteNumber(grabHold.MaxSeconds)
+            and grabHold.MinSeconds > 0
+            and grabHold.MinSeconds <= grabHold.MaxSeconds,
+        "SizeConfig.GrabHold durations must be finite, positive, and ordered"
+    )
+    assert(grabHold.Interpolation == "Linear", "SizeConfig.GrabHold only supports Linear interpolation")
 
     local totalChance = 0
     local previousBand = nil

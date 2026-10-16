@@ -10,6 +10,8 @@ local IceConfig = require(shared:WaitForChild("IceConfig"))
 local RarityConfig = require(shared:WaitForChild("RarityConfig"))
 local SizeConfig = require(shared:WaitForChild("SizeConfig"))
 local ThawConfig = require(shared:WaitForChild("ThawConfig"))
+local PenConfig = require(shared:WaitForChild("PenConfig"))
+local ThawPlacement = require(shared:WaitForChild("ThawPlacement"))
 local WorldCycleConfig = require(shared:WaitForChild("WorldCycleConfig"))
 local StudioTestConfig = require(script.Parent.Parent:WaitForChild("StudioTestConfig"))
 local remotes = ReplicatedStorage:WaitForChild("Remotes")
@@ -37,31 +39,19 @@ local INITIAL_BONUS_PROGRESS_SECONDS = 0
 local PLAYER_FOLDER_PREFIX = "Player_"
 local READY_PROMPT_NAME = "ReadyPrompt"
 local THAW_READY_AT_ATTRIBUTE = "ThawReadyAt"
-local GRID_COLUMNS = 2
-local GRID_VISUAL_PADDING = 1.5
-local GRID_FIRST_ROW_PADDING = 0.5
-local MAX_PROTOTYPE_VISUAL_WIDTH = math.max(
-    IceVisualFactory.GetBaseSize("Regular").X,
-    IceVisualFactory.GetBaseSize("Thick").X,
-    IceVisualFactory.GetBaseSize("Ancient").X,
-    IceVisualFactory.GetBaseSize("Black").X,
-    IceVisualFactory.GetBaseSize("Meteor").X
-)
-local MAX_PROTOTYPE_VISUAL_DEPTH = math.max(
-    IceVisualFactory.GetBaseSize("Regular").Z,
-    IceVisualFactory.GetBaseSize("Thick").Z,
-    IceVisualFactory.GetBaseSize("Ancient").Z,
-    IceVisualFactory.GetBaseSize("Black").Z,
-    IceVisualFactory.GetBaseSize("Meteor").Z
-)
-local GRID_COLUMN_SPACING = MAX_PROTOTYPE_VISUAL_WIDTH + GRID_VISUAL_PADDING
-local GRID_ROW_SPACING = MAX_PROTOTYPE_VISUAL_DEPTH + GRID_VISUAL_PADDING
+-- ThawReadyAt is the stable completion timestamp (DepositedAt + BaseDuration - Bonus). It is only rewritten when that
+-- value really changes (deposit, Great Frost surge, reconstruction), never every presentation tick.
+local READY_AT_EPSILON = 1e-3
 local REQUIRED_REVEAL_HITS = 3
 local PRESENTATION_SURFACE_EPSILON = 0.001
 local JACKPOT_CREATURE_ID = "Nidhogg"
 local JACKPOT_WEIGHT_MULTIPLIER = 125
 
 local visualsByPlayer: { [Player]: { [string]: BasePart } } = {}
+-- Session-only presentation positions (Pen-local X/Z, see ThawPlacement). Never persisted: on rejoin / reconstruction
+-- saved ThawItems receive a deterministic fallback spot instead.
+type SessionPosition = { X: number, Z: number, Manual: boolean }
+local sessionPositionsByPlayer: { [Player]: { [string]: SessionPosition } } = {}
 local lastBeginRevealRequestAtByPlayer: { [Player]: number } = {}
 local issuedSessionIDs: { [string]: boolean } = {}
 local hasStarted = false
@@ -164,10 +154,12 @@ local function updatePresentation(
     local effectiveElapsed = getEffectiveElapsedAtTime(thawItem, currentTime)
     local progress = math.clamp(effectiveElapsed / thawItem.BaseDurationSeconds, 0, 1)
     local isReady = progress >= 1
-    local effectiveSecondsUntilReady = math.max(0, thawItem.BaseDurationSeconds - effectiveElapsed)
-    local readyAt = currentTime + effectiveSecondsUntilReady
-
-    visualIce:SetAttribute(THAW_READY_AT_ATTRIBUTE, readyAt)
+    -- Stable completion time: identical every tick, so it only replicates when the effective completion changes.
+    local readyAt = thawItem.DepositedAtTime + thawItem.BaseDurationSeconds - thawItem.BonusProgressSeconds
+    local currentReadyAt = visualIce:GetAttribute(THAW_READY_AT_ATTRIBUTE)
+    if type(currentReadyAt) ~= "number" or math.abs(currentReadyAt - readyAt) > READY_AT_EPSILON then
+        visualIce:SetAttribute(THAW_READY_AT_ATTRIBUTE, readyAt)
+    end
     local stageName = getVisualStage(progress)
     IceVisualFactory.ApplyThawStage(visualIce, stageName)
     IceVisualFactory.ApplyRevealHit(visualIce, currentRevealHit)
@@ -237,38 +229,85 @@ local function getSortedThawItems(activeThawItems: { [string]: PlayerStateServic
     return sortedThawItems
 end
 
+-- ===== Thaw placement / fallback layout (F-D15-T05C1) =====
+-- Footprints always come from the authoritative IceType + WeightMultiplier, never from the client.
+local function getFootprint(iceType: string, weightMultiplier: number): (number, number)
+    local size = IceVisualFactory.GetScaledSize(iceType, weightMultiplier)
+    return size.X * 0.5, size.Z * 0.5
+end
+
+local function getPenLevel(playerState: PlayerStateService.PlayerState): number
+    local penLevel = playerState.PenLevel
+    return if PenConfig.IsValidLevel(penLevel) then penLevel else 1
+end
+
+local function makeBox(position: SessionPosition, thawItem: PlayerStateService.ThawItem, penLevel: number): ThawPlacement.Box
+    local halfX, halfZ = getFootprint(thawItem.IceType, thawItem.WeightMultiplier)
+    return {
+        X = position.X,
+        Z = position.Z,
+        HalfX = halfX,
+        HalfZ = halfZ,
+        Oversize = ThawPlacement.IsOversize(penLevel, halfX, halfZ),
+    }
+end
+
+-- Every active ThawItem gets a session position: manual placements keep theirs; anything without one (rejoin, server
+-- reconstruction, fallback deposit) receives a deterministic in-Pen fallback spot once and keeps it, so the layout
+-- never reshuffles when new Ice is added.
+local function resolveSessionPositions(
+    player: Player,
+    playerState: PlayerStateService.PlayerState
+): ({ [string]: SessionPosition }, { ThawPlacement.Box })
+    local positions = sessionPositionsByPlayer[player]
+    if not positions then
+        positions = {}
+        sessionPositionsByPlayer[player] = positions
+    end
+
+    local penLevel = getPenLevel(playerState)
+    local occupied = {}
+    for thawID, position in positions do
+        local thawItem = playerState.ActiveThawItems[thawID]
+        if thawItem then
+            table.insert(occupied, makeBox(position, thawItem, penLevel))
+        else
+            positions[thawID] = nil
+        end
+    end
+
+    for _, thawItem in getSortedThawItems(playerState.ActiveThawItems) do
+        if not positions[thawItem.ThawID] then
+            local halfX, halfZ = getFootprint(thawItem.IceType, thawItem.WeightMultiplier)
+            local x, z = ThawPlacement.FindFallback(penLevel, halfX, halfZ, occupied)
+            local position = { X = x, Z = z, Manual = false }
+            positions[thawItem.ThawID] = position
+            table.insert(occupied, makeBox(position, thawItem, penLevel))
+        end
+    end
+
+    return positions, occupied
+end
+
 local function getDisplayCFrame(
     base: BaseService.Base,
-    displayIndex: number,
+    position: SessionPosition,
     iceType: string,
     weightMultiplier: number
 ): CFrame
-    local anchor = base.ThawArea
+    local penFrame = base.PenOrigin.CFrame
     local surfaceY = getPresentationSurfaceY(base)
-
-    local zeroBasedIndex = displayIndex - 1
-    local column = zeroBasedIndex % GRID_COLUMNS
-    local row = math.floor(zeroBasedIndex / GRID_COLUMNS)
-    local xOffset = (column - (GRID_COLUMNS - 1) * 0.5) * GRID_COLUMN_SPACING
-    local zOffset = MAX_PROTOTYPE_VISUAL_DEPTH * 0.5
-        + GRID_FIRST_ROW_PADDING
-        + row * GRID_ROW_SPACING
     local visualSize = IceVisualFactory.GetScaledSize(iceType, weightMultiplier)
-    local horizontalCFrame = anchor.CFrame * CFrame.new(xOffset, 0, zOffset)
-    local position = Vector3.new(
-        horizontalCFrame.Position.X,
-        surfaceY + visualSize.Y * 0.5,
-        horizontalCFrame.Position.Z
-    )
+    local horizontal = penFrame:PointToWorldSpace(Vector3.new(position.X, 0, position.Z))
 
-    return CFrame.new(position) * horizontalCFrame.Rotation
+    return CFrame.new(horizontal.X, surfaceY + visualSize.Y * 0.5, horizontal.Z) * penFrame.Rotation
 end
 
 local function createVisual(
     player: Player,
     base: BaseService.Base,
     thawItem: PlayerStateService.ThawItem,
-    displayIndex: number,
+    position: SessionPosition,
     readyInteractionAvailable: boolean
 ): BasePart
     local creature = CreatureConfig[thawItem.CreatureID]
@@ -279,7 +318,7 @@ local function createVisual(
         thawItem.IceType,
         IceVisualFactory.GetPreRevealSilhouetteProfile(thawItem.CreatureID, thawItem.IceType, thawItem.IsSpecial),
         thawItem.WeightMultiplier,
-        getDisplayCFrame(base, displayIndex, thawItem.IceType, thawItem.WeightMultiplier),
+        getDisplayCFrame(base, position, thawItem.IceType, thawItem.WeightMultiplier),
         playerFolder
     )
     local configured, configurationError = pcall(function()
@@ -383,7 +422,9 @@ function ThawService.RefreshPlayerVisuals(player: Player): ()
         end
     end
 
-    for displayIndex, thawItem in getSortedThawItems(playerState.ActiveThawItems) do
+    local positions = resolveSessionPositions(player, playerState)
+    for _, thawItem in getSortedThawItems(playerState.ActiveThawItems) do
+        local position = positions[thawItem.ThawID]
         local refreshed, refreshError = pcall(function()
             local activeRevealSession = playerState.ActiveRevealSession
             local readyInteractionAvailable = playerState.CurrentlyCarryingIceID == nil
@@ -400,12 +441,12 @@ function ThawService.RefreshPlayerVisuals(player: Player): ()
             end
 
             if not visualIce then
-                visualIce = createVisual(player, base, thawItem, displayIndex, readyInteractionAvailable)
+                visualIce = createVisual(player, base, thawItem, position, readyInteractionAvailable)
                 playerVisuals[thawItem.ThawID] = visualIce
             else
                 IceVisualFactory.SetCFrame(
                     visualIce,
-                    getDisplayCFrame(base, displayIndex, thawItem.IceType, thawItem.WeightMultiplier)
+                    getDisplayCFrame(base, position, thawItem.IceType, thawItem.WeightMultiplier)
                 )
                 updatePresentation(
                     visualIce,
@@ -433,9 +474,49 @@ function ThawService.RefreshPlayerVisuals(player: Player): ()
     end
 end
 
+-- Server authority for a manual placement request (Pen-local x/z). Uses the exact Ice's IceType + WeightMultiplier, the
+-- current PenLevel bounds, reserved gate / fence space and every authoritative thawing Ice footprint. Roaming creatures
+-- are presentation only and never block a placement.
+function ThawService.ValidatePlacement(
+    player: Player,
+    iceType: string,
+    weightMultiplier: number,
+    x: any,
+    z: any,
+    requesterPosition: Vector3
+): (boolean, string?)
+    if type(x) ~= "number" or type(z) ~= "number" or x ~= x or z ~= z or math.abs(x) > 1e4 or math.abs(z) > 1e4 then
+        return false, "Invalid"
+    end
+
+    local playerState = PlayerStateService.GetState(player)
+    local base = BaseService.GetBase(player)
+    if not playerState or not base or not IceConfig[iceType] then
+        return false, "Invalid"
+    end
+
+    local penLevel = getPenLevel(playerState)
+    local halfX, halfZ = getFootprint(iceType, weightMultiplier)
+    local _, occupied = resolveSessionPositions(player, playerState)
+    local valid, reason = ThawPlacement.Validate(penLevel, x, z, halfX, halfZ, occupied)
+    if not valid then
+        return false, reason
+    end
+
+    local spot = base.PenOrigin.CFrame:PointToWorldSpace(Vector3.new(x, 0, z))
+    local horizontalOffset = Vector3.new(spot.X - requesterPosition.X, 0, spot.Z - requesterPosition.Z)
+    if horizontalOffset.Magnitude > ThawPlacement.MaxReach then
+        return false, "TooFar"
+    end
+
+    return true
+end
+
+-- placement (optional) is an already-validated manual Pen-local spot; without it the Ice gets a fallback spot.
 function ThawService.CreateFromDepositedIce(
     player: Player,
-    depositedIce: DepositedIce
+    depositedIce: DepositedIce,
+    placement: { X: number, Z: number }?
 ): PlayerStateService.ThawItem?
     local playerState = PlayerStateService.GetState(player)
     if not playerState then
@@ -472,6 +553,14 @@ function ThawService.CreateFromDepositedIce(
     }
 
     playerState.ActiveThawItems[thawID] = thawItem
+    if placement then
+        local positions = sessionPositionsByPlayer[player]
+        if not positions then
+            positions = {}
+            sessionPositionsByPlayer[player] = positions
+        end
+        positions[thawID] = { X = placement.X, Z = placement.Z, Manual = true }
+    end
 
     local refreshed, refreshError = pcall(ThawService.RefreshPlayerVisuals, player)
     if not refreshed then
@@ -778,6 +867,7 @@ function ThawService.Start(): ()
 
     Players.PlayerRemoving:Connect(function(player)
         lastBeginRevealRequestAtByPlayer[player] = nil
+        sessionPositionsByPlayer[player] = nil
         removePlayerVisuals(player)
     end)
     RunService.Heartbeat:Connect(function(deltaTime)

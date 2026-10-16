@@ -168,6 +168,7 @@ function HearthService.TryUpgrade(player: Player, ...): boolean
     end
 
     playerState.HearthLevel = nextConfig.Level
+    BaseService.SetHearthLevel(player, playerState.HearthLevel)
     HearthService.SendHearthUpdate(player)
 
     return true

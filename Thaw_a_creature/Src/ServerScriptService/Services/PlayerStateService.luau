@@ -81,6 +81,15 @@ export type PlayerState = {
     ActiveThawItems: { [string]: ThawItem },
     ActiveRevealSession: RevealSession?,
     IsFrozen: boolean,
+    -- Runtime-only mirror of BaseService.IsPlayerInsideHomeSafeZone, refreshed by WarmthService. Never persisted.
+    IsInsideHomeSafeZone: boolean,
+    -- Runtime-only Grab Hold mirror owned by IceService (L-D14.5-T03). A hold never reserves the Ice. Never persisted.
+    ActiveGrabHoldIceID: string?,
+    GrabHoldStartedAtServerTime: number?,
+    -- Runtime-only player-contest windows owned by PlayerContestService (L-D14.5-T05/T06), os.clock() times.
+    -- Ragdolled: no attacks or Grab Hold. Until ImmuneUntil the player cannot be contested again. Never persisted.
+    ContestRagdollUntil: number,
+    ContestImmuneUntil: number,
 }
 
 local PlayerStateService = {}
@@ -141,6 +150,11 @@ local function createStateFromPersistentData(player: Player, data: PersistentDat
         ActiveThawItems = activeThawItems,
         ActiveRevealSession = nil,
         IsFrozen = false,
+        IsInsideHomeSafeZone = false,
+        ActiveGrabHoldIceID = nil,
+        GrabHoldStartedAtServerTime = nil,
+        ContestRagdollUntil = 0,
+        ContestImmuneUntil = 0,
     }
 end
 

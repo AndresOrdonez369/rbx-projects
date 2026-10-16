@@ -5,7 +5,7 @@ local FrostSpritePresentationController = {}
 
 local ACTIVE_SPRITE_FOLDER_NAME = "ActiveFrostSprites"
 local CORE_PART_NAME = "Core"
-local PRESENTATION_NAME = "SurvivalReadability"
+local PRESENTATION_NAME = "SurvivalReadability" -- template: ReplicatedStorage.UITemplates.SurvivalReadability
 local HIT_HIGHLIGHT_NAME = "ConfirmedHit"
 local TELEGRAPH_HIGHLIGHT_NAME = "AttackTelegraph"
 
@@ -27,45 +27,14 @@ local presentationBySprite: { [Model]: SpritePresentation } = setmetatable({}, {
 local hitFlashRevisionBySprite: { [Model]: number } = setmetatable({}, { __mode = "k" })
 
 local function createPresentation(sprite: Model, core: BasePart): SpritePresentation
-    local billboard = Instance.new("BillboardGui")
+    local template = ReplicatedStorage:WaitForChild("UITemplates"):WaitForChild(PRESENTATION_NAME)
+    local billboard = template:Clone()
     billboard.Name = PRESENTATION_NAME
     billboard.Adornee = core
-    billboard.AlwaysOnTop = true
-    billboard.LightInfluence = 0
-    billboard.MaxDistance = 70
-    billboard.Size = UDim2.fromOffset(70, 40)
-    billboard.StudsOffsetWorldSpace = Vector3.new(0, 3.1, 0)
     billboard.Parent = sprite
 
-    local warning = Instance.new("TextLabel")
-    warning.Name = "AttackWarning"
-    warning.Position = UDim2.fromOffset(0, 0)
-    warning.Size = UDim2.new(1, 0, 0, 22)
-    warning.BackgroundTransparency = 1
-    warning.Font = Enum.Font.GothamBlack
-    warning.Text = "!"
-    warning.TextColor3 = Color3.fromRGB(255, 105, 80)
-    warning.TextSize = 25
-    warning.TextStrokeColor3 = Color3.fromRGB(255, 240, 180)
-    warning.TextStrokeTransparency = 0
-    warning.Visible = false
-    warning.Parent = billboard
-
-    local barBackground = Instance.new("Frame")
-    barBackground.Name = "HealthBackground"
-    barBackground.Position = UDim2.fromOffset(5, 26)
-    barBackground.Size = UDim2.new(1, -10, 0, 9)
-    barBackground.BackgroundColor3 = Color3.fromRGB(18, 28, 38)
-    barBackground.BorderSizePixel = 0
-    barBackground.ClipsDescendants = true
-    barBackground.Parent = billboard
-
-    local fill = Instance.new("Frame")
-    fill.Name = "HealthFill"
-    fill.Size = UDim2.fromScale(1, 1)
-    fill.BackgroundColor3 = Color3.fromRGB(115, 215, 240)
-    fill.BorderSizePixel = 0
-    fill.Parent = barBackground
+    local warning = billboard:WaitForChild("AttackWarning") :: TextLabel
+    local fill = billboard:WaitForChild("HealthBackground"):WaitForChild("HealthFill") :: Frame
 
     local telegraphHighlight = Instance.new("Highlight")
     telegraphHighlight.Name = TELEGRAPH_HIGHLIGHT_NAME

@@ -9,32 +9,33 @@ local WarmthConfig = require(shared:WaitForChild("WarmthConfig"))
 
 local WarmthController = {}
 
-local HUD_NAME = "WarmthHud"
+-- Prefabs: StarterGui.MainHud.TopCenter.WarmthPanel and StarterGui.WarmthFx (authored in Studio).
+local HUD_NAME = "MainHud"
+local FX_NAME = "WarmthFx"
 local SAFE_STATE = "Safe"
 local LOW_STATE = "Low"
 local CRITICAL_STATE = "Critical"
 
-local NORMAL_BACKGROUND_COLOR = Color3.fromRGB(20, 25, 32)
-local LOW_BACKGROUND_COLOR = Color3.fromRGB(18, 52, 70)
-local CRITICAL_BACKGROUND_COLOR = Color3.fromRGB(78, 20, 26)
-local HIT_BACKGROUND_COLOR = Color3.fromRGB(150, 55, 65)
+-- Panel colours tint the prefab's frosted gradient (white = untinted).
+local NORMAL_BACKGROUND_COLOR = Color3.fromRGB(255, 255, 255)
+local LOW_BACKGROUND_COLOR = Color3.fromRGB(165, 225, 255)
+local CRITICAL_BACKGROUND_COLOR = Color3.fromRGB(255, 120, 112)
+local PANEL_TRANSPARENCY = 0.06
 
 local SAFE_FILL_COLOR = Color3.fromRGB(255, 154, 56)
+local SAFE_RIM_COLOR = Color3.fromRGB(127, 219, 255)
+local SAFE_RIM_TRANSPARENCY = 0.55
 local LOW_ACCENT_COLOR = Color3.fromRGB(110, 215, 255)
 local CRITICAL_ACCENT_COLOR = Color3.fromRGB(255, 82, 70)
 local LOW_TAG_TEXT_COLOR = Color3.fromRGB(8, 30, 44)
 local CRITICAL_TAG_TEXT_COLOR = Color3.fromRGB(255, 255, 255)
 
-local FROST_EDGE_COLOR = Color3.fromRGB(145, 220, 255)
-local WARM_EDGE_COLOR = Color3.fromRGB(255, 170, 84)
--- Low: deeper, mostly static frost. Critical: deeper still, with a restrained pulse.
-local FROST_TOP_BOTTOM_DEPTH = 78
-local FROST_SIDE_DEPTH = 60
-local CRITICAL_TOP_BOTTOM_DEPTH = 130
-local CRITICAL_SIDE_DEPTH = 100
-local LOW_EDGE_TRANSPARENCY = 0.62
-local CRITICAL_EDGE_TRANSPARENCY = 0.5
-local CRITICAL_EDGE_PULSE_TRANSPARENCY = 0.3
+-- Low: frost creeps in from beyond the screen edge. Critical: full frost with a restrained pulse.
+local LOW_VIGNETTE_SCALE = 1.14
+local CRITICAL_VIGNETTE_SCALE = 1
+local LOW_EDGE_TRANSPARENCY = 0.4
+local CRITICAL_EDGE_TRANSPARENCY = 0.12
+local CRITICAL_EDGE_PULSE_TRANSPARENCY = 0.32
 local FROST_PULSE_INFO = TweenInfo.new(0.45, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
 
 -- One-shot impact when first entering Critical.
@@ -44,7 +45,7 @@ local IMPACT_FLASH_SECONDS = 0.4
 
 -- Relief only after gradual recovery; any single-update ratio jump above this is treated as a reset/freeze-like restore.
 local RELIEF_SECONDS = 0.5
-local RELIEF_WARM_TRANSPARENCY = 0.55
+local RELIEF_WARM_TRANSPARENCY = 0.3
 local RELIEF_MAX_RATIO_JUMP = 0.3
 
 -- Local-only outline on the carried Ice while Low/Critical.
@@ -65,14 +66,10 @@ local LOW_PULSE_INFO = TweenInfo.new(1.2, Enum.EasingStyle.Sine, Enum.EasingDire
 local CRITICAL_PULSE_INFO = TweenInfo.new(0.25, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
 local BAR_TWEEN_INFO = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
-local PANEL_WIDTH = 250
-local PANEL_HEIGHT_SAFE = 52
-local PANEL_HEIGHT_WARNING = 76
-
 local SUFFIXES = { "K", "M", "B", "T", "Qa", "Qi" }
 
 -- Max Warmth gain popup (world-space feedback above the local character).
-local GAIN_POPUP_NAME = "MaxWarmthGainPopup"
+local GAIN_POPUP_NAME = "MaxWarmthGainPopup" -- template: ReplicatedStorage.UITemplates.MaxWarmthGainPopup
 local GAIN_SHOWER_INTERVAL_SECONDS = 0.5 -- real deltas are grouped into one shower per interval
 local GAIN_SHOWER_CHUNKS = 4
 local GAIN_SHOWER_SPREAD_SECONDS = 0.45 -- chunks of one shower are staggered over this time
@@ -89,20 +86,17 @@ local GAIN_POPUP_MAX_ACTIVE = 10
 local GAIN_CAPTION_BURST_GAP_SECONDS = 2
 local GAIN_COLOR_LOW = Color3.fromRGB(255, 142, 48)
 local GAIN_COLOR_HIGH = Color3.fromRGB(255, 176, 52)
-local GAIN_SUBTEXT_COLOR = Color3.fromRGB(255, 222, 176)
-local GAIN_STROKE_COLOR = Color3.fromRGB(70, 28, 6)
 
 type Hud = {
     Panel: Frame,
     PanelStroke: UIStroke,
-    PanelScale: UIScale,
     ValueLabel: TextLabel,
     Fill: Frame,
     Tag: TextLabel,
     PulseOverlay: Frame,
     HitOverlay: Frame,
-    FrostEdges: { Frame },
-    WarmEdges: { Frame },
+    FrostEdges: { ImageLabel },
+    WarmEdges: { ImageLabel },
     ImpactFlash: Frame,
 }
 
@@ -129,239 +123,25 @@ local carryHighlight: Highlight? = nil
 local carryPulseTween: Tween? = nil
 local criticalSound: Sound? = nil
 local criticalSoundTween: Tween? = nil
+local gainPopupTemplate: BillboardGui? = nil
 
-local function addCorner(parent: Instance, radius: number): ()
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, radius)
-    corner.Parent = parent
-end
-
-local function createFrostEdge(
-    parent: Instance,
-    name: string,
-    position: UDim2,
-    size: UDim2,
-    rotation: number,
-    color: Color3?
-): Frame
-    local edge = Instance.new("Frame")
-    edge.Name = name
-    edge.Position = position
-    edge.Size = size
-    edge.BackgroundColor3 = color or FROST_EDGE_COLOR
-    edge.BackgroundTransparency = 1
-    edge.BorderSizePixel = 0
-    edge.ZIndex = 1
-    edge.Visible = false
-    edge.Parent = parent
-
-    local gradient = Instance.new("UIGradient")
-    gradient.Rotation = rotation
-    gradient.Transparency = NumberSequence.new({
-        NumberSequenceKeypoint.new(0, 0),
-        NumberSequenceKeypoint.new(0.35, 0.65),
-        NumberSequenceKeypoint.new(1, 1),
-    })
-    gradient.Parent = edge
-
-    return edge
-end
-
-local function createEdgeSet(parent: Instance, prefix: string, color: Color3): { Frame }
-    return {
-        createFrostEdge(
-            parent,
-            "Top" .. prefix,
-            UDim2.fromScale(0, 0),
-            UDim2.new(1, 0, 0, FROST_TOP_BOTTOM_DEPTH),
-            90,
-            color
-        ),
-        createFrostEdge(
-            parent,
-            "Bottom" .. prefix,
-            UDim2.new(0, 0, 1, -FROST_TOP_BOTTOM_DEPTH),
-            UDim2.new(1, 0, 0, FROST_TOP_BOTTOM_DEPTH),
-            -90,
-            color
-        ),
-        createFrostEdge(
-            parent,
-            "Left" .. prefix,
-            UDim2.fromScale(0, 0),
-            UDim2.new(0, FROST_SIDE_DEPTH, 1, 0),
-            0,
-            color
-        ),
-        createFrostEdge(
-            parent,
-            "Right" .. prefix,
-            UDim2.new(1, -FROST_SIDE_DEPTH, 0, 0),
-            UDim2.new(0, FROST_SIDE_DEPTH, 1, 0),
-            180,
-            color
-        ),
-    }
-end
-
-local function createHud(): Hud
+local function bindHud(): Hud
     local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
-
-    local existingHud = playerGui:FindFirstChild(HUD_NAME)
-    if existingHud then
-        existingHud:Destroy()
-    end
-
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = HUD_NAME
-    screenGui.ResetOnSpawn = false
-    screenGui.DisplayOrder = 10
-    screenGui.Parent = playerGui
-
-    local frostEdges = createEdgeSet(screenGui, "Frost", FROST_EDGE_COLOR)
-    local warmEdges = createEdgeSet(screenGui, "Warm", WARM_EDGE_COLOR)
-
-    local impactFlash = Instance.new("Frame")
-    impactFlash.Name = "ImpactFlash"
-    impactFlash.Size = UDim2.fromScale(1, 1)
-    impactFlash.BackgroundColor3 = IMPACT_FLASH_COLOR
-    impactFlash.BackgroundTransparency = 1
-    impactFlash.BorderSizePixel = 0
-    impactFlash.Active = false
-    impactFlash.ZIndex = 1
-    impactFlash.Parent = screenGui
-
-    local panel = Instance.new("Frame")
-    panel.Name = "WarmthPanel"
-    panel.Position = UDim2.fromOffset(24, 24)
-    panel.Size = UDim2.fromOffset(PANEL_WIDTH, PANEL_HEIGHT_SAFE)
-    panel.BackgroundColor3 = NORMAL_BACKGROUND_COLOR
-    panel.BackgroundTransparency = 0.2
-    panel.BorderSizePixel = 0
-    panel.ClipsDescendants = true
-    panel.ZIndex = 2
-    panel.Parent = screenGui
-    addCorner(panel, 8)
-
-    local panelScale = Instance.new("UIScale")
-    panelScale.Name = "ViewportScale"
-    panelScale.Parent = panel
-
-    local panelStroke = Instance.new("UIStroke")
-    panelStroke.Name = "WarningStroke"
-    panelStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-    panelStroke.Enabled = false
-    panelStroke.Thickness = 2
-    panelStroke.Parent = panel
-
-    local pulseOverlay = Instance.new("Frame")
-    pulseOverlay.Name = "PulseOverlay"
-    pulseOverlay.Size = UDim2.fromScale(1, 1)
-    pulseOverlay.BackgroundTransparency = 1
-    pulseOverlay.BorderSizePixel = 0
-    pulseOverlay.Visible = false
-    pulseOverlay.ZIndex = 2
-    pulseOverlay.Parent = panel
-    addCorner(pulseOverlay, 8)
-
-    local titleLabel = Instance.new("TextLabel")
-    titleLabel.Name = "Title"
-    titleLabel.Position = UDim2.fromOffset(10, 6)
-    titleLabel.Size = UDim2.fromOffset(84, 18)
-    titleLabel.BackgroundTransparency = 1
-    titleLabel.Font = Enum.Font.GothamBold
-    titleLabel.Text = "WARMTH"
-    titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    titleLabel.TextSize = 15
-    titleLabel.TextStrokeTransparency = 0.6
-    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-    titleLabel.ZIndex = 3
-    titleLabel.Parent = panel
-
-    local valueLabel = Instance.new("TextLabel")
-    valueLabel.Name = "Value"
-    valueLabel.Position = UDim2.fromOffset(96, 4)
-    valueLabel.Size = UDim2.new(1, -106, 0, 22)
-    valueLabel.BackgroundTransparency = 1
-    valueLabel.Font = Enum.Font.GothamBold
-    valueLabel.Text = "-- / --"
-    valueLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    valueLabel.TextScaled = true
-    valueLabel.TextStrokeTransparency = 0.6
-    valueLabel.TextXAlignment = Enum.TextXAlignment.Right
-    valueLabel.ZIndex = 3
-    valueLabel.Parent = panel
-
-    local valueTextConstraint = Instance.new("UITextSizeConstraint")
-    valueTextConstraint.MinTextSize = 12
-    valueTextConstraint.MaxTextSize = 17
-    valueTextConstraint.Parent = valueLabel
-
-    local barBackground = Instance.new("Frame")
-    barBackground.Name = "BarBackground"
-    barBackground.Position = UDim2.fromOffset(10, 30)
-    barBackground.Size = UDim2.new(1, -20, 0, 14)
-    barBackground.BackgroundColor3 = Color3.fromRGB(6, 9, 14)
-    barBackground.BackgroundTransparency = 0.1
-    barBackground.BorderSizePixel = 0
-    barBackground.ClipsDescendants = true
-    barBackground.ZIndex = 3
-    barBackground.Parent = panel
-    addCorner(barBackground, 7)
-
-    local barStroke = Instance.new("UIStroke")
-    barStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-    barStroke.Color = Color3.fromRGB(255, 255, 255)
-    barStroke.Transparency = 0.75
-    barStroke.Thickness = 1
-    barStroke.Parent = barBackground
-
-    local fill = Instance.new("Frame")
-    fill.Name = "Fill"
-    fill.Size = UDim2.fromScale(1, 1)
-    fill.BackgroundColor3 = SAFE_FILL_COLOR
-    fill.BorderSizePixel = 0
-    fill.ZIndex = 4
-    fill.Parent = barBackground
-    addCorner(fill, 7)
-
-    local tag = Instance.new("TextLabel")
-    tag.Name = "StateTag"
-    tag.Position = UDim2.fromOffset(10, 50)
-    tag.Size = UDim2.fromOffset(92, 18)
-    tag.BackgroundColor3 = LOW_ACCENT_COLOR
-    tag.BorderSizePixel = 0
-    tag.Font = Enum.Font.GothamBlack
-    tag.Text = ""
-    tag.TextSize = 13
-    tag.TextColor3 = LOW_TAG_TEXT_COLOR
-    tag.Visible = false
-    tag.ZIndex = 3
-    tag.Parent = panel
-    addCorner(tag, 5)
-
-    local hitOverlay = Instance.new("Frame")
-    hitOverlay.Name = "HitOverlay"
-    hitOverlay.Size = UDim2.fromScale(1, 1)
-    hitOverlay.BackgroundColor3 = HIT_BACKGROUND_COLOR
-    hitOverlay.BackgroundTransparency = 1
-    hitOverlay.BorderSizePixel = 0
-    hitOverlay.ZIndex = 5
-    hitOverlay.Parent = panel
-    addCorner(hitOverlay, 8)
+    local panel = playerGui:WaitForChild(HUD_NAME):WaitForChild("TopCenter"):WaitForChild("WarmthPanel") :: Frame
+    local fx = playerGui:WaitForChild(FX_NAME)
+    local bar = panel:WaitForChild("BarBackground")
 
     return {
         Panel = panel,
-        PanelStroke = panelStroke,
-        PanelScale = panelScale,
-        ValueLabel = valueLabel,
-        Fill = fill,
-        Tag = tag,
-        PulseOverlay = pulseOverlay,
-        HitOverlay = hitOverlay,
-        FrostEdges = frostEdges,
-        WarmEdges = warmEdges,
-        ImpactFlash = impactFlash,
+        PanelStroke = panel:WaitForChild("WarningStroke") :: UIStroke,
+        ValueLabel = panel:WaitForChild("Value") :: TextLabel,
+        Fill = bar:WaitForChild("Fill") :: Frame,
+        Tag = panel:WaitForChild("StateTag") :: TextLabel,
+        PulseOverlay = panel:WaitForChild("PulseOverlay") :: Frame,
+        HitOverlay = panel:WaitForChild("HitOverlay") :: Frame,
+        FrostEdges = { fx:WaitForChild("FrostVignette") :: ImageLabel },
+        WarmEdges = { fx:WaitForChild("WarmVignette") :: ImageLabel },
+        ImpactFlash = fx:WaitForChild("ImpactFlash") :: Frame,
     }
 end
 
@@ -421,9 +201,9 @@ local function classifyWarmth(currentWarmth: number, maxWarmth: number): (string
     return SAFE_STATE, ratio
 end
 
-local function setFrostEdges(frostEdges: { Frame }, visible: boolean, transparency: number): ()
+local function setFrostEdges(frostEdges: { ImageLabel }, visible: boolean, transparency: number): ()
     for _, edge in frostEdges do
-        edge.BackgroundTransparency = transparency
+        edge.ImageTransparency = transparency
         edge.Visible = visible
     end
 end
@@ -463,13 +243,11 @@ local function cancelFrostTweens(): ()
     table.clear(frostTweens)
 end
 
-local function setEdgeDepth(edges: { Frame }, topBottom: number, side: number): ()
-    edges[1].Size = UDim2.new(1, 0, 0, topBottom)
-    edges[2].Size = UDim2.new(1, 0, 0, topBottom)
-    edges[2].Position = UDim2.new(0, 0, 1, -topBottom)
-    edges[3].Size = UDim2.new(0, side, 1, 0)
-    edges[4].Size = UDim2.new(0, side, 1, 0)
-    edges[4].Position = UDim2.new(1, -side, 0, 0)
+-- The vignette is centred; growing it past the screen pushes the frost outward (shallower).
+local function setEdgeDepth(edges: { ImageLabel }, scale: number): ()
+    for _, edge in edges do
+        edge.Size = UDim2.fromScale(scale, scale)
+    end
 end
 
 local function stopCarryPulse(): ()
@@ -599,15 +377,15 @@ local function playRelief(hud: Hud): ()
     local info = TweenInfo.new(RELIEF_SECONDS, Enum.EasingStyle.Linear)
 
     for _, edge in hud.FrostEdges do
-        local tween = TweenService:Create(edge, info, { BackgroundTransparency = 1 })
+        local tween = TweenService:Create(edge, info, { ImageTransparency = 1 })
         table.insert(frostTweens, tween)
         tween:Play()
     end
 
-    setEdgeDepth(hud.WarmEdges, FROST_TOP_BOTTOM_DEPTH, FROST_SIDE_DEPTH)
+    setEdgeDepth(hud.WarmEdges, LOW_VIGNETTE_SCALE)
     setFrostEdges(hud.WarmEdges, true, RELIEF_WARM_TRANSPARENCY)
     for _, edge in hud.WarmEdges do
-        local tween = TweenService:Create(edge, info, { BackgroundTransparency = 1 })
+        local tween = TweenService:Create(edge, info, { ImageTransparency = 1 })
         table.insert(frostTweens, tween)
         tween:Play()
     end
@@ -633,10 +411,11 @@ local function applyPresentationState(hud: Hud, nextState: string, force: boolea
 
     if nextState == SAFE_STATE then
         stopPulse(hud)
-        hud.Panel.Size = UDim2.fromOffset(PANEL_WIDTH, PANEL_HEIGHT_SAFE)
         hud.Panel.BackgroundColor3 = NORMAL_BACKGROUND_COLOR
-        hud.Panel.BackgroundTransparency = 0.2
-        hud.PanelStroke.Enabled = false
+        hud.Panel.BackgroundTransparency = PANEL_TRANSPARENCY
+        hud.PanelStroke.Color = SAFE_RIM_COLOR
+        hud.PanelStroke.Thickness = 2
+        hud.PanelStroke.Transparency = SAFE_RIM_TRANSPARENCY
         hud.Fill.BackgroundColor3 = SAFE_FILL_COLOR
         hud.Tag.Text = ""
         hud.Tag.Visible = false
@@ -654,20 +433,19 @@ local function applyPresentationState(hud: Hud, nextState: string, force: boolea
         return
     end
 
-    hud.Panel.Size = UDim2.fromOffset(PANEL_WIDTH, PANEL_HEIGHT_WARNING)
-    hud.PanelStroke.Enabled = true
+    hud.PanelStroke.Thickness = 3
     hud.Tag.Visible = true
 
     if nextState == LOW_STATE then
         hud.Panel.BackgroundColor3 = LOW_BACKGROUND_COLOR
-        hud.Panel.BackgroundTransparency = 0.12
+        hud.Panel.BackgroundTransparency = PANEL_TRANSPARENCY
         hud.PanelStroke.Color = LOW_ACCENT_COLOR
         hud.PanelStroke.Transparency = 0.25
         hud.Fill.BackgroundColor3 = LOW_ACCENT_COLOR
         hud.Tag.Text = "LOW"
         hud.Tag.BackgroundColor3 = LOW_ACCENT_COLOR
         hud.Tag.TextColor3 = LOW_TAG_TEXT_COLOR
-        setEdgeDepth(hud.FrostEdges, FROST_TOP_BOTTOM_DEPTH, FROST_SIDE_DEPTH)
+        setEdgeDepth(hud.FrostEdges, LOW_VIGNETTE_SCALE)
         setFrostEdges(hud.FrostEdges, true, LOW_EDGE_TRANSPARENCY)
         startPulse(hud, LOW_ACCENT_COLOR, 0.92, 0.78, LOW_PULSE_INFO)
         setCriticalAudio(false)
@@ -676,18 +454,18 @@ local function applyPresentationState(hud: Hud, nextState: string, force: boolea
     end
 
     hud.Panel.BackgroundColor3 = CRITICAL_BACKGROUND_COLOR
-    hud.Panel.BackgroundTransparency = 0.05
+    hud.Panel.BackgroundTransparency = PANEL_TRANSPARENCY
     hud.PanelStroke.Color = CRITICAL_ACCENT_COLOR
     hud.PanelStroke.Transparency = 0
     hud.Fill.BackgroundColor3 = CRITICAL_ACCENT_COLOR
     hud.Tag.Text = "CRITICAL"
     hud.Tag.BackgroundColor3 = CRITICAL_ACCENT_COLOR
     hud.Tag.TextColor3 = CRITICAL_TAG_TEXT_COLOR
-    setEdgeDepth(hud.FrostEdges, CRITICAL_TOP_BOTTOM_DEPTH, CRITICAL_SIDE_DEPTH)
+    setEdgeDepth(hud.FrostEdges, CRITICAL_VIGNETTE_SCALE)
     setFrostEdges(hud.FrostEdges, true, CRITICAL_EDGE_TRANSPARENCY)
     for _, edge in hud.FrostEdges do
         local tween = TweenService:Create(edge, FROST_PULSE_INFO, {
-            BackgroundTransparency = CRITICAL_EDGE_PULSE_TRANSPARENCY,
+            ImageTransparency = CRITICAL_EDGE_PULSE_TRANSPARENCY,
         })
         table.insert(frostTweens, tween)
         tween:Play()
@@ -822,65 +600,30 @@ local function spawnGainNumber(amount: number, showCaption: boolean): ()
         )
     local finalScale = gainRandom:NextNumber(0.9, 1.3)
 
-    local popup = Instance.new("BillboardGui")
+    local template = gainPopupTemplate
+    if not template then
+        return
+    end
+
+    local popup = template:Clone()
     popup.Name = GAIN_POPUP_NAME
     popup.Adornee = head
-    popup.AlwaysOnTop = true
-    popup.LightInfluence = 0
-    popup.Size = UDim2.fromOffset(170, 62)
     popup.StudsOffsetWorldSpace = startOffset
 
-    local holder = Instance.new("Frame")
-    holder.Name = "Holder"
-    holder.AnchorPoint = Vector2.new(0.5, 0.5)
-    holder.Position = UDim2.fromScale(0.5, 0.5)
-    holder.Size = UDim2.fromScale(1, 1)
-    holder.BackgroundTransparency = 1
-    holder.Parent = popup
-
-    local scale = Instance.new("UIScale")
+    local holder = popup:WaitForChild("Holder")
+    local scale = holder:WaitForChild("Scale") :: UIScale
     scale.Scale = finalScale * 0.55
-    scale.Parent = holder
 
-    local gainLabel = Instance.new("TextLabel")
-    gainLabel.Name = "Gain"
+    local gainLabel = holder:WaitForChild("Gain") :: TextLabel
     gainLabel.Size = UDim2.fromScale(1, if showCaption then 0.68 else 1)
-    gainLabel.BackgroundTransparency = 1
-    gainLabel.Font = Enum.Font.GothamBlack
     gainLabel.Text = "+" .. formatCompact(amount)
     gainLabel.TextColor3 = GAIN_COLOR_LOW:Lerp(GAIN_COLOR_HIGH, gainRandom:NextNumber())
-    gainLabel.TextScaled = true
-    gainLabel.TextStrokeColor3 = GAIN_STROKE_COLOR
-    gainLabel.TextStrokeTransparency = 0
-    gainLabel.Parent = holder
-
-    local gainConstraint = Instance.new("UITextSizeConstraint")
-    gainConstraint.MinTextSize = 16
-    gainConstraint.MaxTextSize = 44
-    gainConstraint.Parent = gainLabel
 
     local fadeTargets: { TextLabel } = { gainLabel }
-
+    local caption = holder:WaitForChild("Caption") :: TextLabel
+    caption.Visible = showCaption
     if showCaption then
-        local subLabel = Instance.new("TextLabel")
-        subLabel.Name = "Caption"
-        subLabel.Position = UDim2.fromScale(0, 0.68)
-        subLabel.Size = UDim2.fromScale(1, 0.28)
-        subLabel.BackgroundTransparency = 1
-        subLabel.Font = Enum.Font.GothamBold
-        subLabel.Text = "MAX WARMTH"
-        subLabel.TextColor3 = GAIN_SUBTEXT_COLOR
-        subLabel.TextScaled = true
-        subLabel.TextStrokeColor3 = GAIN_STROKE_COLOR
-        subLabel.TextStrokeTransparency = 0.1
-        subLabel.Parent = holder
-
-        local subConstraint = Instance.new("UITextSizeConstraint")
-        subConstraint.MinTextSize = 9
-        subConstraint.MaxTextSize = 15
-        subConstraint.Parent = subLabel
-
-        table.insert(fadeTargets, subLabel)
+        table.insert(fadeTargets, caption)
     end
 
     popup.Parent = head
@@ -987,23 +730,14 @@ function trackMaxWarmthGain(maxWarmth: number): ()
     end
 end
 
-local function updateViewportScale(hud: Hud): ()
-    local camera = workspace.CurrentCamera
-    if not camera then
-        return
-    end
-
-    -- Slightly smaller on narrow screens, never below 0.9 so numbers stay legible.
-    hud.PanelScale.Scale = math.clamp(camera.ViewportSize.X / 1000, 0.9, 1)
-end
-
 function WarmthController.Start(): ()
     if started then
         return
     end
     started = true
 
-    local hud = createHud()
+    local hud = bindHud()
+    gainPopupTemplate = ReplicatedStorage:WaitForChild("UITemplates"):WaitForChild(GAIN_POPUP_NAME) :: BillboardGui
     Players.LocalPlayer.CharacterRemoving:Connect(clearGainPopups)
     Players.LocalPlayer.CharacterRemoving:Connect(function()
         previousRatio = nil
@@ -1022,14 +756,6 @@ function WarmthController.Start(): ()
     end
     applyPresentationState(hud, SAFE_STATE, true)
     setFillRatio(hud, 1, true)
-
-    updateViewportScale(hud)
-    local camera = workspace.CurrentCamera
-    if camera then
-        camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
-            updateViewportScale(hud)
-        end)
-    end
 
     local remotes = ReplicatedStorage:WaitForChild("Remotes")
     local gameplayEvent = remotes:WaitForChild("GameplayEvent")

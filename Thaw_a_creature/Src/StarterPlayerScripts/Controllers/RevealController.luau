@@ -29,10 +29,19 @@ assert(gameplayEvent:IsA("RemoteEvent"), "ReplicatedStorage.Remotes.GameplayEven
 local activeSessionID: string? = nil
 local activeThawID: string? = nil
 
+-- Prefab: StarterGui.RarityRevealUI (authored in Studio).
+local REVEAL_GUI_NAME = "RarityRevealUI"
+local RAYS_SPIN_DEGREES_PER_SECOND = 40
+
 local revealGui: ScreenGui? = nil
-local revealLabel: TextLabel? = nil
+local revealCard: CanvasGroup? = nil
+local revealName: TextLabel? = nil
+local revealRarity: TextLabel? = nil
+local revealRays: ImageLabel? = nil
+local revealGlow: ImageLabel? = nil
 local revealScale: UIScale? = nil
 local revealStroke: UIStroke? = nil
+local revealFlash: Frame? = nil
 local revealGeneration = 0
 
 local SPARKLE_TEXTURE = "rbxasset://textures/particles/sparkles_main.dds"
@@ -52,42 +61,19 @@ local function ensureRevealUI()
 	end
 
 	local playerGui = localPlayer:WaitForChild("PlayerGui")
-
-	local gui = Instance.new("ScreenGui")
-	gui.Name = "RarityRevealUI"
-	gui.ResetOnSpawn = false
-	gui.IgnoreGuiInset = true
-	gui.DisplayOrder = 50
-	gui.Parent = playerGui
-
-	local label = Instance.new("TextLabel")
-	label.Name = "RevealLabel"
-	label.AnchorPoint = Vector2.new(0.5, 0.5)
-	label.Position = UDim2.fromScale(0.5, 0.22)
-	label.Size = UDim2.fromScale(0.70, 0.14)
-	label.BackgroundTransparency = 1
-	label.Font = Enum.Font.GothamBlack
-	label.TextScaled = true
-	label.TextWrapped = true
-	label.TextTransparency = 1
-	label.Visible = false
-	label.Parent = gui
-
-	local stroke = Instance.new("UIStroke")
-	stroke.Name = "Stroke"
-	stroke.Color = Color3.new(0, 0, 0)
-	stroke.Thickness = 2
-	stroke.Transparency = 1
-	stroke.Parent = label
-
-	local scale = Instance.new("UIScale")
-	scale.Scale = 1
-	scale.Parent = label
+	local gui = playerGui:WaitForChild(REVEAL_GUI_NAME) :: ScreenGui
+	local card = gui:WaitForChild("RevealCard") :: CanvasGroup
+	local nameLabel = card:WaitForChild("CreatureName") :: TextLabel
 
 	revealGui = gui
-	revealLabel = label
-	revealScale = scale
-	revealStroke = stroke
+	revealCard = card
+	revealName = nameLabel
+	revealRarity = card:WaitForChild("Rarity") :: TextLabel
+	revealRays = card:WaitForChild("Rays") :: ImageLabel
+	revealGlow = card:WaitForChild("Glow") :: ImageLabel
+	revealScale = card:WaitForChild("Pop") :: UIScale
+	revealStroke = nameLabel:WaitForChild("TextOutline") :: UIStroke
+	revealFlash = gui:WaitForChild("LegendaryFlash") :: Frame
 end
 
 local function cleanupImpact()
@@ -176,17 +162,11 @@ local function playLegendaryImpact(seq: number, creatureID: string, impact: any,
 		groundY = lastSmashPosition.Y - 2
 	end
 
-	-- Subtle gold screen flash.
-	if revealGui and revealGui.Parent then
-		local flash = Instance.new("Frame")
-		flash.Name = "LegendaryFlash"
-		flash.Size = UDim2.fromScale(1, 1)
+	-- Subtle gold screen flash (prefab overlay, never destroyed).
+	local flash = revealFlash
+	if flash and flash.Parent then
 		flash.BackgroundColor3 = goldColor
 		flash.BackgroundTransparency = impact.FlashTransparency or 0.65
-		flash.BorderSizePixel = 0
-		flash.ZIndex = 0
-		flash.Parent = revealGui
-		track(flash)
 		TweenService:Create(flash, TweenInfo.new(impact.FlashTime or 0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 			BackgroundTransparency = 1,
 		}):Play()
@@ -385,33 +365,45 @@ local function showRarityReveal(creatureID: string, rarity: string)
 
 	ensureRevealUI()
 
-	if not revealLabel or not revealScale or not revealStroke then
+	local card, nameLabel, rarityLabel, rays, glow, scale, stroke =
+		revealCard, revealName, revealRarity, revealRays, revealGlow, revealScale, revealStroke
+	if not card or not nameLabel or not rarityLabel or not rays or not glow or not scale or not stroke then
 		return
 	end
 
 	revealGeneration += 1
 	local generation = revealGeneration
+	local rarityColor = rarityUI.Color or Color3.new(1, 1, 1)
 
-	revealLabel.Text = string.format(
-		"%s\n%s",
-		displayName,
-		string.upper(rarityUI.DisplayName or rarity)
-	)
+	nameLabel.Text = displayName
+	rarityLabel.Text = string.upper(rarityUI.DisplayName or rarity)
+	rarityLabel.BackgroundColor3 = rarityColor
+	rays.ImageColor3 = rarityColor
+	glow.ImageColor3 = rarityColor
+	stroke.Transparency = math.min(rarityUI.StrokeTransparency or 0.5, 0.3)
 
-	revealLabel.TextColor3 = rarityUI.Color or Color3.new(1, 1, 1)
-	revealLabel.TextTransparency = 0
-	revealStroke.Transparency = rarityUI.StrokeTransparency or 0.5
-
-	revealScale.Scale = 0.85
-	revealLabel.Visible = true
+	card.GroupTransparency = 0
+	scale.Scale = 0.85
+	card.Visible = true
 
 	TweenService:Create(
-		revealScale,
+		scale,
 		TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
 		{
 			Scale = rarityUI.PulseScale or 1,
 		}
 	):Play()
+
+	-- Slow sunburst behind the name while it is on screen (presentation only).
+	task.spawn(function()
+		local last = os.clock()
+		while generation == revealGeneration and card.Visible do
+			local now = os.clock()
+			rays.Rotation = (rays.Rotation + (now - last) * RAYS_SPIN_DEGREES_PER_SECOND) % 360
+			last = now
+			task.wait()
+		end
+	end)
 
 	local impact = profileEntry.RevealImpact
 	local textHold = 1.15
@@ -428,28 +420,17 @@ local function showRarityReveal(creatureID: string, rarity: string)
 			return
 		end
 
-		local textTween = TweenService:Create(
-			revealLabel,
+		TweenService:Create(
+			card,
 			TweenInfo.new(0.30, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
 			{
-				TextTransparency = 1,
+				GroupTransparency = 1,
 			}
-		)
-
-		local strokeTween = TweenService:Create(
-			revealStroke,
-			TweenInfo.new(0.30, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-			{
-				Transparency = 1,
-			}
-		)
-
-		textTween:Play()
-		strokeTween:Play()
+		):Play()
 
 		task.delay(0.32, function()
-			if generation == revealGeneration and revealLabel then
-				revealLabel.Visible = false
+			if generation == revealGeneration then
+				card.Visible = false
 			end
 		end)
 	end)

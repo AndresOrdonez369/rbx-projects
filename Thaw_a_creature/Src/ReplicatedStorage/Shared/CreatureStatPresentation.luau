@@ -1,3 +1,5 @@
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
 export type DisplayStats = {
     Scale: number,
     FinalIncome: number,
@@ -8,9 +10,32 @@ local CreatureStatPresentation = {}
 
 local ATTACHMENT_NAME = "CreatureStatAttachment"
 local BILLBOARD_NAME = "CreatureStatBillboard"
-local BILLBOARD_WIDTH = 176
-local BILLBOARD_HEIGHT = 52
 local HEIGHT_MARGIN_STUDS = 1.25
+local TEMPLATE_FOLDER_NAME = "UITemplates" -- prefab: ReplicatedStorage.UITemplates.CreatureStatBillboard
+
+local function getTemplate(): BillboardGui?
+    local folder = ReplicatedStorage:FindFirstChild(TEMPLATE_FOLDER_NAME)
+    local template = folder and folder:FindFirstChild(BILLBOARD_NAME)
+    if template and template:IsA("BillboardGui") then
+        return template
+    end
+
+    warn("[CreatureStatPresentation] Missing ReplicatedStorage.UITemplates." .. BILLBOARD_NAME)
+    return nil
+end
+
+local SUFFIXES = { "K", "M", "B", "T", "Qa", "Qi" }
+
+local function formatCompact(value: number): string
+    if value < 1000 then
+        return string.format("%d", value)
+    end
+
+    local index = math.min(math.floor(math.log10(value) / 3), #SUFFIXES)
+    local scaled = value / 1000 ^ index
+    local decimals = if scaled < 10 then 2 elseif scaled < 100 then 1 else 0
+    return string.format("%." .. decimals .. "f%s", scaled, SUFFIXES[index])
+end
 
 local function isFinitePositiveNumber(value: any): boolean
     return type(value) == "number"
@@ -57,43 +82,26 @@ function CreatureStatPresentation.Attach(model: Model, stats: DisplayStats): Bil
     attachment.Position = root.CFrame:PointToObjectSpace(labelWorldPosition)
     attachment.Parent = root
 
-    local billboard = Instance.new("BillboardGui")
+    local template = getTemplate()
+    if not template then
+        attachment:Destroy()
+        return nil
+    end
+
+    local billboard = template:Clone()
     billboard.Name = BILLBOARD_NAME
     billboard.Adornee = attachment
-    billboard.AlwaysOnTop = true
-    billboard.LightInfluence = 0
-    billboard.MaxDistance = 180
-    billboard.Size = UDim2.fromOffset(BILLBOARD_WIDTH, BILLBOARD_HEIGHT)
+
+    local background = billboard:WaitForChild("Background")
+    local speedLabel = background:WaitForChild("Speed"):WaitForChild("Label") :: TextLabel
+    local incomeLabel = background:WaitForChild("Income"):WaitForChild("Label") :: TextLabel
+    speedLabel.Text = string.format("%.1f", stats.FinalWalkSpeed)
+    incomeLabel.Text = "$" .. formatCompact(stats.FinalIncome) .. "/s"
+
+    -- Hidden machine-readable copy in the legacy format; Pen presentation reads exact income from it.
+    local legacy = background:WaitForChild("Stats") :: TextLabel
+    legacy.Text = string.format("SPEED %.1f\nPEN $%d/s", stats.FinalWalkSpeed, stats.FinalIncome)
     billboard.Parent = attachment
-
-    local background = Instance.new("Frame")
-    background.Name = "Background"
-    background.Size = UDim2.fromScale(1, 1)
-    background.BackgroundColor3 = Color3.fromRGB(18, 27, 36)
-    background.BackgroundTransparency = 0.18
-    background.BorderSizePixel = 0
-    background.Parent = billboard
-
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 6)
-    corner.Parent = background
-
-    local text = Instance.new("TextLabel")
-    text.Name = "Stats"
-    text.Position = UDim2.fromOffset(6, 3)
-    text.Size = UDim2.new(1, -12, 1, -6)
-    text.BackgroundTransparency = 1
-    text.Font = Enum.Font.GothamBold
-    text.Text = string.format(
-        "SPEED %.1f\nPEN $%d/s",
-        stats.FinalWalkSpeed,
-        stats.FinalIncome
-    )
-    text.TextColor3 = Color3.fromRGB(245, 248, 255)
-    text.TextSize = 17
-    text.TextStrokeColor3 = Color3.fromRGB(8, 12, 17)
-    text.TextStrokeTransparency = 0.55
-    text.Parent = background
 
     return billboard
 end

@@ -6,6 +6,7 @@ local shared = ReplicatedStorage:WaitForChild("Shared")
 local SurvivalToolConfig = require(shared:WaitForChild("SurvivalToolConfig"))
 
 local CreatureService = require(script.Parent.CreatureService)
+local PlayerContestService = require(script.Parent.PlayerContestService)
 local PlayerStateService = require(script.Parent.PlayerStateService)
 
 local SurvivalToolService = {}
@@ -166,7 +167,18 @@ local function findNearestApprovedTarget(attackOrigin: CFrame, character: Model,
 end
 
 function SurvivalToolService.TrySwing(player: Player): boolean
-    if not PlayerStateService.GetState(player) then
+    local playerState = PlayerStateService.GetState(player)
+    if not playerState then
+        return false
+    end
+
+    -- No Tool Swing / Mounted Strike while a Grab Hold is active (L-D14.5-T03) or while carrying Ice
+    -- (Carrier Commitment, L-D14.5-T04): carriers cannot attack Sprites, breakables, players or mounts.
+    if playerState.ActiveGrabHoldIceID ~= nil or playerState.CurrentlyCarryingIceID ~= nil then
+        return false
+    end
+
+    if PlayerContestService.IsRagdolled(player) then
         return false
     end
 
@@ -198,6 +210,19 @@ function SurvivalToolService.TrySwing(player: Player): boolean
     local attackOrigin = CreatureService.GetMountedCombatOrigin(player) or rootPart.CFrame
 
     local target = findNearestApprovedTarget(attackOrigin, character, tool)
+
+    -- The same swing may instead reach a rival player (L-D14.5-T05/T06): whichever valid target is nearer wins.
+    local contestTarget, contestDistance = PlayerContestService.FindNearestTarget(player, attackOrigin)
+    if contestTarget then
+        local approvedPosition = if target then getTargetPosition(target) else nil
+        local approvedDistance = if approvedPosition
+            then (attackOrigin.Position - approvedPosition).Magnitude
+            else math.huge
+        if contestDistance < approvedDistance then
+            return PlayerContestService.TryApplyHit(player, contestTarget, attackOrigin)
+        end
+    end
+
     if not target then
         return false
     end

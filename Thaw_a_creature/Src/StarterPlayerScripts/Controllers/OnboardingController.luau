@@ -11,15 +11,16 @@ local OwnBaseController = require(script.Parent.OwnBaseController)
 
 local OnboardingController = {}
 
-local HUD_NAME = "OnboardingHud"
+-- Prefabs: StarterGui.MainHud.TopCenter.ObjectiveCard, StarterGui.OnboardingIceMarker and
+-- StarterGui.OnboardingHomeMarker (authored in Studio).
+local HUD_NAME = "MainHud"
 local MARKER_NAME = "OnboardingIceMarker"
 local HOME_MARKER_NAME = "OnboardingHomeMarker"
 local HIGHLIGHT_NAME = "OnboardingIceHighlight"
-local PULSE_NAME = "OnboardingPulse"
 local ACTIVE_ICE_FOLDER_NAME = "ActiveIce"
 local GRAB_PROMPT_NAME = "GrabPrompt"
-local INVENTORY_HUD_NAME = "CreatureInventoryHud"
 local INVENTORY_BUTTON_NAME = "CreaturesButton"
+local GUIDE_GLOW_NAME = "GuideGlow"
 local MOUNT_STATE_ATTRIBUTE = "MountState"
 local RIDING_STATE = "Riding"
 local FOLLOWING_STATE = "Following"
@@ -31,10 +32,6 @@ local RIDE_CLOSURE_SECONDS = 1
 
 -- Onboarding accent: fresh mint, deliberately unlike rarity gold or the Frost cyan.
 local GUIDE_COLOR = Color3.fromRGB(126, 232, 190)
-local CARD_BACKING_COLOR = Color3.fromRGB(14, 22, 30)
-local CARD_WIDTH = 280
-local CARD_HEIGHT = 40
-local CARD_TOP_OFFSET = 80 -- sits below the Great Frost countdown card (top 24, height 46)
 
 local FIND_TEXT = "FIND AN ICE"
 local HOME_TEXT = "BRING IT HOME"
@@ -68,102 +65,19 @@ local postPhase: PostPhase? = nil
 local penFloor: BasePart? = nil
 local doneToken = 0
 local pulseTween: Tween? = nil
-local pulseStroke: UIStroke? = nil
+local pulseGlow: ImageLabel? = nil
 
-local function createLabelCard(parent: Instance): (Frame, UIScale, TextLabel)
-    local card = Instance.new("Frame")
-    card.Name = "ObjectiveCard"
-    card.AnchorPoint = Vector2.new(0.5, 0)
-    card.Position = UDim2.new(0.5, 0, 0, CARD_TOP_OFFSET)
-    card.Size = UDim2.fromOffset(CARD_WIDTH, CARD_HEIGHT)
-    card.BackgroundColor3 = CARD_BACKING_COLOR
-    card.BackgroundTransparency = 0.12
-    card.BorderSizePixel = 0
-    card.Visible = false
-    card.Parent = parent
-
-    local scale = Instance.new("UIScale")
-    scale.Parent = card
-
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 10)
-    corner.Parent = card
-
-    local stroke = Instance.new("UIStroke")
-    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-    stroke.Color = GUIDE_COLOR
-    stroke.Thickness = 2
-    stroke.Transparency = 0.2
-    stroke.Parent = card
-
-    local label = Instance.new("TextLabel")
-    label.Name = "Objective"
-    label.BackgroundTransparency = 1
-    label.Position = UDim2.fromOffset(10, 0)
-    label.Size = UDim2.new(1, -20, 1, 0)
-    label.Font = Enum.Font.GothamBlack
-    label.Text = ""
-    label.TextColor3 = Color3.fromRGB(240, 252, 247)
-    label.TextScaled = true
-    label.TextStrokeColor3 = Color3.fromRGB(5, 10, 16)
-    label.TextStrokeTransparency = 0.5
-    label.Parent = card
-
-    local constraint = Instance.new("UITextSizeConstraint")
-    constraint.MinTextSize = 11
-    constraint.MaxTextSize = 20
-    constraint.Parent = label
-
-    return card, scale, label
-end
-
-local function createMarker(name: string, parent: Instance): (BillboardGui, TextLabel)
-    local marker = Instance.new("BillboardGui")
-    marker.Name = name
-    marker.AlwaysOnTop = true
-    marker.LightInfluence = 0
-    marker.ResetOnSpawn = false
-    marker.Size = UDim2.fromOffset(170, 44)
-    marker.Enabled = false
-    marker.Parent = parent
-
-    local label = Instance.new("TextLabel")
-    label.Name = "Label"
-    label.Size = UDim2.fromScale(1, 1)
-    label.BackgroundTransparency = 1
-    label.Font = Enum.Font.GothamBlack
-    label.Text = ""
-    label.TextColor3 = GUIDE_COLOR
-    label.TextSize = 16
-    label.TextStrokeColor3 = Color3.fromRGB(5, 10, 16)
-    label.TextStrokeTransparency = 0.3
-    label.Parent = marker
-
-    return marker, label
-end
-
-local function createHud(): Hud
+local function bindHud(): Hud
     local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
-    for _, name in { HUD_NAME, MARKER_NAME, HOME_MARKER_NAME } do
-        local existing = playerGui:FindFirstChild(name)
-        if existing then
-            existing:Destroy()
-        end
-    end
+    local card = playerGui:WaitForChild(HUD_NAME):WaitForChild("TopCenter"):WaitForChild("ObjectiveCard") :: Frame
+    local marker = playerGui:WaitForChild(MARKER_NAME) :: BillboardGui
+    local homeMarker = playerGui:WaitForChild(HOME_MARKER_NAME) :: BillboardGui
 
     local camera = Workspace.CurrentCamera
     local existingHighlight = camera:FindFirstChild(HIGHLIGHT_NAME)
     if existingHighlight then
         existingHighlight:Destroy()
     end
-
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = HUD_NAME
-    screenGui.ResetOnSpawn = false
-    screenGui.DisplayOrder = 10
-    screenGui.Parent = playerGui
-
-    local card, cardScale, cardLabel = createLabelCard(screenGui)
 
     -- Outline only, so the silhouette inside the Ice keeps its normal read.
     local highlight = Instance.new("Highlight")
@@ -175,17 +89,14 @@ local function createHud(): Hud
     highlight.Enabled = false
     highlight.Parent = camera
 
-    local marker, markerLabel = createMarker(MARKER_NAME, playerGui)
-    local homeMarker, homeLabel = createMarker(HOME_MARKER_NAME, playerGui)
-
     return {
         Card = card,
-        CardScale = cardScale,
-        CardLabel = cardLabel,
+        CardScale = card:WaitForChild("Pulse") :: UIScale,
+        CardLabel = card:WaitForChild("Objective") :: TextLabel,
         Marker = marker,
-        MarkerLabel = markerLabel,
+        MarkerLabel = marker:WaitForChild("Label") :: TextLabel,
         HomeMarker = homeMarker,
-        HomeLabel = homeLabel,
+        HomeLabel = homeMarker:WaitForChild("Label") :: TextLabel,
         Highlight = highlight,
     }
 end
@@ -270,44 +181,40 @@ local function setCard(hud: Hud, text: string?): ()
     hud.Card.Visible = text ~= nil
 end
 
--- Subtle local pulse on the existing CREATURES button (read-only: only adds/removes our own stroke).
+-- Subtle local pulse on the CREATURES button's prefab GuideGlow (read-only for the button itself).
 local function setButtonPulse(active: boolean): ()
     if not active then
         if pulseTween then
             pulseTween:Cancel()
             pulseTween = nil
         end
-        if pulseStroke then
-            pulseStroke:Destroy()
-            pulseStroke = nil
+        if pulseGlow then
+            pulseGlow.Visible = false
+            pulseGlow = nil
         end
         return
     end
 
-    if pulseStroke and pulseStroke.Parent then
+    if pulseGlow and pulseGlow.Visible then
         return
     end
 
     local playerGui = Players.LocalPlayer:FindFirstChild("PlayerGui")
-    local inventoryHud = if playerGui then playerGui:FindFirstChild(INVENTORY_HUD_NAME) else nil
-    local button = if inventoryHud then inventoryHud:FindFirstChild(INVENTORY_BUTTON_NAME, true) else nil
-    if not button or not button:IsA("GuiButton") then
-        return -- not built yet; the next refresh retries
+    local mainHud = if playerGui then playerGui:FindFirstChild(HUD_NAME) else nil
+    local button = if mainHud then mainHud:FindFirstChild(INVENTORY_BUTTON_NAME, true) else nil
+    local glow = if button then button:FindFirstChild(GUIDE_GLOW_NAME) else nil
+    if not glow or not glow:IsA("ImageLabel") then
+        return -- not replicated yet; the next refresh retries
     end
 
-    local stroke = Instance.new("UIStroke")
-    stroke.Name = PULSE_NAME
-    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-    stroke.Color = GUIDE_COLOR
-    stroke.Thickness = 3
-    stroke.Transparency = 0
-    stroke.Parent = button
-    pulseStroke = stroke
+    glow.ImageTransparency = 0
+    glow.Visible = true
+    pulseGlow = glow
 
     pulseTween = TweenService:Create(
-        stroke,
+        glow,
         TweenInfo.new(0.7, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
-        { Transparency = 0.8 }
+        { ImageTransparency = 0.75 }
     )
     pulseTween:Play()
 end
@@ -405,37 +312,19 @@ local function refresh(hud: Hud, activeIceFolder: Folder): ()
     end
 end
 
-local function updateViewportScale(hud: Hud): ()
-    local camera = Workspace.CurrentCamera
-    if not camera then
-        return
-    end
-
-    -- Compact on portrait phones; never below 0.7 so the objective stays legible.
-    hud.CardScale.Scale = math.clamp(camera.ViewportSize.X / 600, 0.7, 1)
-end
-
 function OnboardingController.Start(): ()
     if started then
         return
     end
     started = true
 
-    local hud = createHud()
+    local hud = bindHud()
     local activeIceFolder = Workspace:WaitForChild(ACTIVE_ICE_FOLDER_NAME)
     assert(activeIceFolder:IsA("Folder"), string.format("Workspace.%s must be a Folder", ACTIVE_ICE_FOLDER_NAME))
 
     local remotes = ReplicatedStorage:WaitForChild("Remotes")
     local gameplayEvent = remotes:WaitForChild("GameplayEvent")
     assert(gameplayEvent:IsA("RemoteEvent"), "ReplicatedStorage.Remotes.GameplayEvent must be a RemoteEvent")
-
-    updateViewportScale(hud)
-    local camera = Workspace.CurrentCamera
-    if camera then
-        camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
-            updateViewportScale(hud)
-        end)
-    end
 
     -- Own Pen from the existing own-base reference (never guessed from names).
     task.spawn(function()

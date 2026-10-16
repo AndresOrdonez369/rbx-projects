@@ -2,13 +2,19 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 
+local CreatureConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("CreatureConfig"))
+
+local CreaturePortrait = require(script.Parent.CreaturePortrait)
+
 local CreatureVitalityController = {}
 
-local HUD_NAME = "CreatureVitalityHud"
-local HIT_FLASH_COLOR = Color3.fromRGB(210, 105, 80)
-local NORMAL_BACKGROUND_COLOR = Color3.fromRGB(28, 36, 45)
-local NORMAL_FILL_COLOR = Color3.fromRGB(105, 205, 225)
-local FROSTED_FILL_COLOR = Color3.fromRGB(175, 225, 255)
+-- Prefab: StarterGui.MainHud.RightRail.MountCard (authored in Studio).
+local HUD_NAME = "MainHud"
+local HIT_FLASH_COLOR = Color3.fromRGB(255, 120, 100)
+local NORMAL_BACKGROUND_COLOR = Color3.fromRGB(255, 255, 255)
+local NORMAL_BACKGROUND_TRANSPARENCY = 0.06
+local NORMAL_FILL_COLOR = Color3.fromRGB(105, 205, 240)
+local FROSTED_FILL_COLOR = Color3.fromRGB(190, 232, 255)
 
 local localPlayer = Players.LocalPlayer
 local remotes = ReplicatedStorage:WaitForChild("Remotes")
@@ -18,97 +24,29 @@ assert(gameplayEvent:IsA("RemoteEvent"), "ReplicatedStorage.Remotes.GameplayEven
 
 local started = false
 local flashRevision = 0
+local portraitCreatureID: string? = nil
 
 type Hud = {
-    ScreenGui: ScreenGui,
     Panel: Frame,
+    Portrait: ViewportFrame,
+    NameLabel: TextLabel,
     Fill: Frame,
     ValueLabel: TextLabel,
-    StateLabel: TextLabel,
+    StateLabel: GuiObject,
 }
 
-local function createHud(): Hud
+local function bindHud(): Hud
     local playerGui = localPlayer:WaitForChild("PlayerGui")
-    local existingHud = playerGui:FindFirstChild(HUD_NAME)
-    if existingHud then
-        existingHud:Destroy()
-    end
-
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = HUD_NAME
-    screenGui.ResetOnSpawn = false
-    screenGui.DisplayOrder = 9
-    screenGui.Enabled = false
-    screenGui.Parent = playerGui
-
-    local panel = Instance.new("Frame")
-    panel.Name = "Panel"
-    panel.Position = UDim2.fromOffset(24, 104)
-    panel.Size = UDim2.fromOffset(180, 62)
-    panel.BackgroundColor3 = NORMAL_BACKGROUND_COLOR
-    panel.BackgroundTransparency = 0.25
-    panel.BorderSizePixel = 0
-    panel.Parent = screenGui
-
-    local title = Instance.new("TextLabel")
-    title.Name = "Title"
-    title.Position = UDim2.fromOffset(10, 5)
-    title.Size = UDim2.new(1, -20, 0, 18)
-    title.BackgroundTransparency = 1
-    title.Font = Enum.Font.GothamBold
-    title.Text = "CREATURE"
-    title.TextColor3 = Color3.fromRGB(215, 230, 238)
-    title.TextSize = 14
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.Parent = panel
-
-    local barBackground = Instance.new("Frame")
-    barBackground.Name = "BarBackground"
-    barBackground.Position = UDim2.fromOffset(10, 28)
-    barBackground.Size = UDim2.new(1, -20, 0, 17)
-    barBackground.BackgroundColor3 = Color3.fromRGB(11, 16, 22)
-    barBackground.BorderSizePixel = 0
-    barBackground.ClipsDescendants = true
-    barBackground.Parent = panel
-
-    local fill = Instance.new("Frame")
-    fill.Name = "Fill"
-    fill.Size = UDim2.fromScale(1, 1)
-    fill.BackgroundColor3 = NORMAL_FILL_COLOR
-    fill.BorderSizePixel = 0
-    fill.Parent = barBackground
-
-    local valueLabel = Instance.new("TextLabel")
-    valueLabel.Name = "Value"
-    valueLabel.Size = UDim2.fromScale(1, 1)
-    valueLabel.BackgroundTransparency = 1
-    valueLabel.Font = Enum.Font.GothamBold
-    valueLabel.Text = "-- / --"
-    valueLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    valueLabel.TextSize = 13
-    valueLabel.TextStrokeTransparency = 0.6
-    valueLabel.ZIndex = 2
-    valueLabel.Parent = barBackground
-
-    local stateLabel = Instance.new("TextLabel")
-    stateLabel.Name = "State"
-    stateLabel.Position = UDim2.fromOffset(10, 45)
-    stateLabel.Size = UDim2.new(1, -20, 0, 15)
-    stateLabel.BackgroundTransparency = 1
-    stateLabel.Font = Enum.Font.GothamBold
-    stateLabel.Text = "FROSTED"
-    stateLabel.TextColor3 = Color3.fromRGB(180, 235, 255)
-    stateLabel.TextSize = 13
-    stateLabel.TextXAlignment = Enum.TextXAlignment.Left
-    stateLabel.Visible = false
-    stateLabel.Parent = panel
+    local panel = playerGui:WaitForChild(HUD_NAME):WaitForChild("RightRail"):WaitForChild("MountCard") :: Frame
+    local bar = panel:WaitForChild("BarBackground")
 
     return {
-        ScreenGui = screenGui,
         Panel = panel,
-        Fill = fill,
-        ValueLabel = valueLabel,
-        StateLabel = stateLabel,
+        Portrait = panel:WaitForChild("PortraitFrame"):WaitForChild("Portrait") :: ViewportFrame,
+        NameLabel = panel:WaitForChild("CreatureName") :: TextLabel,
+        Fill = bar:WaitForChild("Fill") :: Frame,
+        ValueLabel = bar:WaitForChild("Value") :: TextLabel,
+        StateLabel = panel:WaitForChild("StateTag") :: GuiObject,
     }
 end
 
@@ -119,7 +57,7 @@ local function updateHud(hud: Hud, data: any): ()
 
     local creatureID = data.EquippedCreature
     if creatureID == nil then
-        hud.ScreenGui.Enabled = false
+        hud.Panel.Visible = false
         return
     end
     if type(creatureID) ~= "string" then
@@ -135,7 +73,16 @@ local function updateHud(hud: Hud, data: any): ()
         return
     end
 
-    hud.ScreenGui.Enabled = true
+    -- Retried on later updates until CreatureVisuals has replicated and the portrait actually fills.
+    if creatureID ~= portraitCreatureID then
+        local creature = CreatureConfig[creatureID]
+        hud.NameLabel.Text = if creature and type(creature.DisplayName) == "string" then creature.DisplayName else creatureID
+        if CreaturePortrait.Fill(hud.Portrait, creatureID) then
+            portraitCreatureID = creatureID
+        end
+    end
+
+    hud.Panel.Visible = true
     hud.Fill.Size = UDim2.fromScale(math.clamp(vitality / vitalityMax, 0, 1), 1)
     hud.Fill.BackgroundColor3 = if frosted then FROSTED_FILL_COLOR else NORMAL_FILL_COLOR
     hud.ValueLabel.Text = string.format("%d / %d", math.round(vitality), math.round(vitalityMax))
@@ -158,7 +105,7 @@ local function flashCreatureHit(panel: Frame): ()
             TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
             {
                 BackgroundColor3 = NORMAL_BACKGROUND_COLOR,
-                BackgroundTransparency = 0.25,
+                BackgroundTransparency = NORMAL_BACKGROUND_TRANSPARENCY,
             }
         ):Play()
     end)
@@ -170,7 +117,7 @@ function CreatureVitalityController.Start(): ()
     end
     started = true
 
-    local hud = createHud()
+    local hud = bindHud()
 
     gameplayEvent.OnClientEvent:Connect(function(eventName, data)
         if eventName == "EquippedCreatureChanged" then
@@ -178,7 +125,7 @@ function CreatureVitalityController.Start(): ()
         elseif eventName == "SurvivalFeedback"
             and type(data) == "table"
             and data.Kind == "CreatureHit"
-            and hud.ScreenGui.Enabled
+            and hud.Panel.Visible
         then
             flashCreatureHit(hud.Panel)
         end
