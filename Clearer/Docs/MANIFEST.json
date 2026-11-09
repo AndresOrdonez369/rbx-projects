@@ -1,0 +1,73 @@
+{
+  "package": "Restoring a Visible Mess - four Roblox prototype specifications",
+  "version": "1.0",
+  "date": "2026-11-06",
+  "status": "PROPOSED, NOT IMPLEMENTED",
+  "files": [
+    {
+      "path": "00_README_Prototype_Pack_v1.0.md",
+      "size_bytes": 4073,
+      "sha256": "f04daeab8c9678f1c9b2f14b441b3bdc1713a72e059e6b8a2109fc5a09d45c8a"
+    },
+    {
+      "path": "00_README_Prototype_Pack_v1.0.pdf",
+      "size_bytes": 41213,
+      "sha256": "bdd36a31c104a2d09d40db2c0a6ef73a9aa05ea438e468fcfda0943542674ba2"
+    },
+    {
+      "path": "01_Environmental_Clearing_Prototype_v1.0.md",
+      "size_bytes": 12798,
+      "sha256": "de2d3a1b1d41782de7abae4ad5cd1be9e8439d802320176b780b7b44533a30f8"
+    },
+    {
+      "path": "01_Environmental_Clearing_Prototype_v1.0.pdf",
+      "size_bytes": 65531,
+      "sha256": "88408cdce447796507fb97e05bc6ad41c48130a93e8afe0b71251f6d33908167"
+    },
+    {
+      "path": "02_Object_Organization_Prototype_v1.0.md",
+      "size_bytes": 13313,
+      "sha256": "593a5a0abfdb02b698e668a61e5b3573d2ebc6c7aa1fd6b1114b21db844ef9a9"
+    },
+    {
+      "path": "02_Object_Organization_Prototype_v1.0.pdf",
+      "size_bytes": 69294,
+      "sha256": "f836e94325a30bb89f0e2fc629d38534a91a95d07081ba4b48595f339736b646"
+    },
+    {
+      "path": "03_Restoration_Reveal_Prototype_v1.0.md",
+      "size_bytes": 13648,
+      "sha256": "d66da813f9a7459d9bcc874dada09b5d3c66b7195abad6af5368f905625acf92"
+    },
+    {
+      "path": "03_Restoration_Reveal_Prototype_v1.0.pdf",
+      "size_bytes": 65272,
+      "sha256": "536ca743ddd76a568b61a7b58c9e46497bd5a01c6c91a6c07b055583f47706e4"
+    },
+    {
+      "path": "04_Precision_Washing_Prototype_v1.0.md",
+      "size_bytes": 15496,
+      "sha256": "63c5126cfca1df345e9dc73211ccb96b796f51a8d5c570498170f89f81427e49"
+    },
+    {
+      "path": "04_Precision_Washing_Prototype_v1.0.pdf",
+      "size_bytes": 70675,
+      "sha256": "85b4b41d7f33a67a2135c5bf92920603e2bf58211d07be4b545eb0a40dff024c"
+    },
+    {
+      "path": "05_Shared_Research_and_Playtest_Protocol_v1.0.md",
+      "size_bytes": 11118,
+      "sha256": "94e0138bf5400ed3532e25f3d4fbdbfedfea22e50224ada9cca484af22a8c003"
+    },
+    {
+      "path": "05_Shared_Research_and_Playtest_Protocol_v1.0.pdf",
+      "size_bytes": 59198,
+      "sha256": "f6c1c7203fb4adc6606e726670ea24d1223d16e23edc54a306144da9c51a4ae4"
+    },
+    {
+      "path": "MANIFEST.json",
+      "size_bytes": 2361,
+      "sha256": "1fd083edabb6bfa9a4241990f8d2f828a2f2a2a55a007548ce42867da6a0cdb2"
+    }
+  ]
+}
